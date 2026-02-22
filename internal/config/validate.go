@@ -104,6 +104,9 @@ func Validate(cfg *Config, projectRoot string) error {
 			if !seen[p.ParallelWith] && !phaseExists(cfg.Phases, p.ParallelWith) {
 				return fmt.Errorf("config: phase %q: parallel-with %q references unknown phase", p.Name, p.ParallelWith)
 			}
+			if p.OnFail != nil {
+				return fmt.Errorf("config: phase %q: parallel-with and on-fail cannot be combined", p.Name)
+			}
 		}
 	}
 
@@ -116,7 +119,12 @@ func ValidateTicket(pattern, ticket string) error {
 	if pattern == "" {
 		return nil
 	}
-	re, err := regexp.Compile(pattern)
+	// Enforce full-match semantics: anchor the pattern if not already anchored.
+	anchored := pattern
+	if !strings.HasPrefix(anchored, "^") {
+		anchored = "^(?:" + anchored + ")$"
+	}
+	re, err := regexp.Compile(anchored)
 	if err != nil {
 		return fmt.Errorf("config: invalid ticket-pattern %q: %w", pattern, err)
 	}
