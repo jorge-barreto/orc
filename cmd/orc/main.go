@@ -11,6 +11,7 @@ import (
 	"github.com/jorge-barreto/orc/internal/config"
 	"github.com/jorge-barreto/orc/internal/dispatch"
 	"github.com/jorge-barreto/orc/internal/runner"
+	"github.com/jorge-barreto/orc/internal/scaffold"
 	"github.com/jorge-barreto/orc/internal/state"
 	"github.com/jorge-barreto/orc/internal/ux"
 	cli "github.com/urfave/cli/v3"
@@ -21,6 +22,7 @@ func main() {
 		Name:  "orc",
 		Usage: "Deterministic agent orchestrator",
 		Commands: []*cli.Command{
+			initCmd(),
 			runCmd(),
 			statusCmd(),
 		},
@@ -181,6 +183,20 @@ func statusCmd() *cli.Command {
 
 			ux.RenderStatus(cfg, st, artifactsDir)
 			return nil
+		},
+	}
+}
+
+func initCmd() *cli.Command {
+	return &cli.Command{
+		Name:  "init",
+		Usage: "Initialize a new .orc/ directory with example config",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			dir, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+			return scaffold.Init(dir)
 		},
 	}
 }
