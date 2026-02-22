@@ -36,15 +36,10 @@ func RunScript(ctx context.Context, phase config.Phase, env *Environment) (*Resu
 	cmd.Stdout = io.MultiWriter(os.Stdout, logFile, &captured)
 	cmd.Stderr = io.MultiWriter(os.Stderr, logFile, &captured)
 
-	err = cmd.Run()
-	exitCode := 0
+	code, err := exitCode(cmd.Run())
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
-		} else {
-			return nil, err
-		}
+		return nil, err
 	}
 
-	return &Result{ExitCode: exitCode, Output: captured.String()}, nil
+	return &Result{ExitCode: code, Output: captured.String()}, nil
 }

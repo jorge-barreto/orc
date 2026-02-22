@@ -64,7 +64,7 @@ func newTestRunner(t *testing.T, cfg *config.Config, mock dispatch.Dispatcher) *
 	workDir := t.TempDir()
 	return &Runner{
 		Config: cfg,
-		State:  &state.State{Status: "running"},
+		State:  &state.State{Status: state.StatusRunning},
 		Env: &dispatch.Environment{
 			ProjectRoot:  workDir,
 			WorkDir:      workDir,
@@ -92,7 +92,7 @@ func TestRun_AllPhasesSucceed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State.Status != "completed" {
+	if r.State.Status != state.StatusCompleted {
 		t.Fatalf("status = %q", r.State.Status)
 	}
 	if r.State.PhaseIndex != 3 {
@@ -121,7 +121,7 @@ func TestRun_FailNoOnFail(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), `phase "b" failed`) {
 		t.Fatalf("expected phase b failure, got %v", err)
 	}
-	if r.State.Status != "failed" {
+	if r.State.Status != state.StatusFailed {
 		t.Fatalf("status = %q", r.State.Status)
 	}
 	calls := mock.callNames()
@@ -175,7 +175,7 @@ func TestRun_OnFailLoopsBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State.Status != "completed" {
+	if r.State.Status != state.StatusCompleted {
 		t.Fatalf("status = %q", r.State.Status)
 	}
 
@@ -338,7 +338,7 @@ func TestRun_ContextCancelled(t *testing.T) {
 	if err != context.Canceled {
 		t.Fatalf("expected context.Canceled, got %v", err)
 	}
-	if r.State.Status != "interrupted" {
+	if r.State.Status != state.StatusInterrupted {
 		t.Fatalf("status = %q", r.State.Status)
 	}
 }
@@ -361,7 +361,7 @@ func TestRun_OutputCheckPass(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State.Status != "completed" {
+	if r.State.Status != state.StatusCompleted {
 		t.Fatalf("status = %q", r.State.Status)
 	}
 }
@@ -380,7 +380,7 @@ func TestRun_OutputCheckFail(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "missing outputs") {
 		t.Fatalf("expected missing outputs error, got %v", err)
 	}
-	if r.State.Status != "failed" {
+	if r.State.Status != state.StatusFailed {
 		t.Fatalf("status = %q", r.State.Status)
 	}
 }
@@ -401,7 +401,7 @@ func TestRun_ParallelBothSucceed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State.Status != "completed" {
+	if r.State.Status != state.StatusCompleted {
 		t.Fatalf("status = %q", r.State.Status)
 	}
 	// Both parallel phases + c should have been called
@@ -427,7 +427,7 @@ func TestRun_ParallelOneFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if r.State.Status != "failed" {
+	if r.State.Status != state.StatusFailed {
 		t.Fatalf("status = %q", r.State.Status)
 	}
 	// c should not have been called
@@ -461,7 +461,7 @@ func TestRun_SavesStatePersistently(t *testing.T) {
 	if loaded.PhaseIndex != 2 {
 		t.Fatalf("persisted PhaseIndex = %d, want 2", loaded.PhaseIndex)
 	}
-	if loaded.Status != "completed" {
+	if loaded.Status != state.StatusCompleted {
 		t.Fatalf("persisted Status = %q", loaded.Status)
 	}
 }

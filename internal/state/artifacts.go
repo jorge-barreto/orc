@@ -2,7 +2,9 @@ package state
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -28,7 +30,7 @@ func LoadLoopCounts(artifactsDir string) (map[string]int, error) {
 	path := filepath.Join(artifactsDir, "loop-counts.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return make(map[string]int), nil
 		}
 		return nil, err
@@ -46,13 +48,13 @@ func SaveLoopCounts(artifactsDir string, counts map[string]int) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(artifactsDir, "loop-counts.json"), data, 0644)
+	return writeFileAtomic(filepath.Join(artifactsDir, "loop-counts.json"), data, 0644)
 }
 
 // WriteFeedback writes error output from a failing phase to the feedback directory.
 func WriteFeedback(artifactsDir, fromPhase, content string) error {
 	path := filepath.Join(artifactsDir, "feedback", fmt.Sprintf("from-%s.md", fromPhase))
-	return os.WriteFile(path, []byte(content), 0644)
+	return writeFileAtomic(path, []byte(content), 0644)
 }
 
 // CheckOutputs returns a list of expected output files that are missing from artifacts.

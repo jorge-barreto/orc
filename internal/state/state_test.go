@@ -13,7 +13,7 @@ func TestLoad_NoExistingState(t *testing.T) {
 	if st.PhaseIndex != 0 {
 		t.Fatalf("PhaseIndex = %d, want 0", st.PhaseIndex)
 	}
-	if st.Status != "running" {
+	if st.Status != StatusRunning {
 		t.Fatalf("Status = %q, want running", st.Status)
 	}
 }
@@ -23,7 +23,7 @@ func TestSaveAndLoad_RoundTrip(t *testing.T) {
 	original := &State{
 		PhaseIndex: 3,
 		Ticket:     "ABC-123",
-		Status:     "completed",
+		Status:     StatusCompleted,
 	}
 	if err := original.Save(dir); err != nil {
 		t.Fatal(err)
@@ -38,7 +38,7 @@ func TestSaveAndLoad_RoundTrip(t *testing.T) {
 	if loaded.Ticket != "ABC-123" {
 		t.Fatalf("Ticket = %q", loaded.Ticket)
 	}
-	if loaded.Status != "completed" {
+	if loaded.Status != StatusCompleted {
 		t.Fatalf("Status = %q", loaded.Status)
 	}
 }

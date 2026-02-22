@@ -1,7 +1,6 @@
 package dispatch
 
 import (
-	"os"
 	"strings"
 	"testing"
 )
@@ -72,8 +71,7 @@ func TestBuildEnv_OrcVars(t *testing.T) {
 }
 
 func TestBuildEnv_StripsCLAUDECODE(t *testing.T) {
-	os.Setenv("CLAUDECODE_TEST", "should-be-stripped")
-	defer os.Unsetenv("CLAUDECODE_TEST")
+	t.Setenv("CLAUDECODE_TEST", "should-be-stripped")
 
 	env := &Environment{
 		ProjectRoot:  "/proj",

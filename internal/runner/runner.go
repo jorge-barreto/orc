@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
@@ -20,7 +21,23 @@ type Runner struct {
 	State      *state.State
 	Env        *dispatch.Environment
 	Dispatcher dispatch.Dispatcher
-	DryRun     bool
+	Timing     *state.Timing
+}
+
+// failAndHint sets the failure status, saves state (warning on error),
+// flushes timing, prints a resume hint, and returns the given error.
+func (r *Runner) failAndHint(status string, err error) error {
+	r.State.Status = status
+	if saveErr := r.State.Save(r.Env.ArtifactsDir); saveErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to save state: %v\n", saveErr)
+	}
+	if r.Timing != nil {
+		if flushErr := r.Timing.Flush(r.Env.ArtifactsDir); flushErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to flush timing: %v\n", flushErr)
+		}
+	}
+	ux.ResumeHint(r.State.Ticket)
+	return err
 }
 
 // Run executes the workflow from the current state.
@@ -34,6 +51,12 @@ func (r *Runner) Run(ctx context.Context) error {
 		return fmt.Errorf("loading loop counts: %w", err)
 	}
 
+	timing, err := state.LoadTiming(r.Env.ArtifactsDir)
+	if err != nil {
+		return fmt.Errorf("loading timing: %w", err)
+	}
+	r.Timing = timing
+
 	total := len(r.Config.Phases)
 
 	for r.State.PhaseIndex < total {
@@ -42,10 +65,7 @@ func (r *Runner) Run(ctx context.Context) error {
 
 		// Check for context cancellation
 		if ctx.Err() != nil {
-			r.State.Status = "interrupted"
-			r.State.Save(r.Env.ArtifactsDir)
-			ux.ResumeHint(r.State.Ticket)
-			return ctx.Err()
+			return r.failAndHint(state.StatusInterrupted, ctx.Err())
 		}
 
 		// Evaluate condition
@@ -53,7 +73,9 @@ func (r *Runner) Run(ctx context.Context) error {
 			if !evalCondition(ctx, phase.Condition, r.Env) {
 				ux.PhaseSkip(i, phase.Name)
 				r.State.Advance()
-				r.State.Save(r.Env.ArtifactsDir)
+				if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
+					return fmt.Errorf("saving state after skip: %w", err)
+				}
 				continue
 			}
 		}
@@ -72,20 +94,14 @@ func (r *Runner) Run(ctx context.Context) error {
 
 		// Normal dispatch
 		ux.PhaseHeader(i, total, phase)
-		if err := state.RecordStart(r.Env.ArtifactsDir, phase.Name); err != nil {
-			return err
-		}
+		r.Timing.AddStart(phase.Name)
 
 		r.Env.PhaseIndex = i
 		start := time.Now()
 		result, err := r.Dispatcher.Dispatch(ctx, phase, r.Env)
 
 		if err != nil && ctx.Err() != nil {
-			// Context cancelled (Ctrl+C)
-			r.State.Status = "interrupted"
-			r.State.Save(r.Env.ArtifactsDir)
-			ux.ResumeHint(r.State.Ticket)
-			return ctx.Err()
+			return r.failAndHint(state.StatusInterrupted, ctx.Err())
 		}
 
 		if err != nil || (result != nil && result.ExitCode != 0) {
@@ -101,10 +117,7 @@ func (r *Runner) Run(ctx context.Context) error {
 				if count > phase.OnFail.Max {
 					fmt.Printf("\n  Phase %q failed after %d retry loops. Manual intervention needed.\n",
 						phase.Name, phase.OnFail.Max)
-					r.State.Status = "failed"
-					r.State.Save(r.Env.ArtifactsDir)
-					ux.ResumeHint(r.State.Ticket)
-					return fmt.Errorf("phase %q exceeded max retries (%d)", phase.Name, phase.OnFail.Max)
+					return r.failAndHint(state.StatusFailed, fmt.Errorf("phase %q exceeded max retries (%d)", phase.Name, phase.OnFail.Max))
 				}
 
 				loopCounts[phase.Name] = count
@@ -128,15 +141,14 @@ func (r *Runner) Run(ctx context.Context) error {
 				ux.LoopBack(phase.Name, phase.OnFail.Goto, count, phase.OnFail.Max)
 
 				r.State.SetPhase(gotoIdx)
-				r.State.Save(r.Env.ArtifactsDir)
+				if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
+					return fmt.Errorf("saving state after loop-back: %w", err)
+				}
 				continue
 			}
 
 			// No on-fail: stop
-			r.State.Status = "failed"
-			r.State.Save(r.Env.ArtifactsDir)
-			ux.ResumeHint(r.State.Ticket)
-			return fmt.Errorf("phase %q failed", phase.Name)
+			return r.failAndHint(state.StatusFailed, fmt.Errorf("phase %q failed", phase.Name))
 		}
 
 		// Check declared outputs
@@ -148,30 +160,36 @@ func (r *Runner) Run(ctx context.Context) error {
 					prompt := fmt.Sprintf(
 						"You did not produce the expected artifact at %q. Please produce it now.",
 						filepath.Join(r.Env.ArtifactsDir, m))
-					dispatch.RunAgentWithPrompt(ctx, phase, r.Env, prompt)
+					if _, err := dispatch.RunAgentWithPrompt(ctx, phase, r.Env, prompt); err != nil {
+						fmt.Fprintf(os.Stderr, "warning: re-prompt for missing output failed: %v\n", err)
+					}
 				}
 				missing = state.CheckOutputs(r.Env.ArtifactsDir, phase.Outputs)
 			}
 			if len(missing) > 0 {
 				errMsg := fmt.Sprintf("missing outputs: %v", missing)
 				ux.PhaseFail(i, phase.Name, errMsg)
-				r.State.Status = "failed"
-				r.State.Save(r.Env.ArtifactsDir)
-				ux.ResumeHint(r.State.Ticket)
-				return fmt.Errorf("phase %q: %s", phase.Name, errMsg)
+				return r.failAndHint(state.StatusFailed, fmt.Errorf("phase %q: %s", phase.Name, errMsg))
 			}
 		}
 
 		duration := time.Since(start)
-		state.RecordEnd(r.Env.ArtifactsDir, phase.Name)
+		r.Timing.AddEnd(phase.Name)
 		r.State.Advance()
-		r.State.Status = "running"
-		r.State.Save(r.Env.ArtifactsDir)
+		r.State.Status = state.StatusRunning
+		if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
+			return fmt.Errorf("saving state after phase advance: %w", err)
+		}
 		ux.PhaseComplete(i, duration)
 	}
 
-	r.State.Status = "completed"
-	r.State.Save(r.Env.ArtifactsDir)
+	r.State.Status = state.StatusCompleted
+	if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
+		return fmt.Errorf("saving final state: %w", err)
+	}
+	if err := r.Timing.Flush(r.Env.ArtifactsDir); err != nil {
+		return fmt.Errorf("flushing timing: %w", err)
+	}
 	ux.Success(len(r.Config.Phases))
 	return nil
 }
@@ -195,9 +213,7 @@ func (r *Runner) DryRunPrint() {
 			fmt.Printf("     prompt: %s\n", p.Prompt)
 			fmt.Printf("     model: %s, timeout: %dm\n", p.Model, p.Timeout)
 		case "gate":
-			if p.SkipWith != "" {
-				fmt.Printf("     skip-with: %s\n", p.SkipWith)
-			}
+			// no extra details for gates
 		}
 
 		if len(p.Outputs) > 0 {
@@ -224,8 +240,8 @@ func (r *Runner) runParallel(ctx context.Context, idx1, idx2, total int, loopCou
 	ux.PhaseHeader(idx1, total, phase1)
 	ux.PhaseHeader(idx2, total, phase2)
 
-	state.RecordStart(r.Env.ArtifactsDir, phase1.Name)
-	state.RecordStart(r.Env.ArtifactsDir, phase2.Name)
+	r.Timing.AddStart(phase1.Name)
+	r.Timing.AddStart(phase2.Name)
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -278,16 +294,13 @@ func (r *Runner) runParallel(ctx context.Context, idx1, idx2, total int, loopCou
 				firstErr = fmt.Errorf("phase %q failed: %s", phase.Name, errMsg)
 			}
 		} else {
-			state.RecordEnd(r.Env.ArtifactsDir, phase.Name)
+			r.Timing.AddEnd(phase.Name)
 			ux.PhaseComplete(pr.idx, time.Since(start))
 		}
 	}
 
 	if firstErr != nil {
-		r.State.Status = "failed"
-		r.State.Save(r.Env.ArtifactsDir)
-		ux.ResumeHint(r.State.Ticket)
-		return firstErr
+		return r.failAndHint(state.StatusFailed, firstErr)
 	}
 
 	// Advance past both phases — set to the one after the later index
@@ -296,7 +309,12 @@ func (r *Runner) runParallel(ctx context.Context, idx1, idx2, total int, loopCou
 	} else {
 		r.State.SetPhase(idx1 + 1)
 	}
-	r.State.Save(r.Env.ArtifactsDir)
+	if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
+		return fmt.Errorf("saving state after parallel advance: %w", err)
+	}
+	if err := r.Timing.Flush(r.Env.ArtifactsDir); err != nil {
+		return fmt.Errorf("flushing timing after parallel: %w", err)
+	}
 	return nil
 }
 

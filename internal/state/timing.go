@@ -2,9 +2,12 @@ package state
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -16,6 +19,7 @@ type TimingEntry struct {
 }
 
 type Timing struct {
+	mu      sync.Mutex
 	Entries []TimingEntry `json:"entries"`
 }
 
@@ -28,7 +32,7 @@ func LoadTiming(artifactsDir string) (*Timing, error) {
 	path := timingPath(artifactsDir)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return &Timing{}, nil
 		}
 		return nil, err
@@ -45,10 +49,41 @@ func (t *Timing) save(artifactsDir string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(timingPath(artifactsDir), data, 0644)
+	return writeFileAtomic(timingPath(artifactsDir), data, 0644)
 }
 
-// RecordStart records the start time for a phase.
+// AddStart appends a new timing entry for the given phase.
+func (t *Timing) AddStart(phaseName string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.Entries = append(t.Entries, TimingEntry{
+		Phase: phaseName,
+		Start: time.Now(),
+	})
+}
+
+// AddEnd records the end time for the most recent entry matching phaseName.
+func (t *Timing) AddEnd(phaseName string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for i := len(t.Entries) - 1; i >= 0; i-- {
+		if t.Entries[i].Phase == phaseName && t.Entries[i].End.IsZero() {
+			t.Entries[i].End = time.Now()
+			d := t.Entries[i].End.Sub(t.Entries[i].Start)
+			t.Entries[i].Duration = formatDuration(d)
+			break
+		}
+	}
+}
+
+// Flush writes the in-memory timing data to disk.
+func (t *Timing) Flush(artifactsDir string) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.save(artifactsDir)
+}
+
+// RecordStart records the start time for a phase (load-modify-write from disk).
 func RecordStart(artifactsDir, phaseName string) error {
 	t, err := LoadTiming(artifactsDir)
 	if err != nil {
@@ -61,7 +96,7 @@ func RecordStart(artifactsDir, phaseName string) error {
 	return t.save(artifactsDir)
 }
 
-// RecordEnd records the end time for the most recent entry matching phaseName.
+// RecordEnd records the end time for the most recent entry matching phaseName (load-modify-write from disk).
 func RecordEnd(artifactsDir, phaseName string) error {
 	t, err := LoadTiming(artifactsDir)
 	if err != nil {

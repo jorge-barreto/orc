@@ -18,6 +18,7 @@ type Environment struct {
 	PhaseIndex   int
 	AutoMode     bool
 	PhaseCount   int
+	filteredEnv  []string // lazily populated base env (os.Environ minus CLAUDECODE)
 }
 
 // Vars returns the variable substitution map for prompts and commands.
@@ -38,15 +39,19 @@ type Result struct {
 
 // BuildEnv returns the environment variables for child processes.
 // It inherits the current environment, adds ORC_ variables, and strips CLAUDECODE.
+// The base environment is snapshotted once per Environment and reused across calls.
 func BuildEnv(env *Environment) []string {
-	result := make([]string, 0, len(os.Environ())+10)
-	for _, e := range os.Environ() {
-		key := strings.SplitN(e, "=", 2)[0]
-		if strings.HasPrefix(key, "CLAUDECODE") {
-			continue
+	if env.filteredEnv == nil {
+		for _, e := range os.Environ() {
+			key := strings.SplitN(e, "=", 2)[0]
+			if strings.HasPrefix(key, "CLAUDECODE") {
+				continue
+			}
+			env.filteredEnv = append(env.filteredEnv, e)
 		}
-		result = append(result, e)
 	}
+	result := make([]string, len(env.filteredEnv), len(env.filteredEnv)+6)
+	copy(result, env.filteredEnv)
 	result = append(result,
 		"ORC_TICKET="+env.Ticket,
 		"ORC_ARTIFACTS_DIR="+env.ArtifactsDir,
