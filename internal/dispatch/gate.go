@@ -19,7 +19,7 @@ func RunGate(ctx context.Context, phase config.Phase, env *Environment) (*Result
 	}
 	defer logFile.Close()
 
-	// Auto-approve if --auto mode or skip-with matches
+	// Auto-approve if --auto mode
 	if env.AutoMode {
 		msg := fmt.Sprintf("Gate %q auto-approved (--auto mode)\n", phase.Name)
 		fmt.Print(msg)

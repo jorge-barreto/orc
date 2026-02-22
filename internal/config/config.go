@@ -23,13 +23,11 @@ type Phase struct {
 	Condition    string  `yaml:"condition"`
 	ParallelWith string  `yaml:"parallel-with"`
 	OnFail       *OnFail `yaml:"on-fail"`
-	SkipWith     string  `yaml:"skip-with"`
 }
 
 type Config struct {
 	Name          string  `yaml:"name"`
 	TicketPattern string  `yaml:"ticket-pattern"`
-	MainBranch    string  `yaml:"main-branch"`
 	Phases        []Phase `yaml:"phases"`
 }
 

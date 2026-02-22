@@ -65,6 +65,10 @@ func runCmd() *cli.Command {
 				return fmt.Errorf("loading config: %w", err)
 			}
 
+			if err := config.ValidateTicket(cfg.TicketPattern, ticket); err != nil {
+				return err
+			}
+
 			artifactsDir := filepath.Join(projectRoot, ".artifacts")
 
 			env := &dispatch.Environment{
@@ -82,7 +86,7 @@ func runCmd() *cli.Command {
 				return fmt.Errorf("loading state: %w", err)
 			}
 			st.Ticket = ticket
-			st.Status = "running"
+			st.Status = state.StatusRunning
 
 			// Handle --retry and --from
 			if retry := cmd.Int("retry"); retry > 0 {

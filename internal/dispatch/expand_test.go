@@ -1,7 +1,6 @@
 package dispatch
 
 import (
-	"os"
 	"testing"
 )
 
@@ -22,8 +21,7 @@ func TestExpandVars_Brace(t *testing.T) {
 }
 
 func TestExpandVars_EnvFallback(t *testing.T) {
-	os.Setenv("ORC_TEST_VAR_XYZ", "from-env")
-	defer os.Unsetenv("ORC_TEST_VAR_XYZ")
+	t.Setenv("ORC_TEST_VAR_XYZ", "from-env")
 
 	vars := map[string]string{"TICKET": "t"}
 	got := ExpandVars("$ORC_TEST_VAR_XYZ", vars)
@@ -33,7 +31,6 @@ func TestExpandVars_EnvFallback(t *testing.T) {
 }
 
 func TestExpandVars_MissingEmpty(t *testing.T) {
-	os.Unsetenv("TOTALLY_UNKNOWN_VAR_12345")
 	vars := map[string]string{}
 	got := ExpandVars("$TOTALLY_UNKNOWN_VAR_12345", vars)
 	if got != "" {
@@ -52,10 +49,10 @@ func TestExpandVars_NoVars(t *testing.T) {
 
 func TestExpandVars_AllVars(t *testing.T) {
 	vars := map[string]string{
-		"TICKET":       "T-1",
+		"TICKET":        "T-1",
 		"ARTIFACTS_DIR": "/art",
-		"WORK_DIR":     "/work",
-		"PROJECT_ROOT": "/proj",
+		"WORK_DIR":      "/work",
+		"PROJECT_ROOT":  "/proj",
 	}
 	got := ExpandVars("$TICKET $ARTIFACTS_DIR $WORK_DIR $PROJECT_ROOT", vars)
 	want := "T-1 /art /work /proj"

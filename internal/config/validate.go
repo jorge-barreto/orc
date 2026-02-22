@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -62,9 +63,6 @@ func Validate(cfg *Config, projectRoot string) error {
 			}
 		case "gate":
 			// gates have no required fields beyond name+type
-			if p.Timeout == 0 {
-				p.Timeout = 0 // no timeout for gates
-			}
 		default:
 			return fmt.Errorf("config: phase %q: unknown type %q (must be agent, script, or gate)", p.Name, p.Type)
 		}
@@ -109,6 +107,22 @@ func Validate(cfg *Config, projectRoot string) error {
 		}
 	}
 
+	return nil
+}
+
+// ValidateTicket checks that the ticket string matches the configured pattern.
+// If pattern is empty, any ticket is accepted.
+func ValidateTicket(pattern, ticket string) error {
+	if pattern == "" {
+		return nil
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return fmt.Errorf("config: invalid ticket-pattern %q: %w", pattern, err)
+	}
+	if !re.MatchString(ticket) {
+		return fmt.Errorf("ticket %q does not match pattern %q", ticket, pattern)
+	}
 	return nil
 }
 

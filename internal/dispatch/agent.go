@@ -13,14 +13,39 @@ import (
 	"github.com/jorge-barreto/orc/internal/state"
 )
 
-// RunAgent executes an agent phase by rendering a prompt and invoking claude -p.
-func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Result, error) {
+// runAgent is the shared implementation for agent dispatch.
+func runAgent(ctx context.Context, phase config.Phase, env *Environment, prompt string, logFlags int) (*Result, error) {
 	if phase.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(phase.Timeout)*time.Minute)
 		defer cancel()
 	}
 
+	cmd := exec.CommandContext(ctx, "claude", "-p", prompt,
+		"--model", phase.Model, "--dangerously-skip-permissions")
+	cmd.Dir = env.WorkDir
+	cmd.Env = BuildEnv(env)
+
+	logFile, err := os.OpenFile(state.LogPath(env.ArtifactsDir, env.PhaseIndex), logFlags, 0644)
+	if err != nil {
+		return nil, err
+	}
+	defer logFile.Close()
+
+	var captured bytes.Buffer
+	cmd.Stdout = io.MultiWriter(os.Stdout, logFile, &captured)
+	cmd.Stderr = io.MultiWriter(os.Stderr, logFile, &captured)
+
+	code, err := exitCode(cmd.Run())
+	if err != nil {
+		return nil, err
+	}
+
+	return &Result{ExitCode: code, Output: captured.String()}, nil
+}
+
+// RunAgent executes an agent phase by rendering a prompt and invoking claude -p.
+func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Result, error) {
 	// Read and render the prompt template
 	promptData, err := os.ReadFile(filepath.Join(env.ProjectRoot, phase.Prompt))
 	if err != nil {
@@ -33,68 +58,10 @@ func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 		return nil, err
 	}
 
-	// Invoke claude non-interactively
-	cmd := exec.CommandContext(ctx, "claude", "-p", rendered,
-		"--model", phase.Model, "--dangerously-skip-permissions")
-	cmd.Dir = env.WorkDir
-	cmd.Env = BuildEnv(env)
-
-	logFile, err := os.Create(state.LogPath(env.ArtifactsDir, env.PhaseIndex))
-	if err != nil {
-		return nil, err
-	}
-	defer logFile.Close()
-
-	var captured bytes.Buffer
-	cmd.Stdout = io.MultiWriter(os.Stdout, logFile, &captured)
-	cmd.Stderr = io.MultiWriter(os.Stderr, logFile, &captured)
-
-	err = cmd.Run()
-	exitCode := 0
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
-		} else {
-			return nil, err
-		}
-	}
-
-	return &Result{ExitCode: exitCode, Output: captured.String()}, nil
+	return runAgent(ctx, phase, env, rendered, os.O_CREATE|os.O_WRONLY|os.O_TRUNC)
 }
 
 // RunAgentWithPrompt invokes claude -p with an explicit prompt string (for output re-prompting).
 func RunAgentWithPrompt(ctx context.Context, phase config.Phase, env *Environment, prompt string) (*Result, error) {
-	if phase.Timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(phase.Timeout)*time.Minute)
-		defer cancel()
-	}
-
-	cmd := exec.CommandContext(ctx, "claude", "-p", prompt,
-		"--model", phase.Model, "--dangerously-skip-permissions")
-	cmd.Dir = env.WorkDir
-	cmd.Env = BuildEnv(env)
-
-	logFile, err := os.OpenFile(state.LogPath(env.ArtifactsDir, env.PhaseIndex),
-		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return nil, err
-	}
-	defer logFile.Close()
-
-	var captured bytes.Buffer
-	cmd.Stdout = io.MultiWriter(os.Stdout, logFile, &captured)
-	cmd.Stderr = io.MultiWriter(os.Stderr, logFile, &captured)
-
-	err = cmd.Run()
-	exitCode := 0
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
-		} else {
-			return nil, err
-		}
-	}
-
-	return &Result{ExitCode: exitCode, Output: captured.String()}, nil
+	return runAgent(ctx, phase, env, prompt, os.O_APPEND|os.O_CREATE|os.O_WRONLY)
 }

@@ -259,3 +259,29 @@ func TestPhaseIndex_NotFound(t *testing.T) {
 		t.Fatalf("got %d, want -1", idx)
 	}
 }
+
+func TestValidateTicket_EmptyPattern(t *testing.T) {
+	if err := ValidateTicket("", "anything"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateTicket_Match(t *testing.T) {
+	if err := ValidateTicket(`^[A-Z]+-\d+$`, "ABC-123"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateTicket_NoMatch(t *testing.T) {
+	err := ValidateTicket(`^[A-Z]+-\d+$`, "bad-ticket")
+	if err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("expected no-match error, got %v", err)
+	}
+}
+
+func TestValidateTicket_InvalidRegex(t *testing.T) {
+	err := ValidateTicket(`[invalid`, "ABC-123")
+	if err == nil || !strings.Contains(err.Error(), "invalid ticket-pattern") {
+		t.Fatalf("expected invalid pattern error, got %v", err)
+	}
+}

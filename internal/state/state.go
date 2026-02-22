@@ -2,8 +2,17 @@ package state
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
+)
+
+const (
+	StatusRunning     = "running"
+	StatusCompleted   = "completed"
+	StatusFailed      = "failed"
+	StatusInterrupted = "interrupted"
 )
 
 type State struct {
@@ -21,8 +30,8 @@ func Load(artifactsDir string) (*State, error) {
 	path := statePath(artifactsDir)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return &State{Status: "running"}, nil
+		if errors.Is(err, fs.ErrNotExist) {
+			return &State{Status: StatusRunning}, nil
 		}
 		return nil, err
 	}
@@ -39,7 +48,7 @@ func (s *State) Save(artifactsDir string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(statePath(artifactsDir), data, 0644)
+	return writeFileAtomic(statePath(artifactsDir), data, 0644)
 }
 
 // Advance increments the phase index.
