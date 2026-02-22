@@ -1,7 +1,9 @@
 package runner
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -567,5 +569,94 @@ type funcDispatcher struct {
 
 func (f *funcDispatcher) Dispatch(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
 	return f.fn(ctx, phase, env)
+}
+
+// Fix 1: Condition strings expanded through ExpandVars
+
+func TestRun_ConditionVarExpanded(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "mydir"), 0755)
+
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo", Condition: "test -d $MY_DIR"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	r.Env.CustomVars = map[string]string{"MY_DIR": filepath.Join(dir, "mydir")}
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mock.callCount() != 1 {
+		t.Fatalf("expected 1 call (condition true after expansion), got %d", mock.callCount())
+	}
+}
+
+func TestRun_ConditionVarExpandedFalse(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo", Condition: "test -d $MY_DIR"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	r.Env.CustomVars = map[string]string{"MY_DIR": "/nonexistent/path/that/does/not/exist"}
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mock.callCount() != 0 {
+		t.Fatalf("expected 0 calls (condition false after expansion), got %d", mock.callCount())
+	}
+}
+
+// Fix 5: DryRunPrint vars sorted
+
+func TestDryRunPrint_VarsAreSorted(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	r.Env.CustomVars = map[string]string{
+		"ZEBRA":    "z",
+		"ALPHA":    "a",
+		"MIDDLE":   "m",
+	}
+
+	// Capture stdout
+	oldStdout := os.Stdout
+	pr, pw, _ := os.Pipe()
+	os.Stdout = pw
+
+	r.DryRunPrint()
+
+	pw.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	io.Copy(&buf, pr)
+	output := buf.String()
+
+	alphaIdx := strings.Index(output, "ALPHA")
+	middleIdx := strings.Index(output, "MIDDLE")
+	zebraIdx := strings.Index(output, "ZEBRA")
+
+	if alphaIdx < 0 || middleIdx < 0 || zebraIdx < 0 {
+		t.Fatalf("expected all vars in output, got:\n%s", output)
+	}
+	if !(alphaIdx < middleIdx && middleIdx < zebraIdx) {
+		t.Fatalf("vars not sorted: ALPHA@%d MIDDLE@%d ZEBRA@%d\noutput:\n%s",
+			alphaIdx, middleIdx, zebraIdx, output)
+	}
 }
 

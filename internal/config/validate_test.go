@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func minimalConfig(phases ...Phase) *Config {
@@ -379,5 +381,129 @@ func TestValidate_AgentCwdAccepted(t *testing.T) {
 	cfg := minimalConfig(Phase{Name: "a", Type: "agent", Prompt: "p.md", Cwd: "/tmp"})
 	if err := Validate(cfg, root); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// Fix 2+9: UnmarshalYAML scalar validation and error prefix
+
+func TestUnmarshalYAML_RejectsNonScalarValue(t *testing.T) {
+	input := "FOO:\n  nested: value\n"
+	var ov OrderedVars
+	err := yaml.Unmarshal([]byte(input), &ov)
+	if err == nil || !strings.Contains(err.Error(), "not a scalar") {
+		t.Fatalf("expected non-scalar error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "config: vars:") {
+		t.Fatalf("expected 'config: vars:' prefix, got %v", err)
+	}
+}
+
+func TestUnmarshalYAML_AcceptsScalarValues(t *testing.T) {
+	input := "FOO: bar\nBAZ: \"123\"\n"
+	var ov OrderedVars
+	if err := yaml.Unmarshal([]byte(input), &ov); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ov) != 2 || ov[0].Key != "FOO" || ov[0].Value != "bar" || ov[1].Key != "BAZ" || ov[1].Value != "123" {
+		t.Fatalf("unexpected result: %v", ov)
+	}
+}
+
+func TestUnmarshalYAML_RejectsNonMapping(t *testing.T) {
+	input := "- item1\n- item2\n"
+	var ov OrderedVars
+	err := yaml.Unmarshal([]byte(input), &ov)
+	if err == nil || !strings.Contains(err.Error(), "must be a mapping") {
+		t.Fatalf("expected mapping error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "config: vars:") {
+		t.Fatalf("expected 'config: vars:' prefix, got %v", err)
+	}
+}
+
+// Fix 3: Variable name format validation
+
+func TestValidate_VarsInvalidName_Hyphen(t *testing.T) {
+	cfg := &Config{
+		Name: "test",
+		Vars: OrderedVars{{Key: "my-var", Value: "val"}},
+		Phases: []Phase{scriptPhase("a")},
+	}
+	err := Validate(cfg, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "not a valid variable name") {
+		t.Fatalf("expected invalid name error, got %v", err)
+	}
+}
+
+func TestValidate_VarsInvalidName_StartsWithDigit(t *testing.T) {
+	cfg := &Config{
+		Name: "test",
+		Vars: OrderedVars{{Key: "1FOO", Value: "val"}},
+		Phases: []Phase{scriptPhase("a")},
+	}
+	err := Validate(cfg, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "not a valid variable name") {
+		t.Fatalf("expected invalid name error, got %v", err)
+	}
+}
+
+func TestValidate_VarsInvalidName_Spaces(t *testing.T) {
+	cfg := &Config{
+		Name: "test",
+		Vars: OrderedVars{{Key: "MY VAR", Value: "val"}},
+		Phases: []Phase{scriptPhase("a")},
+	}
+	err := Validate(cfg, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "not a valid variable name") {
+		t.Fatalf("expected invalid name error, got %v", err)
+	}
+}
+
+func TestValidate_VarsInvalidName_Equals(t *testing.T) {
+	cfg := &Config{
+		Name: "test",
+		Vars: OrderedVars{{Key: "FOO=BAR", Value: "val"}},
+		Phases: []Phase{scriptPhase("a")},
+	}
+	err := Validate(cfg, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "not a valid variable name") {
+		t.Fatalf("expected invalid name error, got %v", err)
+	}
+}
+
+func TestValidate_VarsValidName_Underscore(t *testing.T) {
+	cfg := &Config{
+		Name: "test",
+		Vars: OrderedVars{{Key: "_MY_VAR_2", Value: "val"}},
+		Phases: []Phase{scriptPhase("a")},
+	}
+	if err := Validate(cfg, t.TempDir()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// Fix 4: PHASE_INDEX and PHASE_COUNT in builtins blocklist
+
+func TestValidate_VarsBuiltinOverride_PhaseIndex(t *testing.T) {
+	cfg := &Config{
+		Name: "test",
+		Vars: OrderedVars{{Key: "PHASE_INDEX", Value: "0"}},
+		Phases: []Phase{scriptPhase("a")},
+	}
+	err := Validate(cfg, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "overrides a built-in") {
+		t.Fatalf("expected built-in override error, got %v", err)
+	}
+}
+
+func TestValidate_VarsBuiltinOverride_PhaseCount(t *testing.T) {
+	cfg := &Config{
+		Name: "test",
+		Vars: OrderedVars{{Key: "PHASE_COUNT", Value: "5"}},
+		Phases: []Phase{scriptPhase("a")},
+	}
+	err := Validate(cfg, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "overrides a built-in") {
+		t.Fatalf("expected built-in override error, got %v", err)
 	}
 }

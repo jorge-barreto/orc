@@ -22,6 +22,22 @@ type Environment struct {
 	filteredEnv  []string // lazily populated base env (os.Environ minus CLAUDECODE)
 }
 
+// Clone returns a deep copy of the Environment, including CustomVars and filteredEnv.
+func (e *Environment) Clone() *Environment {
+	cp := *e
+	if e.CustomVars != nil {
+		cp.CustomVars = make(map[string]string, len(e.CustomVars))
+		for k, v := range e.CustomVars {
+			cp.CustomVars[k] = v
+		}
+	}
+	if e.filteredEnv != nil {
+		cp.filteredEnv = make([]string, len(e.filteredEnv))
+		copy(cp.filteredEnv, e.filteredEnv)
+	}
+	return &cp
+}
+
 // Vars returns the variable substitution map for prompts and commands.
 // Custom vars are included first; built-ins always win (defense in depth).
 func (e *Environment) Vars() map[string]string {
@@ -41,7 +57,11 @@ func (e *Environment) Vars() map[string]string {
 // Otherwise, the environment's WorkDir is used.
 func PhaseWorkDir(phase config.Phase, env *Environment) string {
 	if phase.Cwd != "" {
-		return ExpandVars(phase.Cwd, env.Vars())
+		expanded := ExpandVars(phase.Cwd, env.Vars())
+		if expanded == "" {
+			return env.WorkDir
+		}
+		return expanded
 	}
 	return env.WorkDir
 }

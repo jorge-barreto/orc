@@ -3,6 +3,8 @@ package dispatch
 import (
 	"strings"
 	"testing"
+
+	"github.com/jorge-barreto/orc/internal/config"
 )
 
 func TestVars_AllKeys(t *testing.T) {
@@ -126,5 +128,109 @@ func TestBuildEnv_StripsCLAUDECODE(t *testing.T) {
 		if strings.HasPrefix(e, "CLAUDECODE") {
 			t.Fatalf("CLAUDECODE var not stripped: %s", e)
 		}
+	}
+}
+
+// Fix 6: Clone deep-copies
+
+func TestClone_DeepCopiesCustomVars(t *testing.T) {
+	env := &Environment{
+		ProjectRoot:  "/proj",
+		WorkDir:      "/work",
+		ArtifactsDir: "/art",
+		Ticket:       "T-1",
+		CustomVars:   map[string]string{"A": "1", "B": "2"},
+	}
+	cp := env.Clone()
+	cp.CustomVars["A"] = "changed"
+	cp.CustomVars["C"] = "new"
+	if env.CustomVars["A"] != "1" {
+		t.Fatalf("original CustomVars mutated: A = %q", env.CustomVars["A"])
+	}
+	if _, ok := env.CustomVars["C"]; ok {
+		t.Fatal("original CustomVars gained key C from clone")
+	}
+}
+
+func TestClone_NilCustomVars(t *testing.T) {
+	env := &Environment{
+		ProjectRoot:  "/proj",
+		WorkDir:      "/work",
+		ArtifactsDir: "/art",
+		Ticket:       "T-1",
+	}
+	cp := env.Clone()
+	if cp.CustomVars != nil {
+		t.Fatalf("expected nil CustomVars in clone, got %v", cp.CustomVars)
+	}
+	// Scalar fields should still be copied
+	if cp.ProjectRoot != "/proj" {
+		t.Fatalf("ProjectRoot = %q", cp.ProjectRoot)
+	}
+}
+
+func TestClone_DeepCopiesFilteredEnv(t *testing.T) {
+	env := &Environment{
+		ProjectRoot:  "/proj",
+		WorkDir:      "/work",
+		ArtifactsDir: "/art",
+		Ticket:       "T-1",
+	}
+	// Trigger filteredEnv population
+	BuildEnv(env)
+	if env.filteredEnv == nil {
+		t.Fatal("filteredEnv should be populated after BuildEnv")
+	}
+
+	cp := env.Clone()
+	origLen := len(env.filteredEnv)
+	cp.filteredEnv = append(cp.filteredEnv, "EXTRA=val")
+	if len(env.filteredEnv) != origLen {
+		t.Fatalf("original filteredEnv mutated: len went from %d to %d", origLen, len(env.filteredEnv))
+	}
+}
+
+// Fix 8: PhaseWorkDir fallback for undefined var
+
+func TestPhaseWorkDir_UndefinedVarFallsBack(t *testing.T) {
+	env := &Environment{
+		ProjectRoot:  "/proj",
+		WorkDir:      "/work",
+		ArtifactsDir: "/art",
+		Ticket:       "T-1",
+	}
+	phase := config.Phase{Cwd: "$UNDEFINED"}
+	dir := PhaseWorkDir(phase, env)
+	if dir != "/work" {
+		t.Fatalf("expected fallback to WorkDir /work, got %q", dir)
+	}
+}
+
+func TestPhaseWorkDir_ExpandedCwd(t *testing.T) {
+	env := &Environment{
+		ProjectRoot:  "/proj",
+		WorkDir:      "/work",
+		ArtifactsDir: "/art",
+		Ticket:       "T-1",
+		CustomVars:   map[string]string{"MY_DIR": "/custom"},
+	}
+	phase := config.Phase{Cwd: "$MY_DIR/sub"}
+	dir := PhaseWorkDir(phase, env)
+	if dir != "/custom/sub" {
+		t.Fatalf("expected /custom/sub, got %q", dir)
+	}
+}
+
+func TestPhaseWorkDir_NoCwd(t *testing.T) {
+	env := &Environment{
+		ProjectRoot:  "/proj",
+		WorkDir:      "/work",
+		ArtifactsDir: "/art",
+		Ticket:       "T-1",
+	}
+	phase := config.Phase{}
+	dir := PhaseWorkDir(phase, env)
+	if dir != "/work" {
+		t.Fatalf("expected /work, got %q", dir)
 	}
 }

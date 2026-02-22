@@ -39,12 +39,20 @@ type OrderedVars []VarEntry
 // UnmarshalYAML reads a YAML mapping node and preserves key order.
 func (ov *OrderedVars) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind != yaml.MappingNode {
-		return fmt.Errorf("vars must be a mapping")
+		return fmt.Errorf("config: vars: must be a mapping")
 	}
 	for i := 0; i < len(value.Content)-1; i += 2 {
+		keyNode := value.Content[i]
+		valNode := value.Content[i+1]
+		if keyNode.Kind != yaml.ScalarNode {
+			return fmt.Errorf("config: vars: key at position %d is not a scalar", i/2+1)
+		}
+		if valNode.Kind != yaml.ScalarNode {
+			return fmt.Errorf("config: vars: value for %q is not a scalar (nested maps/sequences are not supported)", keyNode.Value)
+		}
 		*ov = append(*ov, VarEntry{
-			Key:   value.Content[i].Value,
-			Value: value.Content[i+1].Value,
+			Key:   keyNode.Value,
+			Value: valNode.Value,
 		})
 	}
 	return nil

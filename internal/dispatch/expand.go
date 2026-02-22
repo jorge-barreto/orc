@@ -21,16 +21,14 @@ func ExpandVars(template string, vars map[string]string) string {
 // Each value is expanded using built-ins plus all previously expanded custom vars.
 func ExpandConfigVars(vars config.OrderedVars, builtins map[string]string) map[string]string {
 	result := make(map[string]string, len(vars))
+	lookup := make(map[string]string, len(builtins)+len(vars))
+	for k, v := range builtins {
+		lookup[k] = v
+	}
 	for _, entry := range vars {
-		// Build lookup map: builtins + previously expanded vars
-		lookup := make(map[string]string, len(builtins)+len(result))
-		for k, v := range builtins {
-			lookup[k] = v
-		}
-		for k, v := range result {
-			lookup[k] = v
-		}
-		result[entry.Key] = ExpandVars(entry.Value, lookup)
+		expanded := ExpandVars(entry.Value, lookup)
+		result[entry.Key] = expanded
+		lookup[entry.Key] = expanded
 	}
 	return result
 }
