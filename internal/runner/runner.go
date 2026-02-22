@@ -70,7 +70,7 @@ func (r *Runner) Run(ctx context.Context) error {
 
 		// Evaluate condition
 		if phase.Condition != "" {
-			if !evalCondition(ctx, phase.Condition, r.Env) {
+			if !evalCondition(ctx, phase, r.Env) {
 				ux.PhaseSkip(i, phase.Name)
 				r.State.Advance()
 				if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
@@ -213,6 +213,15 @@ func (r *Runner) Run(ctx context.Context) error {
 func (r *Runner) DryRunPrint() {
 	total := len(r.Config.Phases)
 	fmt.Printf("\n%sDry run — %d phases:%s\n\n", ux.Bold, total, ux.Reset)
+
+	if len(r.Env.CustomVars) > 0 {
+		fmt.Printf("  %sVars:%s\n", ux.Bold, ux.Reset)
+		for k, v := range r.Env.CustomVars {
+			fmt.Printf("    %s = %s\n", k, v)
+		}
+		fmt.Println()
+	}
+
 	for i, p := range r.Config.Phases {
 		fmt.Printf("  %s%d.%s %s%s%s (%s)", ux.Cyan, i+1, ux.Reset, ux.Bold, p.Name, ux.Reset, p.Type)
 		if p.Description != "" {
@@ -239,6 +248,10 @@ func (r *Runner) DryRunPrint() {
 		}
 		if p.Condition != "" {
 			fmt.Printf("     condition: %s\n", p.Condition)
+		}
+		if p.Cwd != "" {
+			expanded := dispatch.ExpandVars(p.Cwd, r.Env.Vars())
+			fmt.Printf("     cwd: %s\n", expanded)
 		}
 		if p.ParallelWith != "" {
 			fmt.Printf("     parallel-with: %s\n", p.ParallelWith)
@@ -352,9 +365,9 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 }
 
 // evalCondition runs a shell command and returns true if it exits 0.
-func evalCondition(ctx context.Context, condition string, env *dispatch.Environment) bool {
-	cmd := exec.CommandContext(ctx, "bash", "-c", condition)
-	cmd.Dir = env.WorkDir
+func evalCondition(ctx context.Context, phase config.Phase, env *dispatch.Environment) bool {
+	cmd := exec.CommandContext(ctx, "bash", "-c", phase.Condition)
+	cmd.Dir = dispatch.PhaseWorkDir(phase, env)
 	cmd.Env = dispatch.BuildEnv(env)
 	return cmd.Run() == nil
 }
