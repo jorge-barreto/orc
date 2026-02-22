@@ -17,6 +17,8 @@ You define your workflow as a series of **phases** in a YAML config file. Each p
 - **On-fail retry loops**: Failed phases can loop back to an earlier phase with feedback, up to a configurable max
 - **Parallel execution**: Run two phases concurrently with `parallel-with`
 - **Conditional phases**: Skip phases based on a shell command exit code
+- **Custom variables**: Define project-specific variables under `vars:` that reference built-ins and each other
+- **Per-phase working directory**: Set `cwd` on script/agent phases for worktree workflows
 - **Resume from interruption**: State is saved after every phase — Ctrl+C and resume later
 - **Dry-run mode**: Preview the phase plan without executing anything
 - **Output validation**: Declare expected output files; agents are re-prompted once if outputs are missing
@@ -104,6 +106,19 @@ Shows the current workflow progress, completed phases with timing, remaining pha
 orc status PROJ-123
 ```
 
+### `orc docs [topic]`
+
+Shows built-in documentation. With no argument, lists available topics. With a topic name, prints the full article.
+
+```bash
+orc docs               # list topics
+orc docs config        # config file reference
+orc docs variables     # template variables and custom vars
+orc docs phases        # phase type details
+```
+
+Topics: `quickstart`, `config`, `phases`, `variables`, `runner`, `artifacts`.
+
 ## Configuration Reference
 
 Workflows are defined in `.orc/config.yaml`.
@@ -114,6 +129,7 @@ Workflows are defined in `.orc/config.yaml`.
 |-------|------|----------|-------------|
 | `name` | string | Yes | Project name |
 | `ticket-pattern` | string | No | Regex pattern for ticket IDs (anchored automatically for full-match) |
+| `vars` | map | No | Custom variables expanded at startup (declaration order) |
 | `phases` | list | Yes | Ordered list of phases |
 
 ### Phase fields
@@ -131,6 +147,7 @@ Workflows are defined in `.orc/config.yaml`.
 | `condition` | string | — | Shell command; phase is skipped if exit code is non-zero |
 | `parallel-with` | string | — | Name of another phase to run concurrently |
 | `on-fail` | object | — | Retry loop config: `goto` (phase name) and `max` (default 2) |
+| `cwd` | string | — | Working directory for this phase (expanded with vars). Not supported on gate phases. |
 
 ### Phase types
 
@@ -146,13 +163,14 @@ Workflows are defined in `.orc/config.yaml`.
 name: my-service
 ticket-pattern: '[A-Z]+-\d+'
 
+vars:
+  WORKTREE: $PROJECT_ROOT/.worktrees/$TICKET
+
 phases:
   - name: setup
     type: script
-    description: Prepare workspace
-    run: |
-      mkdir -p $ARTIFACTS_DIR
-      echo "Working on $ORC_TICKET"
+    description: Create worktree
+    run: git worktree add $WORKTREE
 
   - name: design
     type: agent
@@ -160,6 +178,7 @@ phases:
     prompt: .orc/phases/design.md
     model: sonnet
     timeout: 20
+    cwd: $WORKTREE
     outputs:
       - design.md
 
@@ -169,6 +188,7 @@ phases:
     prompt: .orc/phases/implement.md
     model: opus
     timeout: 45
+    cwd: $WORKTREE
     outputs:
       - implementation.md
     on-fail:
@@ -179,12 +199,14 @@ phases:
     type: script
     description: Run test suite
     run: make test
+    cwd: $WORKTREE
     condition: test -f Makefile
 
   - name: lint
     type: script
     description: Run linter
     run: make lint
+    cwd: $WORKTREE
     parallel-with: test
 
   - name: review
@@ -203,7 +225,21 @@ Variables are expanded in agent prompt templates and script `run` commands using
 | `$WORK_DIR` | Absolute path to the working directory (project root) |
 | `$PROJECT_ROOT` | Absolute path to the project root (where `.orc/` lives) |
 
-If a variable is not in the built-in set, `os.Expand` falls back to environment variables.
+If a variable is not in the built-in set or custom vars, `os.Expand` falls back to environment variables.
+
+### Custom Variables
+
+Define project-specific variables under `vars:` in `config.yaml`:
+
+```yaml
+vars:
+  WORKTREE: $PROJECT_ROOT/.worktrees/$TICKET
+  SRC: $WORKTREE/src
+```
+
+Variables are expanded in declaration order, so later vars can reference earlier ones (`SRC` references `WORKTREE` above). Custom vars are available everywhere built-ins are — prompt templates, `run` commands, and `cwd` fields.
+
+Custom vars cannot override built-in variables (`TICKET`, `ARTIFACTS_DIR`, `WORK_DIR`, `PROJECT_ROOT`).
 
 ## Artifacts Directory
 
@@ -271,6 +307,7 @@ Child processes (scripts and agents) inherit the parent environment with these a
 | `ORC_PROJECT_ROOT` | Project root directory |
 | `ORC_PHASE_INDEX` | Current phase index (0-based) |
 | `ORC_PHASE_COUNT` | Total number of phases |
+| `ORC_<NAME>` | Custom vars get an `ORC_` prefix (e.g., `WORKTREE` → `ORC_WORKTREE`) |
 
 The `CLAUDECODE` environment variable is stripped from child processes so that `claude -p` can run without nesting conflicts.
 

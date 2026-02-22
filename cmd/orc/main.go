@@ -10,6 +10,7 @@ import (
 
 	"github.com/jorge-barreto/orc/internal/config"
 	"github.com/jorge-barreto/orc/internal/dispatch"
+	"github.com/jorge-barreto/orc/internal/docs"
 	"github.com/jorge-barreto/orc/internal/runner"
 	"github.com/jorge-barreto/orc/internal/scaffold"
 	"github.com/jorge-barreto/orc/internal/state"
@@ -19,12 +20,14 @@ import (
 
 func main() {
 	app := &cli.Command{
-		Name:  "orc",
-		Usage: "Deterministic agent orchestrator",
+		Name:        "orc",
+		Usage:       "Deterministic agent orchestrator",
+		Description: "Run 'orc docs' for documentation on config syntax, variables, phases, and more.",
 		Commands: []*cli.Command{
 			initCmd(),
 			runCmd(),
 			statusCmd(),
+			docsCmd(),
 		},
 	}
 
@@ -205,6 +208,31 @@ func initCmd() *cli.Command {
 				return err
 			}
 			return scaffold.Init(dir)
+		},
+	}
+}
+
+func docsCmd() *cli.Command {
+	return &cli.Command{
+		Name:      "docs",
+		Usage:     "Show documentation",
+		ArgsUsage: "[topic]",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			name := cmd.Args().First()
+			if name == "" {
+				fmt.Print("\nAvailable topics:\n\n")
+				for _, t := range docs.All() {
+					fmt.Printf("  %-14s %s\n", t.Name, t.Summary)
+				}
+				fmt.Println("\nRun 'orc docs <topic>' to read a topic.")
+				return nil
+			}
+			t, err := docs.Get(name)
+			if err != nil {
+				return err
+			}
+			fmt.Print(t.Content)
+			return nil
 		},
 	}
 }
