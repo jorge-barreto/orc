@@ -103,7 +103,7 @@ func (r *Runner) Run(ctx context.Context) error {
 		start := time.Now()
 		result, err := r.Dispatcher.Dispatch(ctx, phase, r.Env)
 
-		if err != nil && ctx.Err() != nil {
+		if ctx.Err() != nil {
 			return r.failAndHint(state.StatusInterrupted, ctx.Err())
 		}
 
@@ -113,6 +113,9 @@ func (r *Runner) Run(ctx context.Context) error {
 				errMsg = err.Error()
 			}
 			ux.PhaseFail(i, phase.Name, errMsg)
+			if phase.Type == "agent" {
+				fmt.Fprintf(os.Stderr, "  hint: if the agent couldn't perform actions, check your .claude/settings.local.json permissions\n")
+			}
 
 			// Handle on-fail
 			if phase.OnFail != nil {
@@ -125,7 +128,7 @@ func (r *Runner) Run(ctx context.Context) error {
 
 				loopCounts[phase.Name] = count
 				if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
-					return err
+					return r.failAndHint(state.StatusFailed, fmt.Errorf("saving loop counts: %w", err))
 				}
 
 				// Write feedback from failed phase
@@ -175,6 +178,9 @@ func (r *Runner) Run(ctx context.Context) error {
 			if len(missing) > 0 {
 				errMsg := fmt.Sprintf("missing outputs: %v", missing)
 				ux.PhaseFail(i, phase.Name, errMsg)
+				if phase.Type == "agent" {
+					fmt.Fprintf(os.Stderr, "  hint: if the agent couldn't perform actions, check your .claude/settings.local.json permissions\n")
+				}
 				return r.failAndHint(state.StatusFailed, fmt.Errorf("phase %q: %s", phase.Name, errMsg))
 			}
 		}
@@ -242,7 +248,7 @@ func (r *Runner) DryRunPrint() {
 }
 
 // runParallel runs two phases concurrently.
-func (r *Runner) runParallel(ctx context.Context, idx1, idx2, total int, loopCounts map[string]int) error {
+func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, loopCounts map[string]int) error {
 	phase1 := r.Config.Phases[idx1]
 	phase2 := r.Config.Phases[idx2]
 
@@ -252,7 +258,7 @@ func (r *Runner) runParallel(ctx context.Context, idx1, idx2, total int, loopCou
 	r.Timing.AddStart(phase1.Name)
 	r.Timing.AddStart(phase2.Name)
 
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
 
 	type phaseResult struct {
@@ -309,7 +315,25 @@ func (r *Runner) runParallel(ctx context.Context, idx1, idx2, total int, loopCou
 	}
 
 	if firstErr != nil {
+		if parentCtx.Err() != nil {
+			return r.failAndHint(state.StatusInterrupted, parentCtx.Err())
+		}
 		return r.failAndHint(state.StatusFailed, firstErr)
+	}
+
+	// Check declared outputs for both phases
+	for _, pi := range []struct {
+		idx   int
+		phase config.Phase
+	}{{idx1, phase1}, {idx2, phase2}} {
+		if len(pi.phase.Outputs) > 0 {
+			missing := state.CheckOutputs(r.Env.ArtifactsDir, pi.phase.Outputs)
+			if len(missing) > 0 {
+				errMsg := fmt.Sprintf("missing outputs: %v", missing)
+				ux.PhaseFail(pi.idx, pi.phase.Name, errMsg)
+				return r.failAndHint(state.StatusFailed, fmt.Errorf("phase %q: %s", pi.phase.Name, errMsg))
+			}
+		}
 	}
 
 	// Advance past both phases — set to the one after the later index
