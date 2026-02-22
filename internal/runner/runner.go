@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -216,8 +217,13 @@ func (r *Runner) DryRunPrint() {
 
 	if len(r.Env.CustomVars) > 0 {
 		fmt.Printf("  %sVars:%s\n", ux.Bold, ux.Reset)
-		for k, v := range r.Env.CustomVars {
-			fmt.Printf("    %s = %s\n", k, v)
+		keys := make([]string, 0, len(r.Env.CustomVars))
+		for k := range r.Env.CustomVars {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			fmt.Printf("    %s = %s\n", k, r.Env.CustomVars[k])
 		}
 		fmt.Println()
 	}
@@ -288,17 +294,17 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 
 	go func() {
 		defer wg.Done()
-		env1 := *r.Env
+		env1 := r.Env.Clone()
 		env1.PhaseIndex = idx1
-		res, err := r.Dispatcher.Dispatch(ctx, phase1, &env1)
+		res, err := r.Dispatcher.Dispatch(ctx, phase1, env1)
 		results <- phaseResult{idx: idx1, result: res, err: err}
 	}()
 
 	go func() {
 		defer wg.Done()
-		env2 := *r.Env
+		env2 := r.Env.Clone()
 		env2.PhaseIndex = idx2
-		res, err := r.Dispatcher.Dispatch(ctx, phase2, &env2)
+		res, err := r.Dispatcher.Dispatch(ctx, phase2, env2)
 		results <- phaseResult{idx: idx2, result: res, err: err}
 	}()
 
@@ -366,7 +372,8 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 
 // evalCondition runs a shell command and returns true if it exits 0.
 func evalCondition(ctx context.Context, phase config.Phase, env *dispatch.Environment) bool {
-	cmd := exec.CommandContext(ctx, "bash", "-c", phase.Condition)
+	expanded := dispatch.ExpandVars(phase.Condition, env.Vars())
+	cmd := exec.CommandContext(ctx, "bash", "-c", expanded)
 	cmd.Dir = dispatch.PhaseWorkDir(phase, env)
 	cmd.Env = dispatch.BuildEnv(env)
 	return cmd.Run() == nil

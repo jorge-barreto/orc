@@ -15,6 +15,8 @@ var validModels = map[string]bool{
 	"haiku":  true,
 }
 
+var varNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
 // Validate checks the config for errors and sets defaults.
 func Validate(cfg *Config, projectRoot string) error {
 	if cfg.Name == "" {
@@ -28,11 +30,15 @@ func Validate(cfg *Config, projectRoot string) error {
 	builtins := map[string]bool{
 		"TICKET": true, "ARTIFACTS_DIR": true,
 		"WORK_DIR": true, "PROJECT_ROOT": true,
+		"PHASE_INDEX": true, "PHASE_COUNT": true,
 	}
 	seenVars := make(map[string]bool)
 	for _, v := range cfg.Vars {
 		if v.Key == "" {
 			return fmt.Errorf("config: vars: empty variable name")
+		}
+		if !varNameRe.MatchString(v.Key) {
+			return fmt.Errorf("config: vars: %q is not a valid variable name (must match [A-Za-z_][A-Za-z0-9_]*)", v.Key)
 		}
 		if builtins[v.Key] {
 			return fmt.Errorf("config: vars: %q overrides a built-in variable", v.Key)
