@@ -2,7 +2,6 @@ package runner
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -150,7 +149,6 @@ func TestRun_OnFailLoopsBack(t *testing.T) {
 	mock.results["c"] = nil // will be handled by custom logic below
 
 	// Override dispatch to track c's behavior
-	callNum := 0
 	customMock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
 		mock.mu.Lock()
 		mock.calls = append(mock.calls, phase.Name)
@@ -161,7 +159,6 @@ func TestRun_OnFailLoopsBack(t *testing.T) {
 			failCount++
 			n := failCount
 			mu.Unlock()
-			_ = callNum
 			if n == 1 {
 				return &dispatch.Result{ExitCode: 1, Output: "c failed"}, nil
 			}
@@ -475,9 +472,3 @@ func (f *funcDispatcher) Dispatch(ctx context.Context, phase config.Phase, env *
 	return f.fn(ctx, phase, env)
 }
 
-// Suppress ux output during tests by ensuring it doesn't panic.
-// The ux package writes to stdout which is fine in test output.
-func init() {
-	// No-op: ux functions write to stdout, which is captured by `go test`.
-	_ = fmt.Sprintf // avoid unused import
-}

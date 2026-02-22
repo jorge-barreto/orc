@@ -88,18 +88,33 @@ func runCmd() *cli.Command {
 			st.Ticket = ticket
 			st.Status = state.StatusRunning
 
-			// Handle --retry and --from
-			if retry := cmd.Int("retry"); retry > 0 {
+			// Handle --retry and --from (mutually exclusive)
+			retry := cmd.Int("retry")
+			from := cmd.Int("from")
+			if retry > 0 && from > 0 {
+				return fmt.Errorf("--retry and --from are mutually exclusive")
+			}
+			if retry > 0 {
 				if int(retry) > len(cfg.Phases) {
 					return fmt.Errorf("--retry %d exceeds phase count (%d)", retry, len(cfg.Phases))
 				}
 				st.SetPhase(int(retry) - 1)
 			}
-			if from := cmd.Int("from"); from > 0 {
+			if from > 0 {
 				if int(from) > len(cfg.Phases) {
 					return fmt.Errorf("--from %d exceeds phase count (%d)", from, len(cfg.Phases))
 				}
 				st.SetPhase(int(from) - 1)
+			}
+
+			// Reset loop counts when resuming from a specific phase
+			if retry > 0 || from > 0 {
+				if err := state.EnsureDir(artifactsDir); err != nil {
+					return err
+				}
+				if err := state.SaveLoopCounts(artifactsDir, make(map[string]int)); err != nil {
+					return fmt.Errorf("resetting loop counts: %w", err)
+				}
 			}
 
 			r := &runner.Runner{

@@ -197,6 +197,16 @@ func TestValidate_ParallelWithUnknown(t *testing.T) {
 	}
 }
 
+func TestValidate_ParallelWithOnFail(t *testing.T) {
+	cfg := minimalConfig(
+		scriptPhase("a"),
+		Phase{Name: "b", Type: "script", Run: "echo", ParallelWith: "a", OnFail: &OnFail{Goto: "a"}},
+	)
+	if err := Validate(cfg, t.TempDir()); err == nil || !strings.Contains(err.Error(), "cannot be combined") {
+		t.Fatalf("expected parallel+on-fail error, got %v", err)
+	}
+}
+
 func TestValidate_GateMinimal(t *testing.T) {
 	cfg := minimalConfig(Phase{Name: "review", Type: "gate"})
 	if err := Validate(cfg, t.TempDir()); err != nil {
@@ -283,5 +293,20 @@ func TestValidateTicket_InvalidRegex(t *testing.T) {
 	err := ValidateTicket(`[invalid`, "ABC-123")
 	if err == nil || !strings.Contains(err.Error(), "invalid ticket-pattern") {
 		t.Fatalf("expected invalid pattern error, got %v", err)
+	}
+}
+
+func TestValidateTicket_PartialMatchRejected(t *testing.T) {
+	// Unanchored pattern should NOT match a ticket with trailing injection
+	err := ValidateTicket(`[A-Z]+-\d+`, "PROJ-1 && rm -rf /")
+	if err == nil {
+		t.Fatal("expected partial match to be rejected")
+	}
+}
+
+func TestValidateTicket_UnanchoredFullMatch(t *testing.T) {
+	// Unanchored pattern should still match a valid ticket
+	if err := ValidateTicket(`[A-Z]+-\d+`, "PROJ-123"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

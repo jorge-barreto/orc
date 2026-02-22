@@ -83,6 +83,9 @@ func (r *Runner) Run(ctx context.Context) error {
 		// Handle parallel-with
 		if phase.ParallelWith != "" {
 			partnerIdx := r.Config.PhaseIndex(phase.ParallelWith)
+			if partnerIdx < 0 {
+				return r.failAndHint(state.StatusFailed, fmt.Errorf("phase %q: parallel-with %q not found", phase.Name, phase.ParallelWith))
+			}
 			if partnerIdx > i {
 				err := r.runParallel(ctx, i, partnerIdx, total, loopCounts)
 				if err != nil {
@@ -138,6 +141,9 @@ func (r *Runner) Run(ctx context.Context) error {
 				}
 
 				gotoIdx := r.Config.PhaseIndex(phase.OnFail.Goto)
+				if gotoIdx < 0 {
+					return r.failAndHint(state.StatusFailed, fmt.Errorf("phase %q: on-fail.goto %q not found", phase.Name, phase.OnFail.Goto))
+				}
 				ux.LoopBack(phase.Name, phase.OnFail.Goto, count, phase.OnFail.Max)
 
 				r.State.SetPhase(gotoIdx)
@@ -175,6 +181,9 @@ func (r *Runner) Run(ctx context.Context) error {
 
 		duration := time.Since(start)
 		r.Timing.AddEnd(phase.Name)
+		if err := r.Timing.Flush(r.Env.ArtifactsDir); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to flush timing: %v\n", err)
+		}
 		r.State.Advance()
 		r.State.Status = state.StatusRunning
 		if err := r.State.Save(r.Env.ArtifactsDir); err != nil {

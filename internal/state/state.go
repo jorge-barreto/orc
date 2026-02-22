@@ -18,7 +18,7 @@ const (
 type State struct {
 	PhaseIndex int    `json:"phase_index"`
 	Ticket     string `json:"ticket"`
-	Status     string `json:"status"` // running, completed, failed
+	Status     string `json:"status"` // running, completed, failed, interrupted
 }
 
 func statePath(artifactsDir string) string {

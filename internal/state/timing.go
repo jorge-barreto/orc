@@ -83,36 +83,6 @@ func (t *Timing) Flush(artifactsDir string) error {
 	return t.save(artifactsDir)
 }
 
-// RecordStart records the start time for a phase (load-modify-write from disk).
-func RecordStart(artifactsDir, phaseName string) error {
-	t, err := LoadTiming(artifactsDir)
-	if err != nil {
-		return err
-	}
-	t.Entries = append(t.Entries, TimingEntry{
-		Phase: phaseName,
-		Start: time.Now(),
-	})
-	return t.save(artifactsDir)
-}
-
-// RecordEnd records the end time for the most recent entry matching phaseName (load-modify-write from disk).
-func RecordEnd(artifactsDir, phaseName string) error {
-	t, err := LoadTiming(artifactsDir)
-	if err != nil {
-		return err
-	}
-	for i := len(t.Entries) - 1; i >= 0; i-- {
-		if t.Entries[i].Phase == phaseName && t.Entries[i].End.IsZero() {
-			t.Entries[i].End = time.Now()
-			d := t.Entries[i].End.Sub(t.Entries[i].Start)
-			t.Entries[i].Duration = formatDuration(d)
-			break
-		}
-	}
-	return t.save(artifactsDir)
-}
-
 func formatDuration(d time.Duration) string {
 	m := int(d.Minutes())
 	s := int(d.Seconds()) % 60
