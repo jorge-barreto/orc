@@ -310,3 +310,74 @@ func TestValidateTicket_UnanchoredFullMatch(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestValidate_VarsBuiltinOverride(t *testing.T) {
+	cfg := &Config{
+		Name: "test",
+		Vars: OrderedVars{{Key: "TICKET", Value: "bad"}},
+		Phases: []Phase{scriptPhase("a")},
+	}
+	err := Validate(cfg, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "overrides a built-in") {
+		t.Fatalf("expected built-in override error, got %v", err)
+	}
+}
+
+func TestValidate_VarsEmptyName(t *testing.T) {
+	cfg := &Config{
+		Name: "test",
+		Vars: OrderedVars{{Key: "", Value: "val"}},
+		Phases: []Phase{scriptPhase("a")},
+	}
+	err := Validate(cfg, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "empty variable name") {
+		t.Fatalf("expected empty name error, got %v", err)
+	}
+}
+
+func TestValidate_VarsDuplicate(t *testing.T) {
+	cfg := &Config{
+		Name: "test",
+		Vars: OrderedVars{{Key: "FOO", Value: "1"}, {Key: "FOO", Value: "2"}},
+		Phases: []Phase{scriptPhase("a")},
+	}
+	err := Validate(cfg, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "duplicate variable") {
+		t.Fatalf("expected duplicate var error, got %v", err)
+	}
+}
+
+func TestValidate_VarsCustomAccepted(t *testing.T) {
+	cfg := &Config{
+		Name: "test",
+		Vars: OrderedVars{{Key: "MY_DIR", Value: "/tmp/test"}},
+		Phases: []Phase{scriptPhase("a")},
+	}
+	if err := Validate(cfg, t.TempDir()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_GateCwdRejected(t *testing.T) {
+	cfg := minimalConfig(Phase{Name: "g", Type: "gate", Cwd: "/tmp"})
+	err := Validate(cfg, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "not supported on gate") {
+		t.Fatalf("expected gate+cwd error, got %v", err)
+	}
+}
+
+func TestValidate_ScriptCwdAccepted(t *testing.T) {
+	cfg := minimalConfig(Phase{Name: "s", Type: "script", Run: "echo", Cwd: "/tmp"})
+	if err := Validate(cfg, t.TempDir()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_AgentCwdAccepted(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "p.md"), []byte("x"), 0644)
+	cfg := minimalConfig(Phase{Name: "a", Type: "agent", Prompt: "p.md", Cwd: "/tmp"})
+	if err := Validate(cfg, root); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

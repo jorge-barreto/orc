@@ -24,7 +24,7 @@ func runAgent(ctx context.Context, phase config.Phase, env *Environment, prompt 
 
 	cmd := exec.CommandContext(ctx, "claude", "-p", prompt,
 		"--model", phase.Model)
-	cmd.Dir = env.WorkDir
+	cmd.Dir = PhaseWorkDir(phase, env)
 	cmd.Env = BuildEnv(env)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -23,12 +24,37 @@ type Phase struct {
 	Condition    string  `yaml:"condition"`
 	ParallelWith string  `yaml:"parallel-with"`
 	OnFail       *OnFail `yaml:"on-fail"`
+	Cwd          string  `yaml:"cwd"`
+}
+
+// VarEntry holds a single key-value pair from the vars map.
+type VarEntry struct {
+	Key   string
+	Value string
+}
+
+// OrderedVars preserves YAML declaration order for variable entries.
+type OrderedVars []VarEntry
+
+// UnmarshalYAML reads a YAML mapping node and preserves key order.
+func (ov *OrderedVars) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind != yaml.MappingNode {
+		return fmt.Errorf("vars must be a mapping")
+	}
+	for i := 0; i < len(value.Content)-1; i += 2 {
+		*ov = append(*ov, VarEntry{
+			Key:   value.Content[i].Value,
+			Value: value.Content[i+1].Value,
+		})
+	}
+	return nil
 }
 
 type Config struct {
-	Name          string  `yaml:"name"`
-	TicketPattern string  `yaml:"ticket-pattern"`
-	Phases        []Phase `yaml:"phases"`
+	Name          string      `yaml:"name"`
+	TicketPattern string      `yaml:"ticket-pattern"`
+	Vars          OrderedVars `yaml:"vars"`
+	Phases        []Phase     `yaml:"phases"`
 }
 
 // Load reads a YAML config file and returns a validated Config.

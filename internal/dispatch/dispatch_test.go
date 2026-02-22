@@ -70,6 +70,48 @@ func TestBuildEnv_OrcVars(t *testing.T) {
 	}
 }
 
+func TestVars_IncludesCustomVars(t *testing.T) {
+	env := &Environment{
+		ProjectRoot:  "/proj",
+		WorkDir:      "/work",
+		ArtifactsDir: "/art",
+		Ticket:       "T-1",
+		CustomVars:   map[string]string{"MY_DIR": "/proj/sub"},
+	}
+	vars := env.Vars()
+	if vars["MY_DIR"] != "/proj/sub" {
+		t.Fatalf("MY_DIR = %q", vars["MY_DIR"])
+	}
+	// Built-ins still present
+	if vars["TICKET"] != "T-1" {
+		t.Fatalf("TICKET = %q", vars["TICKET"])
+	}
+	if len(vars) != 5 {
+		t.Fatalf("expected 5 keys, got %d", len(vars))
+	}
+}
+
+func TestBuildEnv_IncludesCustomVars(t *testing.T) {
+	env := &Environment{
+		ProjectRoot:  "/proj",
+		WorkDir:      "/work",
+		ArtifactsDir: "/art",
+		Ticket:       "T-1",
+		CustomVars:   map[string]string{"MY_DIR": "/proj/sub"},
+	}
+	result := BuildEnv(env)
+	found := false
+	for _, e := range result {
+		if e == "ORC_MY_DIR=/proj/sub" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("ORC_MY_DIR not found in BuildEnv output")
+	}
+}
+
 func TestBuildEnv_StripsCLAUDECODE(t *testing.T) {
 	t.Setenv("CLAUDECODE_TEST", "should-be-stripped")
 

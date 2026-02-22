@@ -509,6 +509,57 @@ func TestRun_ParallelOutputCheckPass(t *testing.T) {
 	}
 }
 
+func TestRun_CustomVarsPassedToDispatch(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+		},
+	}
+	var capturedVars map[string]string
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		capturedVars = env.Vars()
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+	r := newTestRunner(t, cfg, mock)
+	r.Env.CustomVars = map[string]string{"MY_DIR": "/custom/path"}
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if capturedVars["MY_DIR"] != "/custom/path" {
+		t.Fatalf("MY_DIR = %q", capturedVars["MY_DIR"])
+	}
+	if capturedVars["TICKET"] != "TEST-1" {
+		t.Fatalf("TICKET = %q", capturedVars["TICKET"])
+	}
+}
+
+func TestRun_ConditionRespectsPhase(t *testing.T) {
+	// Condition "test -f marker" should use the phase's cwd
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "marker"), []byte("ok"), 0644)
+
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo", Condition: "test -f marker", Cwd: dir},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Phase a should have run (condition true because marker exists in dir)
+	if mock.callCount() != 1 {
+		t.Fatalf("expected 1 call, got %d", mock.callCount())
+	}
+}
+
 // funcDispatcher is a Dispatcher backed by a function, for flexible test scenarios.
 type funcDispatcher struct {
 	fn func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error)

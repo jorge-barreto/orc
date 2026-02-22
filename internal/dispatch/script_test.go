@@ -95,3 +95,42 @@ func TestRunScript_Stderr(t *testing.T) {
 		t.Fatalf("output = %q, expected stderr captured", result.Output)
 	}
 }
+
+func TestRunScript_CwdChangesDir(t *testing.T) {
+	env := scriptEnv(t)
+	dir := t.TempDir()
+	phase := config.Phase{Name: "test", Type: "script", Run: "pwd", Cwd: dir}
+	result, err := RunScript(context.Background(), phase, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.Output, dir) {
+		t.Fatalf("output = %q, expected %q", result.Output, dir)
+	}
+}
+
+func TestRunScript_CwdWithVarExpansion(t *testing.T) {
+	env := scriptEnv(t)
+	dir := t.TempDir()
+	env.CustomVars = map[string]string{"MY_DIR": dir}
+	phase := config.Phase{Name: "test", Type: "script", Run: "pwd", Cwd: "$MY_DIR"}
+	result, err := RunScript(context.Background(), phase, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.Output, dir) {
+		t.Fatalf("output = %q, expected %q", result.Output, dir)
+	}
+}
+
+func TestRunScript_CwdDefaultWhenUnset(t *testing.T) {
+	env := scriptEnv(t)
+	phase := config.Phase{Name: "test", Type: "script", Run: "pwd"}
+	result, err := RunScript(context.Background(), phase, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.Output, env.WorkDir) {
+		t.Fatalf("output = %q, expected WorkDir %q", result.Output, env.WorkDir)
+	}
+}

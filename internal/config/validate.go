@@ -24,6 +24,25 @@ func Validate(cfg *Config, projectRoot string) error {
 		return fmt.Errorf("config: at least one phase is required")
 	}
 
+	// Validate vars
+	builtins := map[string]bool{
+		"TICKET": true, "ARTIFACTS_DIR": true,
+		"WORK_DIR": true, "PROJECT_ROOT": true,
+	}
+	seenVars := make(map[string]bool)
+	for _, v := range cfg.Vars {
+		if v.Key == "" {
+			return fmt.Errorf("config: vars: empty variable name")
+		}
+		if builtins[v.Key] {
+			return fmt.Errorf("config: vars: %q overrides a built-in variable", v.Key)
+		}
+		if seenVars[v.Key] {
+			return fmt.Errorf("config: vars: duplicate variable %q", v.Key)
+		}
+		seenVars[v.Key] = true
+	}
+
 	seen := make(map[string]bool)
 	for i := range cfg.Phases {
 		p := &cfg.Phases[i]
@@ -62,7 +81,9 @@ func Validate(cfg *Config, projectRoot string) error {
 				p.Timeout = 10
 			}
 		case "gate":
-			// gates have no required fields beyond name+type
+			if p.Cwd != "" {
+				return fmt.Errorf("config: gate phase %q: 'cwd' is not supported on gate phases", p.Name)
+			}
 		default:
 			return fmt.Errorf("config: phase %q: unknown type %q (must be agent, script, or gate)", p.Name, p.Type)
 		}

@@ -18,17 +18,32 @@ type Environment struct {
 	PhaseIndex   int
 	AutoMode     bool
 	PhaseCount   int
+	CustomVars   map[string]string
 	filteredEnv  []string // lazily populated base env (os.Environ minus CLAUDECODE)
 }
 
 // Vars returns the variable substitution map for prompts and commands.
+// Custom vars are included first; built-ins always win (defense in depth).
 func (e *Environment) Vars() map[string]string {
-	return map[string]string{
-		"TICKET":       e.Ticket,
-		"ARTIFACTS_DIR": e.ArtifactsDir,
-		"WORK_DIR":     e.WorkDir,
-		"PROJECT_ROOT": e.ProjectRoot,
+	m := make(map[string]string, 4+len(e.CustomVars))
+	for k, v := range e.CustomVars {
+		m[k] = v
 	}
+	m["TICKET"] = e.Ticket
+	m["ARTIFACTS_DIR"] = e.ArtifactsDir
+	m["WORK_DIR"] = e.WorkDir
+	m["PROJECT_ROOT"] = e.ProjectRoot
+	return m
+}
+
+// PhaseWorkDir returns the working directory for a phase.
+// If the phase has a cwd field, it is expanded using the full vars map.
+// Otherwise, the environment's WorkDir is used.
+func PhaseWorkDir(phase config.Phase, env *Environment) string {
+	if phase.Cwd != "" {
+		return ExpandVars(phase.Cwd, env.Vars())
+	}
+	return env.WorkDir
 }
 
 // Result holds the outcome of a phase dispatch.
@@ -50,8 +65,11 @@ func BuildEnv(env *Environment) []string {
 			env.filteredEnv = append(env.filteredEnv, e)
 		}
 	}
-	result := make([]string, len(env.filteredEnv), len(env.filteredEnv)+6)
+	result := make([]string, len(env.filteredEnv), len(env.filteredEnv)+6+len(env.CustomVars))
 	copy(result, env.filteredEnv)
+	for k, v := range env.CustomVars {
+		result = append(result, "ORC_"+k+"="+v)
+	}
 	result = append(result,
 		"ORC_TICKET="+env.Ticket,
 		"ORC_ARTIFACTS_DIR="+env.ArtifactsDir,

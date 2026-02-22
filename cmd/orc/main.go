@@ -82,6 +82,10 @@ func runCmd() *cli.Command {
 				PhaseCount:   len(cfg.Phases),
 			}
 
+			if len(cfg.Vars) > 0 {
+				env.CustomVars = dispatch.ExpandConfigVars(cfg.Vars, env.Vars())
+			}
+
 			// Load or create state
 			st, err := state.Load(artifactsDir)
 			if err != nil {
