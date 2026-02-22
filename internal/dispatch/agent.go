@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/jorge-barreto/orc/internal/config"
@@ -22,9 +23,14 @@ func runAgent(ctx context.Context, phase config.Phase, env *Environment, prompt 
 	}
 
 	cmd := exec.CommandContext(ctx, "claude", "-p", prompt,
-		"--model", phase.Model, "--dangerously-skip-permissions")
+		"--model", phase.Model)
 	cmd.Dir = env.WorkDir
 	cmd.Env = BuildEnv(env)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+	}
+	cmd.WaitDelay = 5 * time.Second
 
 	logFile, err := os.OpenFile(state.LogPath(env.ArtifactsDir, env.PhaseIndex), logFlags, 0644)
 	if err != nil {

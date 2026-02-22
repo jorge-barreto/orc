@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"syscall"
 	"time"
 
 	"github.com/jorge-barreto/orc/internal/config"
@@ -25,6 +26,11 @@ func RunScript(ctx context.Context, phase config.Phase, env *Environment) (*Resu
 	cmd := exec.CommandContext(ctx, "bash", "-c", expanded)
 	cmd.Dir = env.WorkDir
 	cmd.Env = BuildEnv(env)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+	}
+	cmd.WaitDelay = 5 * time.Second
 
 	logFile, err := os.Create(state.LogPath(env.ArtifactsDir, env.PhaseIndex))
 	if err != nil {

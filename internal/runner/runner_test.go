@@ -463,6 +463,52 @@ func TestRun_SavesStatePersistently(t *testing.T) {
 	}
 }
 
+func TestRun_ParallelOutputCheck(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo", ParallelWith: "b", Outputs: []string{"a-output.md"}},
+			{Name: "b", Type: "script", Run: "echo", Outputs: []string{"b-output.md"}},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+
+	// Don't create output files — both should be missing
+	err := r.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "missing outputs") {
+		t.Fatalf("expected missing outputs error, got %v", err)
+	}
+	if r.State.Status != state.StatusFailed {
+		t.Fatalf("status = %q, want failed", r.State.Status)
+	}
+}
+
+func TestRun_ParallelOutputCheckPass(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo", ParallelWith: "b", Outputs: []string{"a-output.md"}},
+			{Name: "b", Type: "script", Run: "echo", Outputs: []string{"b-output.md"}},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+
+	// Create expected output files
+	state.EnsureDir(r.Env.ArtifactsDir)
+	os.WriteFile(filepath.Join(r.Env.ArtifactsDir, "a-output.md"), []byte("done"), 0644)
+	os.WriteFile(filepath.Join(r.Env.ArtifactsDir, "b-output.md"), []byte("done"), 0644)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.State.Status != state.StatusCompleted {
+		t.Fatalf("status = %q, want completed", r.State.Status)
+	}
+}
+
 // funcDispatcher is a Dispatcher backed by a function, for flexible test scenarios.
 type funcDispatcher struct {
 	fn func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error)

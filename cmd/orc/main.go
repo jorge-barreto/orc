@@ -119,6 +119,10 @@ func runCmd() *cli.Command {
 				}
 			}
 
+			if err := dispatch.Preflight(cfg.Phases); err != nil {
+				return err
+			}
+
 			r := &runner.Runner{
 				Config:     cfg,
 				State:      st,
@@ -141,7 +145,7 @@ func runCmd() *cli.Command {
 			}
 
 			// Set up signal handling
-			ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+			ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 			defer stop()
 
 			return r.Run(ctx)
