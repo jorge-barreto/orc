@@ -242,6 +242,9 @@ func (r *Runner) DryRunPrint() {
 		case "agent":
 			fmt.Printf("     prompt: %s\n", p.Prompt)
 			fmt.Printf("     model: %s, timeout: %dm\n", p.Model, p.Timeout)
+			if len(p.AllowTools) > 0 {
+				fmt.Printf("     allow-tools: %v\n", p.AllowTools)
+			}
 		case "gate":
 			// no extra details for gates
 		}
