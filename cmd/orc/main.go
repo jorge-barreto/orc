@@ -10,6 +10,7 @@ import (
 
 	"github.com/jorge-barreto/orc/internal/config"
 	"github.com/jorge-barreto/orc/internal/dispatch"
+	"github.com/jorge-barreto/orc/internal/doctor"
 	"github.com/jorge-barreto/orc/internal/docs"
 	"github.com/jorge-barreto/orc/internal/runner"
 	"github.com/jorge-barreto/orc/internal/scaffold"
@@ -27,6 +28,7 @@ func main() {
 			initCmd(),
 			runCmd(),
 			statusCmd(),
+			doctorCmd(),
 			docsCmd(),
 		},
 	}
@@ -194,6 +196,33 @@ func statusCmd() *cli.Command {
 
 			ux.RenderStatus(cfg, st, artifactsDir)
 			return nil
+		},
+	}
+}
+
+func doctorCmd() *cli.Command {
+	return &cli.Command{
+		Name:  "doctor",
+		Usage: "Diagnose a failed workflow run using AI",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			projectRoot, err := findProjectRoot()
+			if err != nil {
+				return err
+			}
+
+			configPath := filepath.Join(projectRoot, ".orc", "config.yaml")
+			cfg, err := config.Load(configPath, projectRoot)
+			if err != nil {
+				return fmt.Errorf("loading config: %w", err)
+			}
+
+			artifactsDir := filepath.Join(projectRoot, ".artifacts")
+			st, err := state.Load(artifactsDir)
+			if err != nil {
+				return fmt.Errorf("loading state: %w", err)
+			}
+
+			return doctor.Run(ctx, projectRoot, artifactsDir, cfg, st)
 		},
 	}
 }
