@@ -114,12 +114,16 @@ func (d *DefaultDispatcher) Dispatch(ctx context.Context, phase config.Phase, en
 }
 
 // Dispatch routes a phase to the appropriate executor.
+// Agent phases are routed to attended mode (with steering) unless AutoMode is set.
 func Dispatch(ctx context.Context, phase config.Phase, env *Environment) (*Result, error) {
 	switch phase.Type {
 	case "script":
 		return RunScript(ctx, phase, env)
 	case "agent":
-		return RunAgent(ctx, phase, env)
+		if env.AutoMode {
+			return RunAgent(ctx, phase, env)
+		}
+		return RunAgentAttended(ctx, phase, env)
 	case "gate":
 		return RunGate(ctx, phase, env)
 	default:

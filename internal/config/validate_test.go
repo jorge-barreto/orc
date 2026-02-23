@@ -496,6 +496,53 @@ func TestValidate_VarsBuiltinOverride_PhaseIndex(t *testing.T) {
 	}
 }
 
+// allow-tools validation
+
+func TestValidate_AllowToolsOnAgent(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "p.md"), []byte("x"), 0644)
+	cfg := minimalConfig(Phase{Name: "a", Type: "agent", Prompt: "p.md", AllowTools: []string{"Read", "Bash"}})
+	if err := Validate(cfg, root); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_AllowToolsOnScript(t *testing.T) {
+	cfg := minimalConfig(Phase{Name: "a", Type: "script", Run: "echo", AllowTools: []string{"Read"}})
+	err := Validate(cfg, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "only valid on agent") {
+		t.Fatalf("expected allow-tools error, got %v", err)
+	}
+}
+
+func TestValidate_AllowToolsOnGate(t *testing.T) {
+	cfg := minimalConfig(Phase{Name: "a", Type: "gate", AllowTools: []string{"Read"}})
+	err := Validate(cfg, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "only valid on agent") {
+		t.Fatalf("expected allow-tools error, got %v", err)
+	}
+}
+
+func TestValidate_AllowToolsEmptyEntry(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "p.md"), []byte("x"), 0644)
+	cfg := minimalConfig(Phase{Name: "a", Type: "agent", Prompt: "p.md", AllowTools: []string{"Read", ""}})
+	err := Validate(cfg, root)
+	if err == nil || !strings.Contains(err.Error(), "non-empty") {
+		t.Fatalf("expected non-empty error, got %v", err)
+	}
+}
+
+func TestValidate_AllowToolsWhitespaceEntry(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "p.md"), []byte("x"), 0644)
+	cfg := minimalConfig(Phase{Name: "a", Type: "agent", Prompt: "p.md", AllowTools: []string{"  "}})
+	err := Validate(cfg, root)
+	if err == nil || !strings.Contains(err.Error(), "non-empty") {
+		t.Fatalf("expected non-empty error, got %v", err)
+	}
+}
+
 func TestValidate_VarsBuiltinOverride_PhaseCount(t *testing.T) {
 	cfg := &Config{
 		Name: "test",

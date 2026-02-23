@@ -13,18 +13,19 @@ type OnFail struct {
 }
 
 type Phase struct {
-	Name         string  `yaml:"name"`
-	Type         string  `yaml:"type"`
-	Description  string  `yaml:"description"`
-	Prompt       string  `yaml:"prompt"`
-	Run          string  `yaml:"run"`
-	Model        string  `yaml:"model"`
-	Timeout      int     `yaml:"timeout"`
+	Name         string   `yaml:"name"`
+	Type         string   `yaml:"type"`
+	Description  string   `yaml:"description"`
+	Prompt       string   `yaml:"prompt"`
+	Run          string   `yaml:"run"`
+	Model        string   `yaml:"model"`
+	Timeout      int      `yaml:"timeout"`
 	Outputs      []string `yaml:"outputs"`
-	Condition    string  `yaml:"condition"`
-	ParallelWith string  `yaml:"parallel-with"`
-	OnFail       *OnFail `yaml:"on-fail"`
-	Cwd          string  `yaml:"cwd"`
+	AllowTools   []string `yaml:"allow-tools"`
+	Condition    string   `yaml:"condition"`
+	ParallelWith string   `yaml:"parallel-with"`
+	OnFail       *OnFail  `yaml:"on-fail"`
+	Cwd          string   `yaml:"cwd"`
 }
 
 // VarEntry holds a single key-value pair from the vars map.

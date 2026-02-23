@@ -94,6 +94,15 @@ func Validate(cfg *Config, projectRoot string) error {
 			return fmt.Errorf("config: phase %q: unknown type %q (must be agent, script, or gate)", p.Name, p.Type)
 		}
 
+		if len(p.AllowTools) > 0 && p.Type != "agent" {
+			return fmt.Errorf("config: phase %q: 'allow-tools' is only valid on agent phases", p.Name)
+		}
+		for _, tool := range p.AllowTools {
+			if strings.TrimSpace(tool) == "" {
+				return fmt.Errorf("config: phase %q: 'allow-tools' entries must be non-empty", p.Name)
+			}
+		}
+
 		if !validModels[p.Model] {
 			return fmt.Errorf("config: phase %q: unknown model %q (must be opus, sonnet, or haiku)", p.Name, p.Model)
 		}
