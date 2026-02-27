@@ -33,6 +33,12 @@ type StreamResult struct {
 	SessionID         string
 }
 
+// streamState tracks tool use accumulation across stream events.
+type streamState struct {
+	toolName string
+	inputBuf strings.Builder
+}
+
 // processStream reads stream-json lines from stdout, routes text to display+log,
 // tracks tool use for inline display, and extracts the final result.
 func processStream(ctx context.Context, stdout io.Reader, display io.Writer, logFile io.Writer) (*StreamResult, error) {
@@ -41,6 +47,7 @@ func processStream(ctx context.Context, stdout io.Reader, display io.Writer, log
 
 	var result StreamResult
 	var textBuf strings.Builder
+	var ss streamState
 
 	for scanner.Scan() {
 		if ctx.Err() != nil {
@@ -60,7 +67,7 @@ func processStream(ctx context.Context, stdout io.Reader, display io.Writer, log
 
 		switch event.Type {
 		case "stream_event":
-			handleStreamEvent(&event, &textBuf, display, logFile)
+			handleStreamEvent(&event, &textBuf, &ss, display, logFile)
 
 		case "assistant":
 			handleAssistantEvent(&event)
@@ -115,8 +122,9 @@ type nestedEvent struct {
 
 // deltaBlock holds the delta in content_block_delta events.
 type deltaBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type        string `json:"type"`
+	Text        string `json:"text"`
+	PartialJSON string `json:"partial_json"`
 }
 
 // resultPayload is the inner result object from the final result event.
@@ -131,7 +139,7 @@ type permDenialEntry struct {
 	Input    string `json:"input"`
 }
 
-func handleStreamEvent(event *streamEvent, textBuf *strings.Builder, display io.Writer, logFile io.Writer) {
+func handleStreamEvent(event *streamEvent, textBuf *strings.Builder, ss *streamState, display io.Writer, logFile io.Writer) {
 	if event.Event == nil {
 		return
 	}
@@ -142,8 +150,18 @@ func handleStreamEvent(event *streamEvent, textBuf *strings.Builder, display io.
 	}
 
 	switch nested.Type {
+	case "content_block_start":
+		if nested.ContentBlock != nil && nested.ContentBlock.Type == "tool_use" {
+			ss.toolName = nested.ContentBlock.Name
+			ss.inputBuf.Reset()
+		}
+
 	case "content_block_delta":
-		if nested.Delta != nil && nested.Delta.Type == "text_delta" {
+		if nested.Delta == nil {
+			return
+		}
+		switch nested.Delta.Type {
+		case "text_delta":
 			text := nested.Delta.Text
 			textBuf.WriteString(text)
 			if display != nil {
@@ -152,17 +170,57 @@ func handleStreamEvent(event *streamEvent, textBuf *strings.Builder, display io.
 			if logFile != nil {
 				fmt.Fprint(logFile, text)
 			}
+		case "input_json_delta":
+			ss.inputBuf.WriteString(nested.Delta.PartialJSON)
 		}
 
-	case "content_block_start":
-		if nested.ContentBlock != nil && nested.ContentBlock.Type == "tool_use" {
-			inputStr := ""
-			if nested.ContentBlock.Input != nil {
-				inputStr = string(nested.ContentBlock.Input)
-			}
-			ux.ToolUse(nested.ContentBlock.Name, inputStr)
+	case "content_block_stop":
+		if ss.toolName != "" {
+			ux.ToolUse(ss.toolName, toolUseSummary(ss.toolName, ss.inputBuf.String()))
+			ss.toolName = ""
+			ss.inputBuf.Reset()
 		}
 	}
+}
+
+// toolUseSummary extracts the most informative field from accumulated tool input JSON.
+func toolUseSummary(toolName, rawJSON string) string {
+	if rawJSON == "" {
+		return ""
+	}
+
+	var obj map[string]interface{}
+	if err := json.Unmarshal([]byte(rawJSON), &obj); err != nil {
+		return rawJSON
+	}
+
+	// Pick the most informative key based on tool name.
+	var key string
+	switch toolName {
+	case "Bash":
+		key = "command"
+	case "Read", "Write", "Edit":
+		key = "file_path"
+	case "Grep", "Glob":
+		key = "pattern"
+	case "Task", "TaskCreate":
+		key = "description"
+	default:
+		// Fall back to first string value.
+		for _, v := range obj {
+			if s, ok := v.(string); ok {
+				return s
+			}
+		}
+		return rawJSON
+	}
+
+	if v, ok := obj[key]; ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return rawJSON
 }
 
 func handleAssistantEvent(event *streamEvent) {

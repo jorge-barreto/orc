@@ -44,7 +44,13 @@ func TestProcessStream_TextDeltas(t *testing.T) {
 
 func TestProcessStream_ToolUseEvent(t *testing.T) {
 	input := streamLines(
-		`{"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"tool_use","name":"Read","input":"src/main.go"}}}`,
+		// Tool use: content_block_start -> input_json_deltas -> content_block_stop
+		`{"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"tool_use","name":"Read","input":{}}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{\"file_path\":\""}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"src/main.go\""}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"}"}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_stop"}}`,
+		// Then some text output
 		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Done"}}}`,
 		`{"type":"result","result":{"cost_usd":0.05,"session_id":"s1"}}`,
 	)
@@ -158,6 +164,66 @@ func TestProcessStream_NilWriters(t *testing.T) {
 	}
 	if result.Text != "Hello" {
 		t.Fatalf("Text = %q", result.Text)
+	}
+}
+
+func TestProcessStream_MultiToolStreaming(t *testing.T) {
+	input := streamLines(
+		// First tool: Bash
+		`{"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"tool_use","name":"Bash","input":{}}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{\"command\":\"ls -la\"}"}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_stop"}}`,
+		// Text between tools
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Checking files..."}}}`,
+		// Second tool: Grep
+		`{"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"tool_use","name":"Grep","input":{}}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{\"pattern\""}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":":\"TODO\"}"}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_stop"}}`,
+		`{"type":"result","result":{"cost_usd":0.10,"session_id":"s6"}}`,
+	)
+
+	var display bytes.Buffer
+	result, err := processStream(context.Background(), input, &display, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Text != "Checking files..." {
+		t.Fatalf("Text = %q, want %q", result.Text, "Checking files...")
+	}
+	if result.CostUSD != 0.10 {
+		t.Fatalf("CostUSD = %f", result.CostUSD)
+	}
+}
+
+func TestToolUseSummary(t *testing.T) {
+	tests := []struct {
+		name     string
+		tool     string
+		rawJSON  string
+		want     string
+	}{
+		{"Bash command", "Bash", `{"command":"ls -la"}`, "ls -la"},
+		{"Read file_path", "Read", `{"file_path":"/tmp/foo.go"}`, "/tmp/foo.go"},
+		{"Write file_path", "Write", `{"file_path":"out.txt","content":"hello"}`, "out.txt"},
+		{"Edit file_path", "Edit", `{"file_path":"main.go","old_string":"a","new_string":"b"}`, "main.go"},
+		{"Grep pattern", "Grep", `{"pattern":"TODO","path":"."}`, "TODO"},
+		{"Glob pattern", "Glob", `{"pattern":"**/*.go"}`, "**/*.go"},
+		{"Task description", "Task", `{"description":"search code"}`, "search code"},
+		{"TaskCreate description", "TaskCreate", `{"description":"fix bug","subject":"bug"}`, "fix bug"},
+		{"Unknown tool first string", "WebSearch", `{"query":"golang"}`, "golang"},
+		{"Empty input", "Bash", "", ""},
+		{"Malformed JSON", "Bash", "{broken", "{broken"},
+		{"Missing key fallback", "Bash", `{"timeout":30}`, `{"timeout":30}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := toolUseSummary(tt.tool, tt.rawJSON)
+			if got != tt.want {
+				t.Errorf("toolUseSummary(%q, %q) = %q, want %q", tt.tool, tt.rawJSON, got, tt.want)
+			}
+		})
 	}
 }
 
