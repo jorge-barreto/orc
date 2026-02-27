@@ -23,7 +23,7 @@ You define your workflow as a series of **phases** in a YAML config file. Each p
 - **Dry-run mode**: Preview the phase plan without executing anything
 - **Output validation**: Declare expected output files; agents are re-prompted once if outputs are missing
 - **Per-phase model and timeout**: Choose `opus`, `sonnet`, or `haiku` per agent phase
-- **Full observability**: Rendered prompts, agent logs, timing data, and state all saved to `.artifacts/`
+- **Full observability**: Rendered prompts, agent logs, timing data, and state all saved to `.orc/artifacts/`
 
 ## Prerequisites
 
@@ -153,7 +153,7 @@ Workflows are defined in `.orc/config.yaml`.
 
 **script** — Executes a shell command via `bash -c`. The `run` field supports variable substitution. Child processes inherit the parent environment plus `ORC_*` variables.
 
-**agent** — Reads a prompt template file, expands variables, and invokes `claude -p <prompt> --model <model> --dangerously-skip-permissions`. Output is streamed to the terminal and saved to `.artifacts/logs/`.
+**agent** — Reads a prompt template file, expands variables, and invokes `claude -p <prompt> --model <model> --dangerously-skip-permissions`. Output is streamed to the terminal and saved to `.orc/artifacts/logs/`.
 
 **gate** — Prompts the operator for y/n approval. Skipped automatically when using `--auto`.
 
@@ -221,7 +221,7 @@ Variables are expanded in agent prompt templates and script `run` commands using
 | Variable | Description |
 |----------|-------------|
 | `$TICKET` | The ticket identifier passed to `orc run` |
-| `$ARTIFACTS_DIR` | Absolute path to the `.artifacts/` directory |
+| `$ARTIFACTS_DIR` | Absolute path to the `.orc/artifacts/` directory |
 | `$WORK_DIR` | Absolute path to the working directory (project root) |
 | `$PROJECT_ROOT` | Absolute path to the project root (where `.orc/` lives) |
 
@@ -243,10 +243,10 @@ Custom vars cannot override built-in variables (`TICKET`, `ARTIFACTS_DIR`, `WORK
 
 ## Artifacts Directory
 
-orc creates a `.artifacts/` directory in the project root to store all run data:
+orc creates a `.orc/artifacts/` directory in the project root to store all run data:
 
 ```
-.artifacts/
+.orc/artifacts/
 ├── state.json              # Current run state (phase_index, ticket, status)
 ├── timing.json             # Start/end timestamps for each phase
 ├── loop-counts.json        # On-fail retry counters per phase
@@ -267,12 +267,12 @@ orc creates a `.artifacts/` directory in the project root to store all run data:
 
 When a phase with `on-fail` fails, orc:
 
-1. Writes the failure output to `.artifacts/feedback/from-<phase>.md`
+1. Writes the failure output to `.orc/artifacts/feedback/from-<phase>.md`
 2. Increments the loop counter for that phase
 3. Jumps back to the phase named in `on-fail.goto`
 4. Re-executes from there (the earlier phase can read the feedback file)
 
-If the loop counter exceeds `on-fail.max` (default: 2), the workflow stops and requires manual intervention. Loop counts are persisted to `.artifacts/loop-counts.json` and reset when using `--retry` or `--from`.
+If the loop counter exceeds `on-fail.max` (default: 2), the workflow stops and requires manual intervention. Loop counts are persisted to `.orc/artifacts/loop-counts.json` and reset when using `--retry` or `--from`.
 
 The `on-fail.goto` target must reference an **earlier** phase in the config (no forward jumps).
 
@@ -302,7 +302,7 @@ Child processes (scripts and agents) inherit the parent environment with these a
 | Variable | Description |
 |----------|-------------|
 | `ORC_TICKET` | The ticket identifier |
-| `ORC_ARTIFACTS_DIR` | Absolute path to `.artifacts/` |
+| `ORC_ARTIFACTS_DIR` | Absolute path to `.orc/artifacts/` |
 | `ORC_WORK_DIR` | Working directory |
 | `ORC_PROJECT_ROOT` | Project root directory |
 | `ORC_PHASE_INDEX` | Current phase index (0-based) |

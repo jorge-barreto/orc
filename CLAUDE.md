@@ -34,7 +34,7 @@ internal/runner/           Main state machine loop — drives the workflow
 internal/ux/               ANSI-colored terminal output, phase headers, status rendering
 ```
 
-**Data flow:** `main.go` loads config, creates state, builds a `Runner`, and calls `runner.Run()`. The runner iterates phases, calling `dispatch.Dispatch()` for each. Dispatch routes to `RunScript`, `RunAgent`, or `RunGate` based on phase type. State is persisted to `.artifacts/` after each phase.
+**Data flow:** `main.go` loads config, creates state, builds a `Runner`, and calls `runner.Run()`. The runner iterates phases, calling `dispatch.Dispatch()` for each. Dispatch routes to `RunScript`, `RunAgent`, or `RunGate` based on phase type. State is persisted to `.orc/artifacts/` after each phase.
 
 **Key interfaces:** `dispatch.Dispatcher` is the only interface — the runner depends on it, and tests substitute a `mockDispatcher`.
 
@@ -46,7 +46,7 @@ internal/ux/               ANSI-colored terminal output, phase headers, status r
 
 ### Runner State Machine
 
-The runner loop handles: condition checks (skip phase if shell command exits non-zero), parallel execution (`parallel-with` runs two phases concurrently via goroutines + WaitGroup), on-fail backward jumps (loops back to an earlier phase with feedback written to `.artifacts/feedback/`), and output validation (re-prompts agent once if declared outputs are missing).
+The runner loop handles: condition checks (skip phase if shell command exits non-zero), parallel execution (`parallel-with` runs two phases concurrently via goroutines + WaitGroup), on-fail backward jumps (loops back to an earlier phase with feedback written to `.orc/artifacts/feedback/`), and output validation (re-prompts agent once if declared outputs are missing).
 
 ### Config Validation Rules
 

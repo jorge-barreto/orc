@@ -76,7 +76,7 @@ func runCmd() *cli.Command {
 				return err
 			}
 
-			artifactsDir := filepath.Join(projectRoot, ".artifacts")
+			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts")
 
 			env := &dispatch.Environment{
 				ProjectRoot:  projectRoot,
@@ -184,7 +184,7 @@ func statusCmd() *cli.Command {
 				return fmt.Errorf("loading config: %w", err)
 			}
 
-			artifactsDir := filepath.Join(projectRoot, ".artifacts")
+			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts")
 			st, err := state.Load(artifactsDir)
 			if err != nil {
 				return fmt.Errorf("loading state: %w", err)
@@ -216,7 +216,7 @@ func doctorCmd() *cli.Command {
 				return fmt.Errorf("loading config: %w", err)
 			}
 
-			artifactsDir := filepath.Join(projectRoot, ".artifacts")
+			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts")
 			st, err := state.Load(artifactsDir)
 			if err != nil {
 				return fmt.Errorf("loading state: %w", err)
