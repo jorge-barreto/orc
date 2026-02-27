@@ -461,3 +461,9 @@ Phases can declare expected output files via the outputs field. These
 files are expected to appear directly in the .orc/artifacts/ directory (not
 in subdirectories). Output filenames must not contain path separators.
 `
+
+// SchemaReference returns the combined config schema, phase types, and
+// variables documentation suitable for embedding in prompts.
+func SchemaReference() string {
+	return topicConfig + "\n\n" + topicPhases + "\n\n" + topicVariables
+}
