@@ -152,7 +152,7 @@ Example Config
       type: agent
       description: Implement the ticket
       prompt: .orc/phases/implement.md
-      model: sonnet
+      model: opus
       cwd: $WORKTREE
       outputs:
         - summary.md

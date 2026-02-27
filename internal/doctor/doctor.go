@@ -218,7 +218,7 @@ func filteredEnv() []string {
 }
 
 func runClaude(ctx context.Context, prompt string) error {
-	cmd := exec.CommandContext(ctx, "claude", "-p", prompt, "--model", "sonnet")
+	cmd := exec.CommandContext(ctx, "claude", "-p", prompt, "--model", "opus")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = filteredEnv()
