@@ -27,6 +27,7 @@ func main() {
 		Commands: []*cli.Command{
 			initCmd(),
 			runCmd(),
+			cancelCmd(),
 			statusCmd(),
 			doctorCmd(),
 			docsCmd(),
@@ -158,6 +159,57 @@ func runCmd() *cli.Command {
 			defer stop()
 
 			return r.Run(ctx)
+		},
+	}
+}
+
+func cancelCmd() *cli.Command {
+	return &cli.Command{
+		Name:      "cancel",
+		Usage:     "Cancel a ticket and remove all artifacts",
+		ArgsUsage: "<ticket>",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{Name: "force", Usage: "Cancel even if a run appears active"},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			ticket := cmd.Args().First()
+			if ticket == "" {
+				return fmt.Errorf("ticket argument is required")
+			}
+
+			projectRoot, err := findProjectRoot()
+			if err != nil {
+				return err
+			}
+
+			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts")
+
+			// Check if artifacts directory exists
+			if _, err := os.Stat(artifactsDir); os.IsNotExist(err) {
+				fmt.Printf("Nothing to cancel for ticket %s (no artifacts found).\n", ticket)
+				return nil
+			}
+
+			// Load state to validate ticket and check status
+			st, err := state.Load(artifactsDir)
+			if err != nil {
+				return fmt.Errorf("loading state: %w", err)
+			}
+
+			if st.Ticket != "" && st.Ticket != ticket {
+				return fmt.Errorf("state is for ticket %q, not %q", st.Ticket, ticket)
+			}
+
+			if st.Status == state.StatusRunning && !cmd.Bool("force") {
+				return fmt.Errorf("ticket %s appears to be running — Ctrl+C the process first, or use --force", ticket)
+			}
+
+			if err := os.RemoveAll(artifactsDir); err != nil {
+				return fmt.Errorf("removing artifacts: %w", err)
+			}
+
+			fmt.Printf("%s✓ Cancelled ticket %s — artifacts removed%s\n", ux.Green, ticket, ux.Reset)
+			return nil
 		},
 	}
 }
