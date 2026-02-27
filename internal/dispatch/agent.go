@@ -34,6 +34,7 @@ func buildAgentArgs(phase config.Phase, prompt, sessionID string, isFirst bool, 
 		"--verbose",
 		"--include-partial-messages",
 		"--model", phase.Model,
+		"--effort", phase.Effort,
 	}
 
 	if sessionID != "" {

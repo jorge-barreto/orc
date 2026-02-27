@@ -19,6 +19,7 @@ type Phase struct {
 	Prompt       string   `yaml:"prompt"`
 	Run          string   `yaml:"run"`
 	Model        string   `yaml:"model"`
+	Effort       string   `yaml:"effort"`
 	Timeout      int      `yaml:"timeout"`
 	Outputs      []string `yaml:"outputs"`
 	AllowTools   []string `yaml:"allow-tools"`

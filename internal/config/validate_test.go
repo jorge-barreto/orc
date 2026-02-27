@@ -97,6 +97,9 @@ func TestValidate_AgentDefaults(t *testing.T) {
 	if p.Model != "opus" {
 		t.Fatalf("Model = %q, want opus", p.Model)
 	}
+	if p.Effort != "high" {
+		t.Fatalf("Effort = %q, want high", p.Effort)
+	}
 	if p.Timeout != 30 {
 		t.Fatalf("Timeout = %d, want 30", p.Timeout)
 	}
@@ -131,6 +134,22 @@ func TestValidate_ValidModels(t *testing.T) {
 		cfg := minimalConfig(Phase{Name: "a", Type: "script", Run: "echo", Model: model})
 		if err := Validate(cfg, t.TempDir()); err != nil {
 			t.Fatalf("model %q: %v", model, err)
+		}
+	}
+}
+
+func TestValidate_InvalidEffort(t *testing.T) {
+	cfg := minimalConfig(Phase{Name: "a", Type: "script", Run: "echo", Effort: "extreme"})
+	if err := Validate(cfg, t.TempDir()); err == nil || !strings.Contains(err.Error(), "unknown effort") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestValidate_ValidEfforts(t *testing.T) {
+	for _, effort := range []string{"", "low", "medium", "high"} {
+		cfg := minimalConfig(Phase{Name: "a", Type: "script", Run: "echo", Effort: effort})
+		if err := Validate(cfg, t.TempDir()); err != nil {
+			t.Fatalf("effort %q: %v", effort, err)
 		}
 	}
 }
@@ -246,6 +265,9 @@ func TestValidate_FullConfig(t *testing.T) {
 	}
 	if cfg.Phases[1].Model != "opus" {
 		t.Fatalf("design model = %q", cfg.Phases[1].Model)
+	}
+	if cfg.Phases[1].Effort != "high" {
+		t.Fatalf("design effort = %q", cfg.Phases[1].Effort)
 	}
 	if cfg.Phases[1].Timeout != 30 {
 		t.Fatalf("design timeout = %d", cfg.Phases[1].Timeout)

@@ -240,8 +240,23 @@ func TestPhaseWorkDir_ExpandedCwd(t *testing.T) {
 	}
 }
 
+func TestBuildAgentArgs_IncludesEffort(t *testing.T) {
+	phase := config.Phase{Model: "opus", Effort: "high"}
+	args := buildAgentArgs(phase, "hello", "", true, nil, nil)
+	found := false
+	for i, a := range args {
+		if a == "--effort" && i+1 < len(args) && args[i+1] == "high" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("--effort high not found in args: %v", args)
+	}
+}
+
 func TestBuildAgentArgs_IncludesDefaultTools(t *testing.T) {
-	phase := config.Phase{Model: "opus"}
+	phase := config.Phase{Model: "opus", Effort: "high"}
 	args := buildAgentArgs(phase, "hello", "", true, nil, nil)
 	tools := toolsFromArgs(args)
 	for _, want := range defaultAllowTools {
@@ -252,7 +267,7 @@ func TestBuildAgentArgs_IncludesDefaultTools(t *testing.T) {
 }
 
 func TestBuildAgentArgs_MergesPhaseTools(t *testing.T) {
-	phase := config.Phase{Model: "opus", AllowTools: []string{"Bash", "NotebookEdit"}}
+	phase := config.Phase{Model: "opus", Effort: "high", AllowTools: []string{"Bash", "NotebookEdit"}}
 	args := buildAgentArgs(phase, "hello", "", true, nil, nil)
 	tools := toolsFromArgs(args)
 	for _, want := range append(defaultAllowTools, "Bash", "NotebookEdit") {
@@ -263,7 +278,7 @@ func TestBuildAgentArgs_MergesPhaseTools(t *testing.T) {
 }
 
 func TestBuildAgentArgs_MergesConfigTools(t *testing.T) {
-	phase := config.Phase{Model: "opus"}
+	phase := config.Phase{Model: "opus", Effort: "high"}
 	configTools := []string{"mcp__atlassian__*", "Bash"}
 	args := buildAgentArgs(phase, "hello", "", true, configTools, nil)
 	tools := toolsFromArgs(args)
@@ -276,7 +291,7 @@ func TestBuildAgentArgs_MergesConfigTools(t *testing.T) {
 
 func TestBuildAgentArgs_DeduplicatesTools(t *testing.T) {
 	// Config, phase, and extra tools all overlap with defaults
-	phase := config.Phase{Model: "opus", AllowTools: []string{"Read", "Bash"}}
+	phase := config.Phase{Model: "opus", Effort: "high", AllowTools: []string{"Read", "Bash"}}
 	configTools := []string{"Read", "Bash"}
 	args := buildAgentArgs(phase, "hello", "", true, configTools, []string{"Read", "Write"})
 	tools := toolsFromArgs(args)
