@@ -37,6 +37,7 @@ type StreamResult struct {
 type streamState struct {
 	toolName string
 	inputBuf strings.Builder
+	hadText  bool
 }
 
 // processStream reads stream-json lines from stdout, routes text to display+log,
@@ -170,15 +171,20 @@ func handleStreamEvent(event *streamEvent, textBuf *strings.Builder, ss *streamS
 			if logFile != nil {
 				fmt.Fprint(logFile, text)
 			}
+			ss.hadText = true
 		case "input_json_delta":
 			ss.inputBuf.WriteString(nested.Delta.PartialJSON)
 		}
 
 	case "content_block_stop":
 		if ss.toolName != "" {
+			if ss.hadText && display != nil {
+				fmt.Fprint(display, "\n")
+			}
 			ux.ToolUse(ss.toolName, toolUseSummary(ss.toolName, ss.inputBuf.String()))
 			ss.toolName = ""
 			ss.inputBuf.Reset()
+			ss.hadText = false
 		}
 	}
 }

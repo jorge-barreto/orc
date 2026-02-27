@@ -194,6 +194,11 @@ func TestProcessStream_MultiToolStreaming(t *testing.T) {
 	if result.CostUSD != 0.10 {
 		t.Fatalf("CostUSD = %f", result.CostUSD)
 	}
+	// Display should contain a newline between text and the next tool block
+	out := display.String()
+	if !strings.Contains(out, "Checking files...\n") {
+		t.Fatalf("display missing newline after text before tool use: %q", out)
+	}
 }
 
 func TestToolUseSummary(t *testing.T) {
