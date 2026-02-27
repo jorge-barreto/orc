@@ -297,7 +297,7 @@ func doctorCmd() *cli.Command {
 func initCmd() *cli.Command {
 	return &cli.Command{
 		Name:  "init",
-		Usage: "Initialize a new .orc/ directory with example config",
+		Usage: "Initialize a new .orc/ directory with AI-generated workflow config",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			dir, err := os.Getwd()
 			if err != nil {

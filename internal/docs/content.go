@@ -47,7 +47,9 @@ const topicQuickstart = `Quick Start
     cd your-project
     orc init
 
-   This creates .orc/config.yaml and .orc/phases/example.md.
+   This analyzes your project and generates .orc/config.yaml and prompt
+   files tailored to your codebase. If AI generation fails, a default
+   template is used instead.
 
 2. Edit .orc/config.yaml to define your workflow. A workflow is a list
    of phases — each phase is a script, agent, or gate.
@@ -76,7 +78,7 @@ CLI Flags
   orc cancel <ticket> --force   Cancel even if a run appears active
   orc status                    Show current run status
   orc status <ticket>           Show workflow status for a ticket
-  orc init                      Scaffold .orc/ directory
+  orc init                      Initialize .orc/ directory (AI-powered)
   orc docs                      List documentation topics
   orc docs <topic>              Show a documentation topic
 

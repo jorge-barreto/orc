@@ -26,6 +26,9 @@ const initPromptMiddle = `
 name: my-go-service
 ticket-pattern: '[A-Z]+-\d+'
 
+default-allow-tools:
+  - Bash
+
 phases:
   - name: plan
     type: agent
@@ -166,6 +169,8 @@ Based on the project context above, generate a complete orc workflow. Produce:
 
    Use ` + "`opus`" + ` as the model for agent phases. Set a reasonable ticket-pattern based on any conventions you see.
 
+   **Tool permissions:** Agent phases have these tools auto-approved by default: Read, Edit, Write, Glob, Grep, Task, WebFetch, WebSearch. Bash is NOT auto-approved. If the workflow benefits from agents running shell commands (common), add ` + "`Bash`" + ` to ` + "`default-allow-tools`" + ` at the top level. For project-specific tools (e.g. MCP servers), use glob patterns like ` + "`mcp__atlassian__*`" + `. Per-phase ` + "`allow-tools`" + ` can override for individual phases.
+
 2. Prompt template files for each agent phase. Each prompt should:
    - Reference ` + "`$TICKET`" + `, ` + "`$ARTIFACTS_DIR`" + `, ` + "`$PROJECT_ROOT`" + ` where appropriate.
    - Reference the project's actual structure, conventions, and build tools.
@@ -187,3 +192,9 @@ Each block specifies its path relative to the project root:
 
 All file paths MUST start with ` + "`.orc/`" + `.
 `
+
+const retryFeedback = `
+
+IMPORTANT: Your previous attempt failed with this error: %v
+
+Try again. Output ONLY fenced code blocks with file= annotations. One of them MUST be .orc/config.yaml. Ensure all agent phases reference prompt files that you also generate as file blocks.`
