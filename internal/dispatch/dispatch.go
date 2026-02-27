@@ -11,20 +11,25 @@ import (
 
 // Environment holds the execution context for phase dispatch.
 type Environment struct {
-	ProjectRoot  string
-	WorkDir      string
-	ArtifactsDir string
-	Ticket       string
-	PhaseIndex   int
-	AutoMode     bool
-	PhaseCount   int
-	CustomVars   map[string]string
-	filteredEnv  []string // lazily populated base env (os.Environ minus CLAUDECODE)
+	ProjectRoot       string
+	WorkDir           string
+	ArtifactsDir      string
+	Ticket            string
+	PhaseIndex        int
+	AutoMode          bool
+	PhaseCount        int
+	DefaultAllowTools []string
+	CustomVars        map[string]string
+	filteredEnv       []string // lazily populated base env (os.Environ minus CLAUDECODE)
 }
 
 // Clone returns a deep copy of the Environment, including CustomVars and filteredEnv.
 func (e *Environment) Clone() *Environment {
 	cp := *e
+	if e.DefaultAllowTools != nil {
+		cp.DefaultAllowTools = make([]string, len(e.DefaultAllowTools))
+		copy(cp.DefaultAllowTools, e.DefaultAllowTools)
+	}
 	if e.CustomVars != nil {
 		cp.CustomVars = make(map[string]string, len(e.CustomVars))
 		for k, v := range e.CustomVars {
