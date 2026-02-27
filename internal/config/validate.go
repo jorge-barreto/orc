@@ -15,6 +15,13 @@ var validModels = map[string]bool{
 	"haiku":  true,
 }
 
+var validEfforts = map[string]bool{
+	"":       true,
+	"low":    true,
+	"medium": true,
+	"high":   true,
+}
+
 var varNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // Validate checks the config for errors and sets defaults.
@@ -82,6 +89,9 @@ func Validate(cfg *Config, projectRoot string) error {
 			if p.Model == "" {
 				p.Model = "opus"
 			}
+			if p.Effort == "" {
+				p.Effort = "high"
+			}
 			if p.Timeout == 0 {
 				p.Timeout = 30
 			}
@@ -111,6 +121,10 @@ func Validate(cfg *Config, projectRoot string) error {
 
 		if !validModels[p.Model] {
 			return fmt.Errorf("config: phase %q: unknown model %q (must be opus, sonnet, or haiku)", p.Name, p.Model)
+		}
+
+		if !validEfforts[p.Effort] {
+			return fmt.Errorf("config: phase %q: unknown effort %q (must be low, medium, or high)", p.Name, p.Effort)
 		}
 
 		if p.Timeout < 0 {
