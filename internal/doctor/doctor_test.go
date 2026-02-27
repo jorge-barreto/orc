@@ -13,7 +13,7 @@ import (
 
 func TestGatherLog_Short(t *testing.T) {
 	dir := t.TempDir()
-	artifactsDir := filepath.Join(dir, ".artifacts")
+	artifactsDir := filepath.Join(dir, ".orc", "artifacts")
 	os.MkdirAll(filepath.Join(artifactsDir, "logs"), 0755)
 
 	logPath := state.LogPath(artifactsDir, 0)
@@ -27,7 +27,7 @@ func TestGatherLog_Short(t *testing.T) {
 
 func TestGatherLog_Long(t *testing.T) {
 	dir := t.TempDir()
-	artifactsDir := filepath.Join(dir, ".artifacts")
+	artifactsDir := filepath.Join(dir, ".orc", "artifacts")
 	os.MkdirAll(filepath.Join(artifactsDir, "logs"), 0755)
 
 	var lines []string

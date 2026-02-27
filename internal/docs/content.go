@@ -34,7 +34,7 @@ var topics = []Topic{
 	{
 		Name:    "artifacts",
 		Title:   "Artifacts Directory",
-		Summary: "Structure of .artifacts/ and what gets saved",
+		Summary: "Structure of .orc/artifacts/ and what gets saved",
 		Content: topicArtifacts,
 	},
 }
@@ -200,8 +200,8 @@ Reads a prompt template file, expands variables, and invokes:
 
   claude -p <prompt> --model <model> --dangerously-skip-permissions
 
-Output is streamed to the terminal and saved to .artifacts/logs/phase-N.log.
-The rendered prompt is saved to .artifacts/prompts/phase-N.md.
+Output is streamed to the terminal and saved to .orc/artifacts/logs/phase-N.log.
+The rendered prompt is saved to .orc/artifacts/prompts/phase-N.md.
 
 If outputs are declared and missing after the agent finishes, orc re-invokes
 the agent once with a prompt asking it to produce the missing files. If they
@@ -249,7 +249,7 @@ Built-in Variables
 ------------------
 
   $TICKET          The ticket identifier passed to orc run.
-  $ARTIFACTS_DIR   Absolute path to the .artifacts/ directory.
+  $ARTIFACTS_DIR   Absolute path to the .orc/artifacts/ directory.
   $WORK_DIR        Absolute path to the working directory (project root).
   $PROJECT_ROOT    Absolute path to the project root (where .orc/ lives).
 
@@ -282,7 +282,7 @@ Child processes (scripts and agents) inherit the parent environment with
 these additional ORC_-prefixed variables:
 
   ORC_TICKET           The ticket identifier.
-  ORC_ARTIFACTS_DIR    Absolute path to .artifacts/.
+  ORC_ARTIFACTS_DIR    Absolute path to .orc/artifacts/.
   ORC_WORK_DIR         Working directory.
   ORC_PROJECT_ROOT     Project root directory.
   ORC_PHASE_INDEX      Current phase index (0-based).
@@ -338,14 +338,14 @@ On-Fail Retry Loops
 
 When a phase with on-fail fails:
 
-  1. The failure output is written to .artifacts/feedback/from-<phase>.md.
+  1. The failure output is written to .orc/artifacts/feedback/from-<phase>.md.
   2. The loop counter for that phase is incremented.
   3. The runner jumps back to the phase named in on-fail.goto.
   4. Execution resumes from there (the earlier phase can read the
      feedback file).
 
 If the loop counter exceeds on-fail.max (default: 2), the workflow stops.
-Loop counts are persisted to .artifacts/loop-counts.json and reset when
+Loop counts are persisted to .orc/artifacts/loop-counts.json and reset when
 using --retry or --from.
 
 The on-fail.goto target must reference an earlier phase (no forward jumps).
@@ -379,7 +379,7 @@ Resuming
 --------
 
 orc automatically resumes from the last completed phase. State is saved
-to .artifacts/state.json after every phase. To manually control the
+to .orc/artifacts/state.json after every phase. To manually control the
 resume point:
 
   orc run TICKET --retry 3    Retry from phase 3 (re-runs phase 3)
@@ -391,7 +391,7 @@ Both flags reset loop counts.
 const topicArtifacts = `Artifacts Directory
 ===================
 
-orc creates a .artifacts/ directory in the project root to store all
+orc creates a .orc/artifacts/ directory in the project root to store all
 run data. This directory is the primary mechanism for passing context
 between phases — phases read and write files here rather than relying
 on conversational memory.
@@ -399,7 +399,7 @@ on conversational memory.
 Directory Structure
 -------------------
 
-  .artifacts/
+  .orc/artifacts/
   ├── state.json              Current run state
   ├── timing.json             Start/end timestamps per phase
   ├── loop-counts.json        On-fail retry counters per phase
@@ -458,6 +458,6 @@ Declared Outputs
 ----------------
 
 Phases can declare expected output files via the outputs field. These
-files are expected to appear directly in the .artifacts/ directory (not
+files are expected to appear directly in the .orc/artifacts/ directory (not
 in subdirectories). Output filenames must not contain path separators.
 `

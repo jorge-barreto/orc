@@ -1,2 +1,4 @@
 /orc
-.artifacts/
+.orc/artifacts/
+.claude/
+reviews/
