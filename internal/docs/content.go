@@ -374,8 +374,8 @@ When a phase with on-fail fails:
   1. The failure output is written to .orc/artifacts/feedback/from-<phase>.md.
   2. The loop counter for that phase is incremented.
   3. The runner jumps back to the phase named in on-fail.goto.
-  4. Execution resumes from there (the earlier phase can read the
-     feedback file).
+  4. Execution resumes from there. Feedback is automatically injected
+     into agent prompts — no manual file reading required.
 
 If the loop counter exceeds on-fail.max (default: 2), the workflow stops.
 Loop counts are persisted to .orc/artifacts/loop-counts.json and reset when
@@ -499,9 +499,9 @@ feedback/
 ---------
 
 When a phase with on-fail fails, its output is written to
-feedback/from-<phase-name>.md. The phase that on-fail.goto points to
-can reference this file in its prompt to provide error context for the
-retry attempt.
+feedback/from-<phase-name>.md. Feedback is automatically appended to
+agent prompts on subsequent runs, so agents receive error context
+without needing to manually read feedback files.
 
 Declared Outputs
 ----------------
