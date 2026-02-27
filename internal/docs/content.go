@@ -74,7 +74,8 @@ CLI Flags
   orc run <ticket> --from N     Start from phase N (1-indexed)
   orc cancel <ticket>           Cancel run and remove all artifacts
   orc cancel <ticket> --force   Cancel even if a run appears active
-  orc status <ticket>           Show workflow progress
+  orc status                    Show current run status
+  orc status <ticket>           Show workflow status for a ticket
   orc init                      Scaffold .orc/ directory
   orc docs                      List documentation topics
   orc docs <topic>              Show a documentation topic

@@ -217,17 +217,32 @@ func cancelCmd() *cli.Command {
 func statusCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "status",
-		Usage:     "Show workflow status for a ticket",
-		ArgsUsage: "<ticket>",
+		Usage:     "Show workflow status",
+		ArgsUsage: "[ticket]",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			ticket := cmd.Args().First()
-			if ticket == "" {
-				return fmt.Errorf("ticket argument is required")
-			}
-
 			projectRoot, err := findProjectRoot()
 			if err != nil {
 				return err
+			}
+
+			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts")
+
+			ticket := cmd.Args().First()
+			if ticket == "" {
+				// No ticket arg — check if there's an active run
+				if _, err := os.Stat(filepath.Join(artifactsDir, "state.json")); os.IsNotExist(err) {
+					fmt.Println("No active run.")
+					return nil
+				}
+				st, err := state.Load(artifactsDir)
+				if err != nil {
+					return fmt.Errorf("loading state: %w", err)
+				}
+				if st.Ticket == "" {
+					fmt.Println("No active run.")
+					return nil
+				}
+				ticket = st.Ticket
 			}
 
 			configPath := filepath.Join(projectRoot, ".orc", "config.yaml")
@@ -236,7 +251,6 @@ func statusCmd() *cli.Command {
 				return fmt.Errorf("loading config: %w", err)
 			}
 
-			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts")
 			st, err := state.Load(artifactsDir)
 			if err != nil {
 				return fmt.Errorf("loading state: %w", err)
