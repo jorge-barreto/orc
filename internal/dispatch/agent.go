@@ -122,6 +122,15 @@ func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 	}
 	rendered := ExpandVars(string(promptData), env.Vars())
 
+	// Auto-inject any feedback from previous phase failures
+	feedback, err := state.ReadAllFeedback(env.ArtifactsDir)
+	if err != nil {
+		return nil, fmt.Errorf("reading feedback: %w", err)
+	}
+	if feedback != "" {
+		rendered += "\n\n" + feedback
+	}
+
 	// Save rendered prompt for inspection
 	if err := os.WriteFile(state.PromptPath(env.ArtifactsDir, env.PhaseIndex), []byte(rendered), 0644); err != nil {
 		return nil, err
@@ -200,6 +209,15 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 		return nil, err
 	}
 	rendered := ExpandVars(string(promptData), env.Vars())
+
+	// Auto-inject any feedback from previous phase failures
+	feedback, err := state.ReadAllFeedback(env.ArtifactsDir)
+	if err != nil {
+		return nil, fmt.Errorf("reading feedback: %w", err)
+	}
+	if feedback != "" {
+		rendered += "\n\n" + feedback
+	}
 
 	// Save rendered prompt for inspection
 	if err := os.WriteFile(state.PromptPath(env.ArtifactsDir, env.PhaseIndex), []byte(rendered), 0644); err != nil {

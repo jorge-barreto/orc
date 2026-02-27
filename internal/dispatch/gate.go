@@ -33,7 +33,7 @@ func RunGate(ctx context.Context, phase config.Phase, env *Environment) (*Result
 	}
 
 	// Prompt user
-	fmt.Printf("  Approve? [y/n]: ")
+	fmt.Printf("  [y to continue / feedback to revise]: ")
 	reader := bufio.NewReader(os.Stdin)
 
 	// Use a channel to handle context cancellation during read
@@ -56,18 +56,19 @@ func RunGate(ctx context.Context, phase config.Phase, env *Environment) (*Result
 		if r.err != nil {
 			return nil, r.err
 		}
-		input := strings.ToLower(r.input)
-		switch input {
+		input := r.input
+		switch strings.ToLower(input) {
 		case "y", "yes":
 			msg := fmt.Sprintf("Gate %q approved\n", phase.Name)
 			fmt.Print(msg)
 			logFile.WriteString(msg)
 			return &Result{ExitCode: 0, Output: msg}, nil
 		default:
-			msg := fmt.Sprintf("Gate %q rejected\n", phase.Name)
+			msg := fmt.Sprintf("Gate %q — revision requested\n", phase.Name)
 			fmt.Print(msg)
 			logFile.WriteString(msg)
-			return &Result{ExitCode: 1, Output: msg}, nil
+			logFile.WriteString(fmt.Sprintf("Feedback: %s\n", input))
+			return &Result{ExitCode: 1, Output: input}, nil
 		}
 	}
 }

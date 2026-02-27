@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // EnsureDir creates the artifacts directory structure.
@@ -55,6 +56,43 @@ func SaveLoopCounts(artifactsDir string, counts map[string]int) error {
 func WriteFeedback(artifactsDir, fromPhase, content string) error {
 	path := filepath.Join(artifactsDir, "feedback", fmt.Sprintf("from-%s.md", fromPhase))
 	return writeFileAtomic(path, []byte(content), 0644)
+}
+
+// ReadAllFeedback reads all feedback files and returns them as a formatted string.
+// Returns empty string if no feedback exists.
+func ReadAllFeedback(artifactsDir string) (string, error) {
+	feedbackDir := filepath.Join(artifactsDir, "feedback")
+	entries, err := os.ReadDir(feedbackDir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", nil
+		}
+		return "", err
+	}
+
+	var parts []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(feedbackDir, e.Name()))
+		if err != nil {
+			return "", err
+		}
+		content := strings.TrimSpace(string(data))
+		if content == "" {
+			continue
+		}
+		// Extract phase name from filename "from-<phase>.md"
+		name := e.Name()
+		name = strings.TrimPrefix(name, "from-")
+		name = strings.TrimSuffix(name, ".md")
+		parts = append(parts, fmt.Sprintf("--- Feedback from %s ---\n%s", name, content))
+	}
+	if len(parts) == 0 {
+		return "", nil
+	}
+	return strings.Join(parts, "\n\n"), nil
 }
 
 // CheckOutputs returns a list of expected output files that are missing from artifacts.
