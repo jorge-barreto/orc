@@ -176,7 +176,7 @@ phases:
     type: agent
     description: Produce a technical design
     prompt: .orc/phases/design.md
-    model: sonnet
+    model: opus
     timeout: 20
     cwd: $WORKTREE
     outputs:

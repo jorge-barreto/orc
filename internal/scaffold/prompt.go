@@ -31,7 +31,7 @@ phases:
     type: agent
     description: Analyze the ticket and produce an implementation plan
     prompt: .orc/phases/plan.md
-    model: sonnet
+    model: opus
     outputs:
       - plan.md
 
@@ -43,7 +43,7 @@ phases:
     type: agent
     description: Implement the changes following the plan
     prompt: .orc/phases/implement.md
-    model: sonnet
+    model: opus
 
   - name: test
     type: script
@@ -75,7 +75,7 @@ phases:
     type: agent
     description: Analyze the ticket and produce an implementation plan
     prompt: .orc/phases/plan.md
-    model: sonnet
+    model: opus
     outputs:
       - plan.md
 
@@ -87,7 +87,7 @@ phases:
     type: agent
     description: Implement the changes
     prompt: .orc/phases/implement.md
-    model: sonnet
+    model: opus
 
   - name: test
     type: script
@@ -119,7 +119,7 @@ phases:
     type: agent
     description: Analyze the ticket and create an implementation plan
     prompt: .orc/phases/plan.md
-    model: sonnet
+    model: opus
     outputs:
       - plan.md
 
@@ -131,7 +131,7 @@ phases:
     type: agent
     description: Implement the changes following the plan
     prompt: .orc/phases/implement.md
-    model: sonnet
+    model: opus
 
   - name: test
     type: script
@@ -164,7 +164,7 @@ Based on the project context above, generate a complete orc workflow. Produce:
    - If the project has a linter, add a **lint** (script) phase with ` + "`parallel-with: test`" + `.
    - **review** (gate) — Final human review.
 
-   Use ` + "`sonnet`" + ` as the model for agent phases. Set a reasonable ticket-pattern based on any conventions you see.
+   Use ` + "`opus`" + ` as the model for agent phases. Set a reasonable ticket-pattern based on any conventions you see.
 
 2. Prompt template files for each agent phase. Each prompt should:
    - Reference ` + "`$TICKET`" + `, ` + "`$ARTIFACTS_DIR`" + `, ` + "`$PROJECT_ROOT`" + ` where appropriate.
