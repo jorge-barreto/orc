@@ -60,10 +60,11 @@ func (ov *OrderedVars) UnmarshalYAML(value *yaml.Node) error {
 }
 
 type Config struct {
-	Name          string      `yaml:"name"`
-	TicketPattern string      `yaml:"ticket-pattern"`
-	Vars          OrderedVars `yaml:"vars"`
-	Phases        []Phase     `yaml:"phases"`
+	Name              string      `yaml:"name"`
+	TicketPattern     string      `yaml:"ticket-pattern"`
+	DefaultAllowTools []string    `yaml:"default-allow-tools"`
+	Vars              OrderedVars `yaml:"vars"`
+	Phases            []Phase     `yaml:"phases"`
 }
 
 // Load reads a YAML config file and returns a validated Config.

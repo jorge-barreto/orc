@@ -169,6 +169,25 @@ func TestClone_NilCustomVars(t *testing.T) {
 	}
 }
 
+func TestClone_DeepCopiesDefaultAllowTools(t *testing.T) {
+	env := &Environment{
+		ProjectRoot:       "/proj",
+		WorkDir:           "/work",
+		ArtifactsDir:      "/art",
+		Ticket:            "T-1",
+		DefaultAllowTools: []string{"Bash", "mcp__atlassian__*"},
+	}
+	cp := env.Clone()
+	cp.DefaultAllowTools[0] = "changed"
+	cp.DefaultAllowTools = append(cp.DefaultAllowTools, "extra")
+	if env.DefaultAllowTools[0] != "Bash" {
+		t.Fatalf("original DefaultAllowTools mutated: [0] = %q", env.DefaultAllowTools[0])
+	}
+	if len(env.DefaultAllowTools) != 2 {
+		t.Fatalf("original DefaultAllowTools grew: len = %d", len(env.DefaultAllowTools))
+	}
+}
+
 func TestClone_DeepCopiesFilteredEnv(t *testing.T) {
 	env := &Environment{
 		ProjectRoot:  "/proj",
@@ -223,8 +242,7 @@ func TestPhaseWorkDir_ExpandedCwd(t *testing.T) {
 
 func TestBuildAgentArgs_IncludesDefaultTools(t *testing.T) {
 	phase := config.Phase{Model: "opus"}
-	args := buildAgentArgs(phase, "hello", "", true, nil)
-	// Find --allowedTools and collect tools after it
+	args := buildAgentArgs(phase, "hello", "", true, nil, nil)
 	tools := toolsFromArgs(args)
 	for _, want := range defaultAllowTools {
 		if !contains(tools, want) {
@@ -234,10 +252,22 @@ func TestBuildAgentArgs_IncludesDefaultTools(t *testing.T) {
 }
 
 func TestBuildAgentArgs_MergesPhaseTools(t *testing.T) {
-	phase := config.Phase{Model: "opus", AllowTools: []string{"Bash", "Task"}}
-	args := buildAgentArgs(phase, "hello", "", true, nil)
+	phase := config.Phase{Model: "opus", AllowTools: []string{"Bash", "NotebookEdit"}}
+	args := buildAgentArgs(phase, "hello", "", true, nil, nil)
 	tools := toolsFromArgs(args)
-	for _, want := range append(defaultAllowTools, "Bash", "Task") {
+	for _, want := range append(defaultAllowTools, "Bash", "NotebookEdit") {
+		if !contains(tools, want) {
+			t.Errorf("tool %q not found in args; tools=%v", want, tools)
+		}
+	}
+}
+
+func TestBuildAgentArgs_MergesConfigTools(t *testing.T) {
+	phase := config.Phase{Model: "opus"}
+	configTools := []string{"mcp__atlassian__*", "Bash"}
+	args := buildAgentArgs(phase, "hello", "", true, configTools, nil)
+	tools := toolsFromArgs(args)
+	for _, want := range append(defaultAllowTools, "mcp__atlassian__*", "Bash") {
 		if !contains(tools, want) {
 			t.Errorf("tool %q not found in args; tools=%v", want, tools)
 		}
@@ -245,9 +275,10 @@ func TestBuildAgentArgs_MergesPhaseTools(t *testing.T) {
 }
 
 func TestBuildAgentArgs_DeduplicatesTools(t *testing.T) {
-	// Phase tools overlap with defaults
+	// Config, phase, and extra tools all overlap with defaults
 	phase := config.Phase{Model: "opus", AllowTools: []string{"Read", "Bash"}}
-	args := buildAgentArgs(phase, "hello", "", true, []string{"Read", "Write"})
+	configTools := []string{"Read", "Bash"}
+	args := buildAgentArgs(phase, "hello", "", true, configTools, []string{"Read", "Write"})
 	tools := toolsFromArgs(args)
 	count := 0
 	for _, t := range tools {

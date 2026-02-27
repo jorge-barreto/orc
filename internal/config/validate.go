@@ -49,6 +49,12 @@ func Validate(cfg *Config, projectRoot string) error {
 		seenVars[v.Key] = true
 	}
 
+	for _, tool := range cfg.DefaultAllowTools {
+		if strings.TrimSpace(tool) == "" {
+			return fmt.Errorf("config: 'default-allow-tools' entries must be non-empty")
+		}
+	}
+
 	seen := make(map[string]bool)
 	for i := range cfg.Phases {
 		p := &cfg.Phases[i]

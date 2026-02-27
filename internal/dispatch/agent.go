@@ -28,7 +28,7 @@ var defaultAllowTools = []string{
 // buildAgentArgs constructs the claude CLI arguments for an agent turn.
 // If sessionID is non-empty and isFirst is true, uses --session-id.
 // If sessionID is non-empty and isFirst is false, uses --resume.
-func buildAgentArgs(phase config.Phase, prompt, sessionID string, isFirst bool, extraTools []string) []string {
+func buildAgentArgs(phase config.Phase, prompt, sessionID string, isFirst bool, configTools, extraTools []string) []string {
 	args := []string{"-p", prompt,
 		"--output-format", "stream-json",
 		"--verbose",
@@ -44,10 +44,10 @@ func buildAgentArgs(phase config.Phase, prompt, sessionID string, isFirst bool, 
 		}
 	}
 
-	// Merge default tools, phase allow-tools, and dynamically approved tools
+	// Merge default tools, config-level tools, phase allow-tools, and dynamically approved tools
 	seen := make(map[string]bool)
 	var tools []string
-	for _, list := range [][]string{defaultAllowTools, phase.AllowTools, extraTools} {
+	for _, list := range [][]string{defaultAllowTools, configTools, phase.AllowTools, extraTools} {
 		for _, t := range list {
 			if !seen[t] {
 				seen[t] = true
@@ -71,7 +71,7 @@ type turnResult struct {
 
 // runAgentTurn executes a single agent turn: starts subprocess, processes stream, waits.
 func runAgentTurn(ctx context.Context, phase config.Phase, env *Environment, prompt, sessionID string, isFirst bool, logFile io.Writer, extraTools []string) (*turnResult, error) {
-	args := buildAgentArgs(phase, prompt, sessionID, isFirst, extraTools)
+	args := buildAgentArgs(phase, prompt, sessionID, isFirst, env.DefaultAllowTools, extraTools)
 
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Dir = PhaseWorkDir(phase, env)

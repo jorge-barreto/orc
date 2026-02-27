@@ -80,12 +80,13 @@ func runCmd() *cli.Command {
 			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts")
 
 			env := &dispatch.Environment{
-				ProjectRoot:  projectRoot,
-				WorkDir:      projectRoot,
-				ArtifactsDir: artifactsDir,
-				Ticket:       ticket,
-				AutoMode:     cmd.Bool("auto"),
-				PhaseCount:   len(cfg.Phases),
+				ProjectRoot:       projectRoot,
+				WorkDir:           projectRoot,
+				ArtifactsDir:      artifactsDir,
+				Ticket:            ticket,
+				AutoMode:          cmd.Bool("auto"),
+				PhaseCount:        len(cfg.Phases),
+				DefaultAllowTools: cfg.DefaultAllowTools,
 			}
 
 			if len(cfg.Vars) > 0 {

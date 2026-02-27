@@ -543,6 +543,41 @@ func TestValidate_AllowToolsWhitespaceEntry(t *testing.T) {
 	}
 }
 
+func TestValidate_DefaultAllowToolsValid(t *testing.T) {
+	cfg := &Config{
+		Name:              "test",
+		DefaultAllowTools: []string{"mcp__atlassian__*", "Bash"},
+		Phases:            []Phase{scriptPhase("a")},
+	}
+	if err := Validate(cfg, t.TempDir()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_DefaultAllowToolsEmptyEntry(t *testing.T) {
+	cfg := &Config{
+		Name:              "test",
+		DefaultAllowTools: []string{"Bash", ""},
+		Phases:            []Phase{scriptPhase("a")},
+	}
+	err := Validate(cfg, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "default-allow-tools") {
+		t.Fatalf("expected default-allow-tools error, got %v", err)
+	}
+}
+
+func TestValidate_DefaultAllowToolsWhitespaceEntry(t *testing.T) {
+	cfg := &Config{
+		Name:              "test",
+		DefaultAllowTools: []string{"  "},
+		Phases:            []Phase{scriptPhase("a")},
+	}
+	err := Validate(cfg, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "default-allow-tools") {
+		t.Fatalf("expected default-allow-tools error, got %v", err)
+	}
+}
+
 func TestValidate_VarsBuiltinOverride_PhaseCount(t *testing.T) {
 	cfg := &Config{
 		Name: "test",

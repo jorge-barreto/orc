@@ -91,10 +91,12 @@ Workflows are defined in .orc/config.yaml.
 Top-level fields
 ----------------
 
-  name             string    Required. Project name.
-  ticket-pattern   string    Regex for ticket IDs (anchored automatically).
-  vars             map       Custom variables expanded at startup (declaration order).
-  phases           list      Required. Ordered list of phases.
+  name                string    Required. Project name.
+  ticket-pattern      string    Regex for ticket IDs (anchored automatically).
+  default-allow-tools list      Tools auto-approved for all agent phases.
+                                Merged with built-in defaults (see 'orc docs phases').
+  vars                map       Custom variables expanded at startup (declaration order).
+  phases              list      Required. Ordered list of phases.
 
 Phase fields
 ------------
@@ -111,6 +113,8 @@ Phase fields
   condition        string    Shell command; phase skipped if exit code non-zero.
   parallel-with    string    Name of another phase to run concurrently.
   on-fail          object    Retry loop: goto (phase name) and max (default 2).
+  allow-tools      list      Additional tools to approve for this agent phase.
+                             Merged with defaults. Only valid on agent phases.
   cwd              string    Working directory for this phase (expanded with vars).
                              Not supported on gate phases.
 
@@ -140,6 +144,10 @@ Example Config
 
   name: my-service
   ticket-pattern: '[A-Z]+-\d+'
+
+  default-allow-tools:
+    - "mcp__atlassian__*"
+    - Bash
 
   vars:
     WORKTREE: $PROJECT_ROOT/.worktrees/$TICKET
@@ -201,10 +209,28 @@ agent
 
 Reads a prompt template file, expands variables, and invokes:
 
-  claude -p <prompt> --model <model> --dangerously-skip-permissions
+  claude -p <prompt> --model <model> --allowedTools <tools...>
 
 Output is streamed to the terminal and saved to .orc/artifacts/logs/phase-N.log.
 The rendered prompt is saved to .orc/artifacts/prompts/phase-N.md.
+
+Tool Permissions
+~~~~~~~~~~~~~~~~
+
+The following tools are always approved (built-in defaults):
+
+  Read, Edit, Write, Glob, Grep, Task, WebFetch, WebSearch
+
+Additional tools can be approved at two levels:
+
+  default-allow-tools    Top-level config. Applied to all agent phases.
+                         Use for project-wide tools like MCP servers.
+  allow-tools            Per-phase config. Applied to a single phase.
+                         Use for phase-specific tools like Bash.
+
+All lists are merged and deduplicated. In attended mode (without --auto),
+if the agent attempts a tool that wasn't pre-approved, orc prompts you
+to approve it for the remainder of that phase.
 
 If outputs are declared and missing after the agent finishes, orc re-invokes
 the agent once with a prompt asking it to produce the missing files. If they
@@ -219,6 +245,8 @@ Example:
     prompt: .orc/phases/implement.md
     model: opus
     timeout: 45
+    allow-tools:
+      - Bash
     outputs:
       - design.md
     on-fail:
