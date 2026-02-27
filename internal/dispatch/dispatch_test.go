@@ -221,6 +221,64 @@ func TestPhaseWorkDir_ExpandedCwd(t *testing.T) {
 	}
 }
 
+func TestBuildAgentArgs_IncludesDefaultTools(t *testing.T) {
+	phase := config.Phase{Model: "opus"}
+	args := buildAgentArgs(phase, "hello", "", true, nil)
+	// Find --allowedTools and collect tools after it
+	tools := toolsFromArgs(args)
+	for _, want := range defaultAllowTools {
+		if !contains(tools, want) {
+			t.Errorf("default tool %q not found in args; tools=%v", want, tools)
+		}
+	}
+}
+
+func TestBuildAgentArgs_MergesPhaseTools(t *testing.T) {
+	phase := config.Phase{Model: "opus", AllowTools: []string{"Bash", "Task"}}
+	args := buildAgentArgs(phase, "hello", "", true, nil)
+	tools := toolsFromArgs(args)
+	for _, want := range append(defaultAllowTools, "Bash", "Task") {
+		if !contains(tools, want) {
+			t.Errorf("tool %q not found in args; tools=%v", want, tools)
+		}
+	}
+}
+
+func TestBuildAgentArgs_DeduplicatesTools(t *testing.T) {
+	// Phase tools overlap with defaults
+	phase := config.Phase{Model: "opus", AllowTools: []string{"Read", "Bash"}}
+	args := buildAgentArgs(phase, "hello", "", true, []string{"Read", "Write"})
+	tools := toolsFromArgs(args)
+	count := 0
+	for _, t := range tools {
+		if t == "Read" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("Read appeared %d times, want 1; tools=%v", count, tools)
+	}
+}
+
+// toolsFromArgs extracts the tool names following --allowedTools in args.
+func toolsFromArgs(args []string) []string {
+	for i, a := range args {
+		if a == "--allowedTools" {
+			return args[i+1:]
+		}
+	}
+	return nil
+}
+
+func contains(ss []string, s string) bool {
+	for _, v := range ss {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
 func TestPhaseWorkDir_NoCwd(t *testing.T) {
 	env := &Environment{
 		ProjectRoot:  "/proj",

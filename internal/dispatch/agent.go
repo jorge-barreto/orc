@@ -18,6 +18,13 @@ import (
 	"github.com/jorge-barreto/orc/internal/ux"
 )
 
+// defaultAllowTools are always passed to claude -p so agent phases can
+// perform basic file operations without manual permission approval.
+var defaultAllowTools = []string{
+	"Read", "Edit", "Write", "Glob", "Grep",
+	"Task", "WebFetch", "WebSearch",
+}
+
 // buildAgentArgs constructs the claude CLI arguments for an agent turn.
 // If sessionID is non-empty and isFirst is true, uses --session-id.
 // If sessionID is non-empty and isFirst is false, uses --resume.
@@ -37,10 +44,17 @@ func buildAgentArgs(phase config.Phase, prompt, sessionID string, isFirst bool, 
 		}
 	}
 
-	// Merge phase allow-tools with any dynamically approved tools
-	tools := make([]string, 0, len(phase.AllowTools)+len(extraTools))
-	tools = append(tools, phase.AllowTools...)
-	tools = append(tools, extraTools...)
+	// Merge default tools, phase allow-tools, and dynamically approved tools
+	seen := make(map[string]bool)
+	var tools []string
+	for _, list := range [][]string{defaultAllowTools, phase.AllowTools, extraTools} {
+		for _, t := range list {
+			if !seen[t] {
+				seen[t] = true
+				tools = append(tools, t)
+			}
+		}
+	}
 	if len(tools) > 0 {
 		args = append(args, "--allowedTools")
 		args = append(args, tools...)
