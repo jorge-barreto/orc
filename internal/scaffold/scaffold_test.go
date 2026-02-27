@@ -75,15 +75,83 @@ func TestInit_FailsIfDirExists(t *testing.T) {
 	}
 }
 
-func TestInit_FailsWhenClaudeUnavailable(t *testing.T) {
+func TestInit_FallbackWhenClaudeUnavailable(t *testing.T) {
 	dir := t.TempDir()
 
-	// Clear PATH so claude binary cannot be found.
+	// Clear PATH so claude binary cannot be found — should fall back to default template.
 	t.Setenv("PATH", "")
 
 	err := Init(context.Background(), dir)
-	if err == nil {
-		t.Fatal("expected error when claude is not available")
+	if err != nil {
+		t.Fatalf("Init should succeed via fallback, got: %v", err)
+	}
+
+	// Verify fallback created valid config
+	configPath := filepath.Join(dir, ".orc", "config.yaml")
+	cfg, err := config.Load(configPath, dir)
+	if err != nil {
+		t.Fatalf("fallback config is invalid: %v", err)
+	}
+	if len(cfg.Phases) != 3 {
+		t.Fatalf("expected 3 phases, got %d", len(cfg.Phases))
+	}
+}
+
+func TestWriteFallbackConfig(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeFallbackConfig(dir); err != nil {
+		t.Fatalf("writeFallbackConfig failed: %v", err)
+	}
+
+	// Verify all expected files exist
+	for _, path := range []string{
+		".orc/config.yaml",
+		".orc/phases/plan.md",
+		".orc/phases/implement.md",
+		".orc/.gitignore",
+	} {
+		full := filepath.Join(dir, path)
+		info, err := os.Stat(full)
+		if err != nil {
+			t.Fatalf("%s not created: %v", path, err)
+		}
+		if info.Size() == 0 {
+			t.Fatalf("%s is empty", path)
+		}
+	}
+
+	// Verify config is valid and has expected structure
+	configPath := filepath.Join(dir, ".orc", "config.yaml")
+	cfg, err := config.Load(configPath, dir)
+	if err != nil {
+		t.Fatalf("fallback config is invalid: %v", err)
+	}
+	if len(cfg.Phases) != 3 {
+		t.Fatalf("expected 3 phases, got %d", len(cfg.Phases))
+	}
+	if cfg.Phases[0].Name != "plan" {
+		t.Fatalf("phase 0 = %q, want plan", cfg.Phases[0].Name)
+	}
+	if cfg.Phases[1].Name != "implement" {
+		t.Fatalf("phase 1 = %q, want implement", cfg.Phases[1].Name)
+	}
+	if cfg.Phases[2].Name != "review" {
+		t.Fatalf("phase 2 = %q, want review", cfg.Phases[2].Name)
+	}
+	if cfg.Phases[2].OnFail == nil || cfg.Phases[2].OnFail.Goto != "implement" {
+		t.Fatal("review phase should have on-fail pointing to implement")
+	}
+	if cfg.Phases[2].OnFail.Max != 3 {
+		t.Fatalf("on-fail.max = %d, want 3", cfg.Phases[2].OnFail.Max)
+	}
+
+	// Verify .gitignore
+	gitignore, err := os.ReadFile(filepath.Join(dir, ".orc", ".gitignore"))
+	if err != nil {
+		t.Fatalf("reading .gitignore: %v", err)
+	}
+	if !strings.Contains(string(gitignore), "artifacts/") {
+		t.Fatalf(".gitignore missing artifacts/ entry")
 	}
 }
 
