@@ -236,7 +236,7 @@ func initCmd() *cli.Command {
 			if err != nil {
 				return err
 			}
-			return scaffold.Init(dir)
+			return scaffold.Init(ctx, dir)
 		},
 	}
 }

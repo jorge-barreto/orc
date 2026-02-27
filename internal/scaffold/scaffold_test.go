@@ -1,6 +1,7 @@
 package scaffold
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,7 +12,7 @@ import (
 
 func TestInit_CreatesDirectoryStructure(t *testing.T) {
 	dir := t.TempDir()
-	if err := Init(dir); err != nil {
+	if err := Init(context.Background(), dir); err != nil {
 		t.Fatalf("Init failed: %v", err)
 	}
 
@@ -19,7 +20,6 @@ func TestInit_CreatesDirectoryStructure(t *testing.T) {
 		".orc",
 		".orc/phases",
 		filepath.Join(".orc", "config.yaml"),
-		filepath.Join(".orc", "phases", "example.md"),
 	} {
 		full := filepath.Join(dir, path)
 		info, err := os.Stat(full)
@@ -34,7 +34,7 @@ func TestInit_CreatesDirectoryStructure(t *testing.T) {
 
 func TestInit_GeneratedConfigIsValid(t *testing.T) {
 	dir := t.TempDir()
-	if err := Init(dir); err != nil {
+	if err := Init(context.Background(), dir); err != nil {
 		t.Fatalf("Init failed: %v", err)
 	}
 
@@ -44,15 +44,8 @@ func TestInit_GeneratedConfigIsValid(t *testing.T) {
 		t.Fatalf("config.Load failed on generated config: %v", err)
 	}
 
-	if len(cfg.Phases) != 3 {
-		t.Fatalf("expected 3 phases, got %d", len(cfg.Phases))
-	}
-
-	wantTypes := []string{"script", "agent", "gate"}
-	for i, want := range wantTypes {
-		if cfg.Phases[i].Type != want {
-			t.Fatalf("phase %d: expected type %q, got %q", i, want, cfg.Phases[i].Type)
-		}
+	if len(cfg.Phases) < 1 {
+		t.Fatal("expected at least 1 phase")
 	}
 }
 
@@ -63,11 +56,61 @@ func TestInit_FailsIfDirExists(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := Init(dir)
+	err := Init(context.Background(), dir)
 	if err == nil {
 		t.Fatal("expected error when .orc already exists")
 	}
 	if !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("expected error containing 'already exists', got: %s", err)
+	}
+}
+
+func TestInit_FailsWhenClaudeUnavailable(t *testing.T) {
+	dir := t.TempDir()
+
+	// Clear PATH so claude binary cannot be found.
+	t.Setenv("PATH", "")
+
+	err := Init(context.Background(), dir)
+	if err == nil {
+		t.Fatal("expected error when claude is not available")
+	}
+}
+
+func TestRenderWorkflowSummary_Sequential(t *testing.T) {
+	phases := []config.Phase{
+		{Name: "plan"},
+		{Name: "implement"},
+		{Name: "review"},
+	}
+	got := renderWorkflowSummary(phases)
+	want := "plan → implement → review"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestRenderWorkflowSummary_WithParallel(t *testing.T) {
+	phases := []config.Phase{
+		{Name: "plan"},
+		{Name: "test"},
+		{Name: "lint", ParallelWith: "test"},
+		{Name: "review"},
+	}
+	got := renderWorkflowSummary(phases)
+	want := "plan → test ∥ lint → review"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestRenderWorkflowSummary_Single(t *testing.T) {
+	phases := []config.Phase{
+		{Name: "implement"},
+	}
+	got := renderWorkflowSummary(phases)
+	want := "implement"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
 	}
 }
