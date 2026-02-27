@@ -72,6 +72,8 @@ CLI Flags
   orc run <ticket> --dry-run    Preview phase plan
   orc run <ticket> --retry N    Retry from phase N (1-indexed)
   orc run <ticket> --from N     Start from phase N (1-indexed)
+  orc cancel <ticket>           Cancel run and remove all artifacts
+  orc cancel <ticket> --force   Cancel even if a run appears active
   orc status <ticket>           Show workflow progress
   orc init                      Scaffold .orc/ directory
   orc docs                      List documentation topics
@@ -386,6 +388,22 @@ resume point:
   orc run TICKET --from 2     Start from phase 2 (skips phase 1)
 
 Both flags reset loop counts.
+
+Cancelling
+----------
+
+To permanently cancel a run and wipe all artifacts:
+
+  orc cancel TICKET
+
+This removes the entire .orc/artifacts/ directory (state, timing, logs,
+prompts, feedback, and any declared outputs). The workflow config and
+prompt files under .orc/ are not affected.
+
+If state.json shows status "running", cancel refuses by default — press
+Ctrl+C in the running terminal first, or pass --force:
+
+  orc cancel TICKET --force
 `
 
 const topicArtifacts = `Artifacts Directory
