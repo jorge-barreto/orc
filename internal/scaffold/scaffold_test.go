@@ -20,6 +20,7 @@ func TestInit_CreatesDirectoryStructure(t *testing.T) {
 		".orc",
 		".orc/phases",
 		filepath.Join(".orc", "config.yaml"),
+		filepath.Join(".orc", ".gitignore"),
 	} {
 		full := filepath.Join(dir, path)
 		info, err := os.Stat(full)
@@ -29,6 +30,15 @@ func TestInit_CreatesDirectoryStructure(t *testing.T) {
 		if !info.IsDir() && info.Size() == 0 {
 			t.Fatalf("%s is empty", path)
 		}
+	}
+
+	// Verify .gitignore content
+	gitignore, err := os.ReadFile(filepath.Join(dir, ".orc", ".gitignore"))
+	if err != nil {
+		t.Fatalf("reading .gitignore: %v", err)
+	}
+	if !strings.Contains(string(gitignore), "artifacts/") {
+		t.Fatalf(".gitignore missing artifacts/ entry, got: %q", string(gitignore))
 	}
 }
 

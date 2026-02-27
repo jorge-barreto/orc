@@ -77,6 +77,13 @@ func initWithAI(ctx context.Context, targetDir string) error {
 		written = append(written, b.Path)
 	}
 
+	// Write .gitignore (deterministic, not AI-generated)
+	gitignorePath := filepath.Join(targetDir, ".orc", ".gitignore")
+	if err := os.WriteFile(gitignorePath, []byte("artifacts/\n"), 0644); err != nil {
+		return fmt.Errorf("writing .orc/.gitignore: %w", err)
+	}
+	written = append(written, ".orc/.gitignore")
+
 	// Print success
 	fmt.Printf("\n%s%s  ✓ Initialized .orc/ directory (AI-generated)%s\n\n", ux.Bold, ux.Green, ux.Reset)
 	fmt.Printf("  Created:\n")

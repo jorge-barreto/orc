@@ -1,0 +1,33 @@
+name: orc
+ticket-pattern: '[A-Z]+-\d+'
+
+phases:
+  - name: plan
+    type: agent
+    description: Analyze the ticket and produce an implementation plan
+    prompt: .orc/phases/plan.md
+    model: opus
+    outputs:
+      - plan.md
+
+  - name: review-plan
+    type: gate
+    description: Human reviews the plan before implementation
+
+  - name: implement
+    type: agent
+    description: Implement the changes following the plan
+    prompt: .orc/phases/implement.md
+    model: opus
+
+  - name: test
+    type: script
+    description: Run tests
+    run: make test
+    on-fail:
+      goto: implement
+      max: 3
+
+  - name: review
+    type: gate
+    description: Final human review before merging
