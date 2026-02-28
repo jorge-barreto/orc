@@ -164,7 +164,7 @@ func printSuccess(source string, written []string) {
 
 // runClaudeCapture invokes claude -p with the given prompt and returns stdout.
 func runClaudeCapture(ctx context.Context, prompt string) (string, error) {
-	cmd := exec.CommandContext(ctx, "claude", "-p", prompt, "--model", "opus")
+	cmd := exec.CommandContext(ctx, "claude", "-p", prompt, "--model", "opus", "--effort", "high")
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = os.Stderr
