@@ -106,6 +106,30 @@ func runAgentTurn(ctx context.Context, phase config.Phase, env *Environment, pro
 	return &turnResult{Stream: streamResult, ExitCode: code}, nil
 }
 
+// RenderAndSavePrompt reads the prompt template, expands variables, injects
+// feedback from previous failures, and saves the rendered prompt to artifacts/prompts/.
+// Returns the fully rendered prompt string.
+func RenderAndSavePrompt(phase config.Phase, env *Environment) (string, error) {
+	promptData, err := os.ReadFile(filepath.Join(env.ProjectRoot, phase.Prompt))
+	if err != nil {
+		return "", err
+	}
+	rendered := ExpandVars(string(promptData), env.Vars())
+
+	feedback, err := state.ReadAllFeedback(env.ArtifactsDir)
+	if err != nil {
+		return "", fmt.Errorf("reading feedback: %w", err)
+	}
+	if feedback != "" {
+		rendered += "\n\n" + feedback
+	}
+
+	if err := os.WriteFile(state.PromptPath(env.ArtifactsDir, env.PhaseIndex), []byte(rendered), 0644); err != nil {
+		return "", err
+	}
+	return rendered, nil
+}
+
 // RunAgent executes an agent phase in unattended mode (no stdin monitoring).
 // Uses stream-json parsing for real-time output.
 func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Result, error) {
@@ -115,24 +139,8 @@ func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 		defer cancel()
 	}
 
-	// Read and render the prompt template
-	promptData, err := os.ReadFile(filepath.Join(env.ProjectRoot, phase.Prompt))
+	rendered, err := RenderAndSavePrompt(phase, env)
 	if err != nil {
-		return nil, err
-	}
-	rendered := ExpandVars(string(promptData), env.Vars())
-
-	// Auto-inject any feedback from previous phase failures
-	feedback, err := state.ReadAllFeedback(env.ArtifactsDir)
-	if err != nil {
-		return nil, fmt.Errorf("reading feedback: %w", err)
-	}
-	if feedback != "" {
-		rendered += "\n\n" + feedback
-	}
-
-	// Save rendered prompt for inspection
-	if err := os.WriteFile(state.PromptPath(env.ArtifactsDir, env.PhaseIndex), []byte(rendered), 0644); err != nil {
 		return nil, err
 	}
 
@@ -203,24 +211,8 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 		defer cancel()
 	}
 
-	// Read and render the prompt template
-	promptData, err := os.ReadFile(filepath.Join(env.ProjectRoot, phase.Prompt))
+	rendered, err := RenderAndSavePrompt(phase, env)
 	if err != nil {
-		return nil, err
-	}
-	rendered := ExpandVars(string(promptData), env.Vars())
-
-	// Auto-inject any feedback from previous phase failures
-	feedback, err := state.ReadAllFeedback(env.ArtifactsDir)
-	if err != nil {
-		return nil, fmt.Errorf("reading feedback: %w", err)
-	}
-	if feedback != "" {
-		rendered += "\n\n" + feedback
-	}
-
-	// Save rendered prompt for inspection
-	if err := os.WriteFile(state.PromptPath(env.ArtifactsDir, env.PhaseIndex), []byte(rendered), 0644); err != nil {
 		return nil, err
 	}
 

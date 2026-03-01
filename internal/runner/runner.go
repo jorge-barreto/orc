@@ -25,6 +25,17 @@ type Runner struct {
 	Timing     *state.Timing
 }
 
+// appendPhaseLog appends a message to the phase log file.
+// Errors are silently ignored — logging should not break the run.
+func appendPhaseLog(artifactsDir string, phaseIdx int, msg string) {
+	f, err := os.OpenFile(state.LogPath(artifactsDir, phaseIdx), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprint(f, msg)
+}
+
 // failAndHint sets the failure status, saves state (warning on error),
 // flushes timing, prints a resume hint, and returns the given error.
 func (r *Runner) failAndHint(status string, err error) error {
@@ -105,6 +116,7 @@ func (r *Runner) Run(ctx context.Context) error {
 		result, err := r.Dispatcher.Dispatch(ctx, phase, r.Env)
 
 		if ctx.Err() != nil {
+			appendPhaseLog(r.Env.ArtifactsDir, i, fmt.Sprintf("\n[orc] phase interrupted: %v\n", ctx.Err()))
 			return r.failAndHint(state.StatusInterrupted, ctx.Err())
 		}
 
@@ -113,6 +125,7 @@ func (r *Runner) Run(ctx context.Context) error {
 			if err != nil {
 				errMsg = err.Error()
 			}
+			appendPhaseLog(r.Env.ArtifactsDir, i, fmt.Sprintf("\n[orc] phase %q failed: %s\n", phase.Name, errMsg))
 			ux.PhaseFail(i, phase.Name, errMsg)
 			if phase.Type == "agent" {
 				fmt.Fprintf(os.Stderr, "  hint: if the agent couldn't perform actions, check your .claude/settings.local.json permissions\n")
@@ -326,6 +339,7 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 			if pr.err != nil {
 				errMsg = pr.err.Error()
 			}
+			appendPhaseLog(r.Env.ArtifactsDir, pr.idx, fmt.Sprintf("\n[orc] phase %q failed: %s\n", phase.Name, errMsg))
 			ux.PhaseFail(pr.idx, phase.Name, errMsg)
 			if firstErr == nil {
 				firstErr = fmt.Errorf("phase %q failed: %s", phase.Name, errMsg)

@@ -1,33 +1,80 @@
 name: orc
-ticket-pattern: '[A-Z]+-\d+'
+ticket-pattern: 'R-\d+'
+model: opus
+effort: high
+
+default-allow-tools:
+  - Bash
 
 phases:
   - name: plan
     type: agent
-    description: Analyze the ticket and produce an implementation plan
+    description: Read the roadmap item and produce an implementation plan
     prompt: .orc/phases/plan.md
-    model: opus
+    timeout: 15
     outputs:
       - plan.md
 
   - name: review-plan
-    type: gate
-    description: Human reviews the plan before implementation
+    type: agent
+    description: Review the plan for completeness and correctness
+    prompt: .orc/phases/review-plan.md
+    timeout: 10
+    outputs:
+      - plan-review.md
+
+  - name: plan-check
+    type: script
+    description: Check if plan review passed
+    run: test -f $ARTIFACTS_DIR/plan-approved.txt || { cat $ARTIFACTS_DIR/plan-review.md 2>/dev/null; exit 1; }
+    timeout: 1
+    on-fail:
+      goto: plan
+      max: 2
 
   - name: implement
     type: agent
     description: Implement the changes following the plan
     prompt: .orc/phases/implement.md
-    model: opus
+    timeout: 30
 
   - name: test
     type: script
-    description: Run tests
-    run: make test
+    description: Run the test suite
+    run: cd $PROJECT_ROOT && make test
+    timeout: 5
     on-fail:
       goto: implement
-      max: 3
+      max: 10
 
   - name: review
-    type: gate
-    description: Final human review before merging
+    type: agent
+    description: Review the implementation against the plan
+    prompt: .orc/phases/review.md
+    timeout: 15
+    outputs:
+      - review-findings.md
+
+  - name: review-check
+    type: script
+    description: Check if review passed
+    run: test -f $ARTIFACTS_DIR/review-pass.txt || { cat $ARTIFACTS_DIR/review-findings.md 2>/dev/null; exit 1; }
+    timeout: 1
+    on-fail:
+      goto: implement
+      max: 2
+
+  - name: commit
+    type: script
+    description: Stage and commit the changes
+    run: |
+      cd $PROJECT_ROOT
+      git add -A
+      git diff --cached --quiet && { echo "No changes to commit"; exit 0; }
+      git commit -m "$(cat <<EOF
+      $TICKET: $(head -1 $ARTIFACTS_DIR/plan.md | sed 's/^#* *//')
+
+      Co-Authored-By: orc <orc@jorgebarreto.dev>
+      EOF
+      )"
+    timeout: 1

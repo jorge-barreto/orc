@@ -1,0 +1,31 @@
+name: orc
+ticket-pattern: 'ROADMAP-\d+'
+
+default-allow-tools:
+  - Bash
+
+phases:
+  - name: revise
+    type: agent
+    description: Improve the roadmap based on review feedback
+    prompt: .orc/phases/revise.md
+    model: opus
+    timeout: 30
+
+  - name: review
+    type: agent
+    description: Critically review the roadmap and identify issues
+    prompt: .orc/phases/review.md
+    model: opus
+    timeout: 20
+    outputs:
+      - review-critique.md
+
+  - name: review-check
+    type: script
+    description: Check if review passed (outputs critique as feedback if not)
+    run: test -f $ARTIFACTS_DIR/review-pass.txt || { cat $ARTIFACTS_DIR/review-critique.md 2>/dev/null; exit 1; }
+    timeout: 1
+    on-fail:
+      goto: revise
+      max: 3
