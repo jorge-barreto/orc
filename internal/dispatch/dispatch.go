@@ -84,7 +84,7 @@ func BuildEnv(env *Environment) []string {
 	if env.filteredEnv == nil {
 		for _, e := range os.Environ() {
 			key := strings.SplitN(e, "=", 2)[0]
-			if strings.HasPrefix(key, "CLAUDECODE") {
+			if strings.HasPrefix(key, "CLAUDECODE") || strings.HasPrefix(key, "ORC_") {
 				continue
 			}
 			env.filteredEnv = append(env.filteredEnv, e)

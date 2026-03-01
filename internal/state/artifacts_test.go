@@ -3,6 +3,7 @@ package state
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -65,6 +66,109 @@ func TestWriteFeedback(t *testing.T) {
 	}
 	if string(data) != "something broke" {
 		t.Fatalf("got %q", string(data))
+	}
+}
+
+func TestReadAllFeedback_SingleFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := EnsureDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFeedback(dir, "build", "build failed: exit code 1"); err != nil {
+		t.Fatal(err)
+	}
+	result, err := ReadAllFeedback(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "--- Feedback from build ---") {
+		t.Fatalf("missing feedback header; got:\n%s", result)
+	}
+	if !strings.Contains(result, "build failed: exit code 1") {
+		t.Fatalf("missing feedback content; got:\n%s", result)
+	}
+}
+
+func TestReadAllFeedback_MultipleFiles(t *testing.T) {
+	dir := t.TempDir()
+	if err := EnsureDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFeedback(dir, "build", "build failed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFeedback(dir, "test", "tests failed"); err != nil {
+		t.Fatal(err)
+	}
+	result, err := ReadAllFeedback(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "--- Feedback from build ---") {
+		t.Fatalf("missing build feedback header; got:\n%s", result)
+	}
+	if !strings.Contains(result, "--- Feedback from test ---") {
+		t.Fatalf("missing test feedback header; got:\n%s", result)
+	}
+	if !strings.Contains(result, "build failed") {
+		t.Fatalf("missing build feedback content; got:\n%s", result)
+	}
+	if !strings.Contains(result, "tests failed") {
+		t.Fatalf("missing test feedback content; got:\n%s", result)
+	}
+}
+
+func TestReadAllFeedback_NoDir(t *testing.T) {
+	dir := t.TempDir()
+	// Don't call EnsureDir — feedback/ subdir does not exist
+	result, err := ReadAllFeedback(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != "" {
+		t.Fatalf("expected empty string, got %q", result)
+	}
+}
+
+func TestReadAllFeedback_EmptyDir(t *testing.T) {
+	dir := t.TempDir()
+	if err := EnsureDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	result, err := ReadAllFeedback(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != "" {
+		t.Fatalf("expected empty string, got %q", result)
+	}
+}
+
+func TestReadAllFeedback_SkipsEmptyContent(t *testing.T) {
+	dir := t.TempDir()
+	if err := EnsureDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFeedback(dir, "build", "real feedback"); err != nil {
+		t.Fatal(err)
+	}
+	// Write a whitespace-only feedback file directly
+	emptyPath := filepath.Join(dir, "feedback", "from-empty.md")
+	if err := os.WriteFile(emptyPath, []byte("   \n  "), 0644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := ReadAllFeedback(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "--- Feedback from build ---") {
+		t.Fatalf("missing build feedback header; got:\n%s", result)
+	}
+	if !strings.Contains(result, "real feedback") {
+		t.Fatalf("missing build feedback content; got:\n%s", result)
+	}
+	if strings.Contains(result, "--- Feedback from empty ---") {
+		t.Fatalf("should not contain empty feedback; got:\n%s", result)
 	}
 }
 
