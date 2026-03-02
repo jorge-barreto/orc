@@ -224,23 +224,13 @@ func cancelCmd() *cli.Command {
 func statusCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "status",
-		Usage:     "Show workflow status",
-		ArgsUsage: "<ticket>",
+		Usage:     "Show workflow status (all tickets, or one ticket)",
+		ArgsUsage: "[ticket]",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			ticket := cmd.Args().First()
-			if ticket == "" {
-				return fmt.Errorf("ticket argument is required")
-			}
-			if err := validateTicketPath(ticket); err != nil {
-				return err
-			}
-
 			projectRoot, err := findProjectRoot()
 			if err != nil {
 				return err
 			}
-
-			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts", ticket)
 
 			configPath := filepath.Join(projectRoot, ".orc", "config.yaml")
 			cfg, err := config.Load(configPath, projectRoot)
@@ -248,6 +238,25 @@ func statusCmd() *cli.Command {
 				return fmt.Errorf("loading config: %w", err)
 			}
 
+			ticket := cmd.Args().First()
+
+			// No argument: show all tickets
+			if ticket == "" {
+				baseDir := filepath.Join(projectRoot, ".orc", "artifacts")
+				tickets, err := state.ListTickets(baseDir)
+				if err != nil {
+					return fmt.Errorf("listing tickets: %w", err)
+				}
+				ux.RenderStatusAll(cfg, tickets)
+				return nil
+			}
+
+			// With argument: single-ticket detail view
+			if err := validateTicketPath(ticket); err != nil {
+				return err
+			}
+
+			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts", ticket)
 			st, err := state.Load(artifactsDir)
 			if err != nil {
 				return fmt.Errorf("loading state: %w", err)
