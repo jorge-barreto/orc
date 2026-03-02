@@ -70,7 +70,7 @@ type turnResult struct {
 }
 
 // runAgentTurn executes a single agent turn: starts subprocess, processes stream, waits.
-func runAgentTurn(ctx context.Context, phase config.Phase, env *Environment, prompt, sessionID string, isFirst bool, logFile io.Writer, extraTools []string) (*turnResult, error) {
+func runAgentTurn(ctx context.Context, phase config.Phase, env *Environment, prompt, sessionID string, isFirst bool, logFile io.Writer, rawLog io.Writer, extraTools []string) (*turnResult, error) {
 	args := buildAgentArgs(phase, prompt, sessionID, isFirst, env.DefaultAllowTools, extraTools)
 
 	cmd := exec.CommandContext(ctx, "claude", args...)
@@ -92,7 +92,7 @@ func runAgentTurn(ctx context.Context, phase config.Phase, env *Environment, pro
 		return nil, fmt.Errorf("starting claude: %w", err)
 	}
 
-	streamResult, streamErr := processStream(ctx, stdout, os.Stdout, logFile)
+	streamResult, streamErr := processStream(ctx, stdout, os.Stdout, logFile, rawLog)
 
 	code, waitErr := exitCode(cmd.Wait())
 	if waitErr != nil {
@@ -149,8 +149,17 @@ func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 	}
 	defer logFile.Close()
 
+	var rawLog *os.File
+	if env.Verbose {
+		rawLog, err = os.OpenFile(state.StreamLogPath(env.ArtifactsDir, env.PhaseIndex), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			return nil, err
+		}
+		defer rawLog.Close()
+	}
+
 	sessionID := uuid.New().String()
-	tr, err := runAgentTurn(ctx, phase, env, rendered, sessionID, true, logFile, nil)
+	tr, err := runAgentTurn(ctx, phase, env, rendered, sessionID, true, logFile, rawLog, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +203,16 @@ func RunAgentWithPrompt(ctx context.Context, phase config.Phase, env *Environmen
 	}
 	defer logFile.Close()
 
-	tr, err := runAgentTurn(ctx, phase, env, prompt, "", false, logFile, nil)
+	var rawLog *os.File
+	if env.Verbose {
+		rawLog, err = os.OpenFile(state.StreamLogPath(env.ArtifactsDir, env.PhaseIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return nil, err
+		}
+		defer rawLog.Close()
+	}
+
+	tr, err := runAgentTurn(ctx, phase, env, prompt, "", false, logFile, rawLog, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -237,6 +255,15 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 	}
 	defer logFile.Close()
 
+	var rawLog *os.File
+	if env.Verbose {
+		rawLog, err = os.OpenFile(state.StreamLogPath(env.ArtifactsDir, env.PhaseIndex), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			return nil, err
+		}
+		defer rawLog.Close()
+	}
+
 	sessionID := uuid.New().String()
 	reader := NewStdinReader(os.Stdin)
 	defer reader.Stop()
@@ -251,7 +278,7 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 	var turns int
 
 	for {
-		tr, err := runAgentTurn(ctx, phase, env, prompt, sessionID, isFirst, logFile, extraTools)
+		tr, err := runAgentTurn(ctx, phase, env, prompt, sessionID, isFirst, logFile, rawLog, extraTools)
 		if err != nil {
 			return nil, err
 		}

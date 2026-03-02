@@ -216,3 +216,16 @@ func TestLogPath(t *testing.T) {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }
+
+func TestStreamLogPath(t *testing.T) {
+	got := StreamLogPath("/art", 0)
+	want := filepath.Join("/art", "logs", "phase-1.stream.jsonl")
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	got = StreamLogPath("/art", 4)
+	want = filepath.Join("/art", "logs", "phase-5.stream.jsonl")
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
