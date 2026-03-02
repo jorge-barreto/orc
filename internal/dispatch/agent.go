@@ -1,7 +1,6 @@
 package dispatch
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -269,7 +268,7 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 
 		// Handle permission denials
 		if tr.Stream != nil && len(tr.Stream.PermissionDenials) > 0 {
-			approved := handleDenials(tr.Stream.PermissionDenials)
+			approved := handleDenials(tr.Stream.PermissionDenials, reader)
 			if len(approved) > 0 {
 				extraTools = append(extraTools, approved...)
 				prompt = "Continue — the previously denied tools have now been approved."
@@ -310,7 +309,7 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 
 // handleDenials prompts the user about permission denials and returns
 // the tool names that should be approved for retry.
-func handleDenials(denials []PermissionDenial) []string {
+func handleDenials(denials []PermissionDenial, reader *StdinReader) []string {
 	var names []string
 	for _, d := range denials {
 		names = append(names, d.String())
@@ -320,9 +319,9 @@ func handleDenials(denials []PermissionDenial) []string {
 	ux.PermissionPrompt(names)
 	fmt.Printf("  Retry with these tools approved? [y/n]: ")
 
-	scanner := bufio.NewScanner(os.Stdin)
-	if scanner.Scan() {
-		answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
+	line, ok := reader.ReadLineBlocking()
+	if ok {
+		answer := strings.TrimSpace(strings.ToLower(line))
 		if answer == "y" || answer == "yes" {
 			var tools []string
 			for _, d := range denials {

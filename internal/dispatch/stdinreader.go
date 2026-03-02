@@ -57,6 +57,17 @@ func (sr *StdinReader) ReadLine() (string, bool) {
 	}
 }
 
+// ReadLineBlocking waits for the next line from stdin.
+// Returns ("", false) if the reader is stopped before input arrives.
+func (sr *StdinReader) ReadLineBlocking() (string, bool) {
+	select {
+	case line := <-sr.lines:
+		return line, true
+	case <-sr.done:
+		return "", false
+	}
+}
+
 // Stop signals the background goroutine to exit.
 // The goroutine may remain blocked on scanner.Scan() until stdin produces
 // input or is closed; Stop is best-effort.
