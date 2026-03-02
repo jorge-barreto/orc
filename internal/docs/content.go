@@ -413,6 +413,31 @@ artifacts directory. If any are missing, the agent is re-invoked once
 with a prompt requesting the missing files. If they are still missing,
 the phase fails.
 
+Exit Codes
+----------
+
+orc run returns structured exit codes for scripting and CI/CD:
+
+  0    Success. Workflow completed, all phases passed.
+  1    Retryable failure. An agent phase failed, an on-fail loop exceeded
+       its max, or a timeout was hit. A fresh orc run might succeed.
+  2    Human intervention needed. A gate was denied, or a phase produced
+       an unrecoverable error. Don't retry automatically.
+  3    Configuration or setup error. Config invalid, prompt file missing,
+       required binary not found. Fix the config before retrying.
+  130  Signal interrupt. SIGINT (Ctrl+C) or SIGTERM was received.
+
+A wrapper script can check $? to decide whether to retry:
+
+  orc run TICKET-1
+  case $? in
+    0) echo "Success" ;;
+    1) echo "Retryable — running again..." ; orc run TICKET-1 ;;
+    2) echo "Needs human intervention" ;;
+    3) echo "Fix the config" ;;
+    130) echo "Interrupted" ;;
+  esac
+
 Signal Handling
 ---------------
 
@@ -420,6 +445,7 @@ When you press Ctrl+C (SIGINT) or send SIGTERM/SIGHUP:
 
 - The current phase is cancelled via context cancellation.
 - State is saved with status "interrupted".
+- Exit code 130 is returned (conventional for SIGINT).
 - A resume hint is printed: orc run <ticket>
 
 Resume the workflow later — it picks up from the interrupted phase.

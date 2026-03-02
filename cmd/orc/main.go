@@ -36,7 +36,7 @@ func main() {
 
 	if err := app.Run(context.Background(), os.Args); err != nil {
 		fmt.Fprintf(os.Stderr, "%serror:%s %v\n", ux.Red, ux.Reset, err)
-		os.Exit(1)
+		os.Exit(runner.ExitCodeFrom(err))
 	}
 }
 
@@ -52,32 +52,36 @@ func runCmd() *cli.Command {
 			&cli.BoolFlag{Name: "dry-run", Usage: "Print phase plan without executing"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			cfgErr := func(err error) error {
+				return &runner.ExitError{Code: runner.ExitConfigError, Err: err}
+			}
+
 			// CLAUDECODE guard
 			if os.Getenv("CLAUDECODE") != "" {
-				return fmt.Errorf("orc cannot run inside Claude Code (CLAUDECODE env var is set). Run from a regular terminal")
+				return cfgErr(fmt.Errorf("orc cannot run inside Claude Code (CLAUDECODE env var is set). Run from a regular terminal"))
 			}
 
 			ticket := cmd.Args().First()
 			if ticket == "" {
-				return fmt.Errorf("ticket argument is required")
+				return cfgErr(fmt.Errorf("ticket argument is required"))
 			}
 			if err := validateTicketPath(ticket); err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			projectRoot, err := findProjectRoot()
 			if err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			configPath := filepath.Join(projectRoot, ".orc", "config.yaml")
 			cfg, err := config.Load(configPath, projectRoot)
 			if err != nil {
-				return fmt.Errorf("loading config: %w", err)
+				return cfgErr(fmt.Errorf("loading config: %w", err))
 			}
 
 			if err := config.ValidateTicket(cfg.TicketPattern, ticket); err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts", ticket)
@@ -99,7 +103,7 @@ func runCmd() *cli.Command {
 			// Load or create state
 			st, err := state.Load(artifactsDir)
 			if err != nil {
-				return fmt.Errorf("loading state: %w", err)
+				return cfgErr(fmt.Errorf("loading state: %w", err))
 			}
 			st.Ticket = ticket
 			st.Status = state.StatusRunning
@@ -108,17 +112,17 @@ func runCmd() *cli.Command {
 			retry := cmd.Int("retry")
 			from := cmd.Int("from")
 			if retry > 0 && from > 0 {
-				return fmt.Errorf("--retry and --from are mutually exclusive")
+				return cfgErr(fmt.Errorf("--retry and --from are mutually exclusive"))
 			}
 			if retry > 0 {
 				if int(retry) > len(cfg.Phases) {
-					return fmt.Errorf("--retry %d exceeds phase count (%d)", retry, len(cfg.Phases))
+					return cfgErr(fmt.Errorf("--retry %d exceeds phase count (%d)", retry, len(cfg.Phases)))
 				}
 				st.SetPhase(int(retry) - 1)
 			}
 			if from > 0 {
 				if int(from) > len(cfg.Phases) {
-					return fmt.Errorf("--from %d exceeds phase count (%d)", from, len(cfg.Phases))
+					return cfgErr(fmt.Errorf("--from %d exceeds phase count (%d)", from, len(cfg.Phases)))
 				}
 				st.SetPhase(int(from) - 1)
 			}
@@ -126,15 +130,15 @@ func runCmd() *cli.Command {
 			// Reset loop counts when resuming from a specific phase
 			if retry > 0 || from > 0 {
 				if err := state.EnsureDir(artifactsDir); err != nil {
-					return err
+					return cfgErr(err)
 				}
 				if err := state.SaveLoopCounts(artifactsDir, make(map[string]int)); err != nil {
-					return fmt.Errorf("resetting loop counts: %w", err)
+					return cfgErr(fmt.Errorf("resetting loop counts: %w", err))
 				}
 			}
 
 			if err := dispatch.Preflight(cfg.Phases); err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			r := &runner.Runner{
@@ -152,10 +156,10 @@ func runCmd() *cli.Command {
 
 			// Ensure artifacts directory exists and save initial state
 			if err := state.EnsureDir(artifactsDir); err != nil {
-				return err
+				return cfgErr(err)
 			}
 			if err := st.Save(artifactsDir); err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			// Set up signal handling
