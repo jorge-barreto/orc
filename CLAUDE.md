@@ -61,3 +61,97 @@ Validation (`internal/config/validate.go`) enforces: unique phase names, `on-fai
 - Variable substitution uses `os.Expand()` with a custom map + env fallback (`internal/dispatch/expand.go`)
 - Errors are wrapped with `%w` for error chains
 - The binary refuses to run if `CLAUDECODE` env var is set (prevents nesting inside Claude Code)
+
+## Beads: Work Tracking
+
+Beads is a **work tracker** that persists across sessions. The orc roadmap (ROADMAP.md) has been decomposed into beads: each Wave is an epic, each roadmap item (R-NNN, P-NNN) is a task bead.
+
+- **Use beads instead of TodoWrite** — beads persist across sessions
+- **Valid types:** `task`, `bug`, `feature`, `chore`, `epic`
+- **Two tools:** `bdv` for viewing, `bd` for writing
+
+### Viewing Beads: Use `bdv` (not `bd`)
+
+**Prefer `bdv` for all read operations.** Better formatting, short IDs, dependency-aware views.
+
+| Use case | Command |
+|----------|---------|
+| Project dashboard (epics + children) | `bdv` |
+| What to work on next | `bdv next` |
+| Epic dependency chain | `bdv deps` |
+| Epic drill-down | `bdv show <id>` |
+| Full metadata + notes | `bd show <id>` |
+
+### Search Beads BEFORE Planning
+
+**Beads contain institutional knowledge from prior sessions.** You MUST mine this before planning or writing code — 3+ searches minimum.
+
+```bash
+bd search "R-004"              # The roadmap item
+bd search "cost tracking"      # Domain area
+bd search "stream parser"      # Components you'll touch
+```
+
+### Creating Beads
+
+Every bead MUST have `--description` with: what/why, files involved, approach, acceptance criteria.
+
+```bash
+bd create --title="Fix stream parser edge case" --type=bug --priority=1 \
+  -d "The stream parser drops the last token count...
+Files: internal/dispatch/stream.go
+Approach: Add buffered read at EOF
+Acceptance: Token counts match expected in test"
+```
+
+### Capturing Decisions
+
+Decisions belong on the work bead as notes. Cross-cutting decisions go on the wave epic.
+
+```bash
+bd update <bead-id> --append-notes="Decision: chose X because Y"
+bd update <bead-id> --append-notes="Note: discovered Z behavior"
+```
+
+### Workflow: Roadmap Item → Implementation
+
+1. `bd search "R-NNN"` — find the bead
+2. `bd show <id>` — read full spec (description has everything)
+3. `bd update <id> --status=in_progress` — claim
+4. Implement the feature
+5. `bd update <id> --append-notes="Decision: ..."` — record key decisions
+6. Commit code, then `bd close <id>` (with user permission), then `bd sync`
+
+### Connecting Beads
+
+| Relationship | Command | Use when |
+|-------------|---------|----------|
+| Parent-child | `--parent=<id>` on create | Subtask of wave epic |
+| Dependency | `bd dep add <blocked> <blocker>` | X can't start until Y completes |
+| Related | `bd dep relate <a> <b>` | Cross-reference |
+
+### Quick Reference
+
+```bash
+# Viewing (prefer bdv)
+bdv                                       # Dashboard
+bdv next                                  # Ready tasks
+bdv show <id>                             # Bead details
+bdv deps                                  # Dependency chain
+
+# Writing (use bd)
+bd search "keyword"                       # Search (use this, not bd list)
+bd show <id>                              # Full details + notes
+bd create --title="..." --type=task --parent=<id> -d "..."
+bd update <id> --status=in_progress       # Claim
+bd update <id> --append-notes="info"      # Add notes
+bd close <id>                             # Complete
+bd sync                                   # Sync at session end
+```
+
+### Warnings
+
+- Do NOT use `bd edit` — it opens $EDITOR which blocks agents
+- Do NOT use TodoWrite, TaskCreate, or markdown for task tracking
+- Priority: 0-4 (0=critical). NOT "high"/"medium"/"low"
+- Do NOT close beads without explicit user permission
