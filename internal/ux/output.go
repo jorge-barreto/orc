@@ -90,9 +90,3 @@ func ToolDenied(name, input string) {
 func PermissionPrompt(tools []string) {
 	fmt.Printf("\n  %s⚠ Tools denied: %s%s\n", Yellow, strings.Join(tools, ", "), Reset)
 }
-
-// Success prints a final success message.
-func Success(total int) {
-	fmt.Printf("\n%s[%s]%s  %s%s══ All %d phases complete ══%s\n\n",
-		Dim, timestamp(), Reset, Bold, Green, total, Reset)
-}

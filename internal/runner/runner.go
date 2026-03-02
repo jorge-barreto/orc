@@ -24,6 +24,7 @@ type Runner struct {
 	Dispatcher dispatch.Dispatcher
 	Timing     *state.Timing
 	Costs      *state.CostData
+	skipped    map[string]bool
 }
 
 // appendPhaseLog appends a message to the phase log file.
@@ -58,6 +59,14 @@ func (r *Runner) failAndHint(status string, exitCode int, err error) error {
 	return &ExitError{Code: exitCode, Err: err}
 }
 
+// printRunSummary prints the run summary table if timing data is available.
+func (r *Runner) printRunSummary(failedPhase int) {
+	if r.Timing == nil {
+		return
+	}
+	ux.RunSummary(r.Config.Phases, r.Timing, failedPhase, r.skipped)
+}
+
 // Run executes the workflow from the current state.
 func (r *Runner) Run(ctx context.Context) error {
 	setupErr := func(err error) error {
@@ -84,6 +93,7 @@ func (r *Runner) Run(ctx context.Context) error {
 		return setupErr(fmt.Errorf("loading costs: %w", err))
 	}
 	r.Costs = costs
+	r.skipped = make(map[string]bool)
 
 	total := len(r.Config.Phases)
 
@@ -93,6 +103,9 @@ func (r *Runner) Run(ctx context.Context) error {
 
 		// Check for context cancellation
 		if ctx.Err() != nil {
+			if i > 0 {
+				r.printRunSummary(-1)
+			}
 			return r.failAndHint(state.StatusInterrupted, ExitSignal, ctx.Err())
 		}
 
@@ -100,6 +113,7 @@ func (r *Runner) Run(ctx context.Context) error {
 		if phase.Condition != "" {
 			if !evalCondition(ctx, phase, r.Env) {
 				ux.PhaseSkip(i, phase.Name)
+				r.skipped[phase.Name] = true
 				r.State.Advance()
 				if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
 					return fmt.Errorf("saving state after skip: %w", err)
@@ -132,7 +146,9 @@ func (r *Runner) Run(ctx context.Context) error {
 		result, err := r.Dispatcher.Dispatch(ctx, phase, r.Env)
 
 		if ctx.Err() != nil {
+			r.Timing.AddEnd(phase.Name)
 			appendPhaseLog(r.Env.ArtifactsDir, i, fmt.Sprintf("\n[orc] phase interrupted: %v\n", ctx.Err()))
+			r.printRunSummary(i)
 			return r.failAndHint(state.StatusInterrupted, ExitSignal, ctx.Err())
 		}
 
@@ -149,6 +165,7 @@ func (r *Runner) Run(ctx context.Context) error {
 		}
 
 		if err != nil || (result != nil && result.ExitCode != 0) {
+			r.Timing.AddEnd(phase.Name)
 			errMsg := "non-zero exit"
 			if err != nil {
 				errMsg = err.Error()
@@ -165,6 +182,7 @@ func (r *Runner) Run(ctx context.Context) error {
 				if count > phase.OnFail.Max {
 					fmt.Printf("\n  Phase %q failed after %d retry loops. Manual intervention needed.\n",
 						phase.Name, phase.OnFail.Max)
+					r.printRunSummary(i)
 					return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("phase %q exceeded max retries (%d)", phase.Name, phase.OnFail.Max))
 				}
 
@@ -203,6 +221,7 @@ func (r *Runner) Run(ctx context.Context) error {
 			if phase.Type == "gate" {
 				exitCode = ExitHumanNeeded
 			}
+			r.printRunSummary(i)
 			return r.failAndHint(state.StatusFailed, exitCode, fmt.Errorf("phase %q failed", phase.Name))
 		}
 
@@ -227,6 +246,8 @@ func (r *Runner) Run(ctx context.Context) error {
 				if phase.Type == "agent" {
 					fmt.Fprintf(os.Stderr, "  hint: if the agent couldn't perform actions, check your .claude/settings.local.json permissions\n")
 				}
+				r.Timing.AddEnd(phase.Name)
+				r.printRunSummary(i)
 				return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("phase %q: %s", phase.Name, errMsg))
 			}
 		}
@@ -254,7 +275,7 @@ func (r *Runner) Run(ctx context.Context) error {
 	if err := r.Costs.Flush(r.Env.ArtifactsDir); err != nil {
 		return fmt.Errorf("flushing costs: %w", err)
 	}
-	ux.Success(len(r.Config.Phases))
+	r.printRunSummary(-1)
 	return nil
 }
 
@@ -366,6 +387,7 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 	}()
 
 	var firstErr error
+	var failedIdx int = -1
 	for pr := range results {
 		phase := r.Config.Phases[pr.idx]
 		// Record cost data for agent phases (cost is incurred regardless of success/failure)
@@ -377,6 +399,7 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 		}
 		if pr.err != nil || (pr.result != nil && pr.result.ExitCode != 0) {
 			cancel() // cancel the other goroutine
+			r.Timing.AddEnd(phase.Name)
 			errMsg := "non-zero exit"
 			if pr.err != nil {
 				errMsg = pr.err.Error()
@@ -385,6 +408,7 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 			ux.PhaseFail(pr.idx, phase.Name, errMsg)
 			if firstErr == nil {
 				firstErr = fmt.Errorf("phase %q failed: %s", phase.Name, errMsg)
+				failedIdx = pr.idx
 			}
 		} else {
 			r.Timing.AddEnd(phase.Name)
@@ -394,8 +418,10 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 
 	if firstErr != nil {
 		if parentCtx.Err() != nil {
+			r.printRunSummary(failedIdx)
 			return r.failAndHint(state.StatusInterrupted, ExitSignal, parentCtx.Err())
 		}
+		r.printRunSummary(failedIdx)
 		return r.failAndHint(state.StatusFailed, ExitRetryable, firstErr)
 	}
 
