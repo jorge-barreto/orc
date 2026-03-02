@@ -600,6 +600,178 @@ func TestValidate_DefaultAllowToolsWhitespaceEntry(t *testing.T) {
 	}
 }
 
+// Top-level defaults tests
+
+func TestValidate_TopLevelModelInherited(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "p.md"), []byte("x"), 0644)
+	cfg := &Config{
+		Name:   "test",
+		Model:  "sonnet",
+		Phases: []Phase{{Name: "a", Type: "agent", Prompt: "p.md"}},
+	}
+	if err := Validate(cfg, root); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Phases[0].Model != "sonnet" {
+		t.Fatalf("Model = %q, want sonnet", cfg.Phases[0].Model)
+	}
+}
+
+func TestValidate_TopLevelEffortInherited(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "p.md"), []byte("x"), 0644)
+	cfg := &Config{
+		Name:   "test",
+		Effort: "low",
+		Phases: []Phase{{Name: "a", Type: "agent", Prompt: "p.md"}},
+	}
+	if err := Validate(cfg, root); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Phases[0].Effort != "low" {
+		t.Fatalf("Effort = %q, want low", cfg.Phases[0].Effort)
+	}
+}
+
+func TestValidate_TopLevelCwdInheritedByAgent(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "p.md"), []byte("x"), 0644)
+	cfg := &Config{
+		Name:   "test",
+		Cwd:    "/work",
+		Phases: []Phase{{Name: "a", Type: "agent", Prompt: "p.md"}},
+	}
+	if err := Validate(cfg, root); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Phases[0].Cwd != "/work" {
+		t.Fatalf("Cwd = %q, want /work", cfg.Phases[0].Cwd)
+	}
+}
+
+func TestValidate_TopLevelCwdInheritedByScript(t *testing.T) {
+	cfg := &Config{
+		Name:   "test",
+		Cwd:    "/work",
+		Phases: []Phase{scriptPhase("a")},
+	}
+	if err := Validate(cfg, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Phases[0].Cwd != "/work" {
+		t.Fatalf("Cwd = %q, want /work", cfg.Phases[0].Cwd)
+	}
+}
+
+func TestValidate_TopLevelCwdNotInheritedByGate(t *testing.T) {
+	cfg := &Config{
+		Name:   "test",
+		Cwd:    "/work",
+		Phases: []Phase{{Name: "g", Type: "gate"}},
+	}
+	if err := Validate(cfg, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Phases[0].Cwd != "" {
+		t.Fatalf("Cwd = %q, want empty (gate should not inherit cwd)", cfg.Phases[0].Cwd)
+	}
+}
+
+func TestValidate_PerPhaseOverridesTopLevel(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "p.md"), []byte("x"), 0644)
+	cfg := &Config{
+		Name:   "test",
+		Model:  "sonnet",
+		Effort: "low",
+		Cwd:    "/default",
+		Phases: []Phase{{Name: "a", Type: "agent", Prompt: "p.md", Model: "haiku", Effort: "medium", Cwd: "/override"}},
+	}
+	if err := Validate(cfg, root); err != nil {
+		t.Fatal(err)
+	}
+	p := cfg.Phases[0]
+	if p.Model != "haiku" {
+		t.Fatalf("Model = %q, want haiku", p.Model)
+	}
+	if p.Effort != "medium" {
+		t.Fatalf("Effort = %q, want medium", p.Effort)
+	}
+	if p.Cwd != "/override" {
+		t.Fatalf("Cwd = %q, want /override", p.Cwd)
+	}
+}
+
+func TestValidate_NoTopLevelDefaultsApply(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "p.md"), []byte("x"), 0644)
+	cfg := minimalConfig(Phase{Name: "a", Type: "agent", Prompt: "p.md"})
+	if err := Validate(cfg, root); err != nil {
+		t.Fatal(err)
+	}
+	p := cfg.Phases[0]
+	if p.Model != "opus" {
+		t.Fatalf("Model = %q, want opus", p.Model)
+	}
+	if p.Effort != "high" {
+		t.Fatalf("Effort = %q, want high", p.Effort)
+	}
+	if p.Cwd != "" {
+		t.Fatalf("Cwd = %q, want empty", p.Cwd)
+	}
+}
+
+func TestValidate_TopLevelInvalidModel(t *testing.T) {
+	cfg := &Config{
+		Name:   "test",
+		Model:  "gpt-4",
+		Phases: []Phase{scriptPhase("a")},
+	}
+	err := Validate(cfg, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "unknown model") {
+		t.Fatalf("expected unknown model error, got %v", err)
+	}
+}
+
+func TestValidate_TopLevelInvalidEffort(t *testing.T) {
+	cfg := &Config{
+		Name:   "test",
+		Effort: "extreme",
+		Phases: []Phase{scriptPhase("a")},
+	}
+	err := Validate(cfg, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "unknown effort") {
+		t.Fatalf("expected unknown effort error, got %v", err)
+	}
+}
+
+func TestValidate_TopLevelValidModels(t *testing.T) {
+	for _, model := range []string{"", "opus", "sonnet", "haiku"} {
+		cfg := &Config{
+			Name:   "test",
+			Model:  model,
+			Phases: []Phase{scriptPhase("a")},
+		}
+		if err := Validate(cfg, t.TempDir()); err != nil {
+			t.Fatalf("model %q: %v", model, err)
+		}
+	}
+}
+
+func TestValidate_TopLevelValidEfforts(t *testing.T) {
+	for _, effort := range []string{"", "low", "medium", "high"} {
+		cfg := &Config{
+			Name:   "test",
+			Effort: effort,
+			Phases: []Phase{scriptPhase("a")},
+		}
+		if err := Validate(cfg, t.TempDir()); err != nil {
+			t.Fatalf("effort %q: %v", effort, err)
+		}
+	}
+}
+
 func TestValidate_VarsBuiltinOverride_PhaseCount(t *testing.T) {
 	cfg := &Config{
 		Name: "test",

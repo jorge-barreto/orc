@@ -56,11 +56,16 @@ func Run(ctx context.Context, projectRoot, artifactsDir string, cfg *config.Conf
 
 	diagText := buildPrompt(phaseConfig, log, prompt, feedback, timing, loops)
 
+	model := cfg.Model
+	if model == "" {
+		model = "opus"
+	}
+
 	// Print header
 	fmt.Printf("\n%s%s══ Doctor: diagnosing phase %d/%d (%s) ══%s\n\n",
 		ux.Bold, ux.Cyan, st.PhaseIndex+1, len(cfg.Phases), phase.Name, ux.Reset)
 
-	if err := runClaude(ctx, diagText); err != nil {
+	if err := runClaude(ctx, diagText, model); err != nil {
 		return fmt.Errorf("failed to run claude: %w", err)
 	}
 
@@ -217,8 +222,8 @@ func filteredEnv() []string {
 	return env
 }
 
-func runClaude(ctx context.Context, prompt string) error {
-	cmd := exec.CommandContext(ctx, "claude", "-p", prompt, "--model", "opus", "--effort", "high")
+func runClaude(ctx context.Context, prompt, model string) error {
+	cmd := exec.CommandContext(ctx, "claude", "-p", prompt, "--model", model, "--effort", "high")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = filteredEnv()
