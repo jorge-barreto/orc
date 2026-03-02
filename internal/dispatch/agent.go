@@ -174,6 +174,8 @@ func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 		res.CostUSD = tr.Stream.CostUSD
 		res.InputTokens = tr.Stream.InputTokens
 		res.OutputTokens = tr.Stream.OutputTokens
+		res.CacheCreationInputTokens = tr.Stream.CacheCreationInputTokens
+		res.CacheReadInputTokens = tr.Stream.CacheReadInputTokens
 	}
 	return res, nil
 }
@@ -207,6 +209,8 @@ func RunAgentWithPrompt(ctx context.Context, phase config.Phase, env *Environmen
 		res.CostUSD = tr.Stream.CostUSD
 		res.InputTokens = tr.Stream.InputTokens
 		res.OutputTokens = tr.Stream.OutputTokens
+		res.CacheCreationInputTokens = tr.Stream.CacheCreationInputTokens
+		res.CacheReadInputTokens = tr.Stream.CacheReadInputTokens
 	}
 	return res, nil
 }
@@ -244,6 +248,7 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 	var lastTurn *turnResult
 	var totalCost float64
 	var totalInput, totalOutput int
+	var totalCacheCreation, totalCacheRead int
 	var turns int
 
 	for {
@@ -258,6 +263,8 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 			totalCost += tr.Stream.CostUSD
 			totalInput += tr.Stream.InputTokens
 			totalOutput += tr.Stream.OutputTokens
+			totalCacheCreation += tr.Stream.CacheCreationInputTokens
+			totalCacheRead += tr.Stream.CacheReadInputTokens
 		}
 
 		// Handle permission denials
@@ -290,12 +297,14 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 		exitCode = lastTurn.ExitCode
 	}
 	return &Result{
-		ExitCode:     exitCode,
-		Output:       output,
-		CostUSD:      totalCost,
-		InputTokens:  totalInput,
-		OutputTokens: totalOutput,
-		Turns:        turns,
+		ExitCode:                 exitCode,
+		Output:                   output,
+		CostUSD:                  totalCost,
+		InputTokens:              totalInput,
+		OutputTokens:             totalOutput,
+		CacheCreationInputTokens: totalCacheCreation,
+		CacheReadInputTokens:     totalCacheRead,
+		Turns:                    turns,
 	}, nil
 }
 

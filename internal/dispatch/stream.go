@@ -27,12 +27,14 @@ func (d PermissionDenial) String() string {
 
 // StreamResult holds the parsed output from a stream-json claude invocation.
 type StreamResult struct {
-	Text              string
-	PermissionDenials []PermissionDenial
-	CostUSD           float64
-	SessionID         string
-	InputTokens       int
-	OutputTokens      int
+	Text                     string
+	PermissionDenials        []PermissionDenial
+	CostUSD                  float64
+	SessionID                string
+	InputTokens              int
+	OutputTokens             int
+	CacheCreationInputTokens int
+	CacheReadInputTokens     int
 }
 
 // streamState tracks tool use accumulation across stream events.
@@ -99,10 +101,10 @@ type streamEvent struct {
 	SessionID string          `json:"session_id"`
 
 	// Fields for "result" type
-	Result       json.RawMessage `json:"result"`
-	CostUSD      float64         `json:"cost_usd"`
-	InputTokens  int             `json:"input_tokens"`
-	OutputTokens int             `json:"output_tokens"`
+	Result            json.RawMessage   `json:"result"`
+	TotalCostUSD      float64           `json:"total_cost_usd"`
+	Usage             *resultUsage      `json:"usage"`
+	PermissionDenials []permDenialEntry `json:"permission_denials"`
 
 	// Fields for "user"/"assistant" message types
 	Content []contentBlock `json:"content"`
@@ -132,13 +134,12 @@ type deltaBlock struct {
 	PartialJSON string `json:"partial_json"`
 }
 
-// resultPayload is the inner result object from the final result event.
-type resultPayload struct {
-	PermissionDenials []permDenialEntry `json:"permission_denials"`
-	CostUSD           float64           `json:"cost_usd"`
-	SessionID         string            `json:"session_id"`
-	InputTokens       int               `json:"input_tokens"`
-	OutputTokens      int               `json:"output_tokens"`
+// resultUsage holds token counts from the result event's usage object.
+type resultUsage struct {
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 }
 
 type permDenialEntry struct {
@@ -253,33 +254,20 @@ func handleUserEvent(event *streamEvent, result *StreamResult) {
 }
 
 func handleResultEvent(event *streamEvent, result *StreamResult) {
-	// Try to parse the nested result object
-	if event.Result != nil {
-		var payload resultPayload
-		if err := json.Unmarshal(event.Result, &payload); err == nil {
-			result.CostUSD = payload.CostUSD
-			result.SessionID = payload.SessionID
-			result.InputTokens = payload.InputTokens
-			result.OutputTokens = payload.OutputTokens
-			for _, d := range payload.PermissionDenials {
-				result.PermissionDenials = append(result.PermissionDenials, PermissionDenial{
-					Tool:  d.ToolName,
-					Input: d.Input,
-				})
-			}
-			return
-		}
+	if event.TotalCostUSD > 0 {
+		result.CostUSD = event.TotalCostUSD
 	}
-
-	// Fallback: fields might be at top level
-	if event.CostUSD > 0 {
-		result.CostUSD = event.CostUSD
+	if event.Usage != nil {
+		result.InputTokens = event.Usage.InputTokens
+		result.OutputTokens = event.Usage.OutputTokens
+		result.CacheCreationInputTokens = event.Usage.CacheCreationInputTokens
+		result.CacheReadInputTokens = event.Usage.CacheReadInputTokens
 	}
-	if event.InputTokens > 0 {
-		result.InputTokens = event.InputTokens
-	}
-	if event.OutputTokens > 0 {
-		result.OutputTokens = event.OutputTokens
+	for _, d := range event.PermissionDenials {
+		result.PermissionDenials = append(result.PermissionDenials, PermissionDenial{
+			Tool:  d.ToolName,
+			Input: d.Input,
+		})
 	}
 	if event.SessionID != "" {
 		result.SessionID = event.SessionID

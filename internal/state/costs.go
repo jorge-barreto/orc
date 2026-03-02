@@ -11,21 +11,25 @@ import (
 
 // CostEntry holds cost and token data for a single phase.
 type CostEntry struct {
-	Name         string  `json:"name"`
-	PhaseIndex   int     `json:"phase_index"`
-	CostUSD      float64 `json:"cost_usd"`
-	InputTokens  int     `json:"input_tokens"`
-	OutputTokens int     `json:"output_tokens"`
-	Turns        int     `json:"turns"`
+	Name                     string  `json:"name"`
+	PhaseIndex               int     `json:"phase_index"`
+	CostUSD                  float64 `json:"cost_usd"`
+	InputTokens              int     `json:"input_tokens"`
+	OutputTokens             int     `json:"output_tokens"`
+	CacheCreationInputTokens int     `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int     `json:"cache_read_input_tokens"`
+	Turns                    int     `json:"turns"`
 }
 
 // CostData holds aggregate cost data for the entire run.
 type CostData struct {
-	mu                sync.Mutex
-	Phases            []CostEntry `json:"phases"`
-	TotalCostUSD      float64     `json:"total_cost_usd"`
-	TotalInputTokens  int         `json:"total_input_tokens"`
-	TotalOutputTokens int         `json:"total_output_tokens"`
+	mu                           sync.Mutex
+	Phases                       []CostEntry `json:"phases"`
+	TotalCostUSD                 float64     `json:"total_cost_usd"`
+	TotalInputTokens             int         `json:"total_input_tokens"`
+	TotalOutputTokens            int         `json:"total_output_tokens"`
+	TotalCacheCreationInputTokens int        `json:"total_cache_creation_input_tokens"`
+	TotalCacheReadInputTokens    int         `json:"total_cache_read_input_tokens"`
 }
 
 func costsPath(artifactsDir string) string {
@@ -51,20 +55,24 @@ func LoadCosts(artifactsDir string) (*CostData, error) {
 }
 
 // Record appends a cost entry and updates totals.
-func (c *CostData) Record(name string, phaseIndex int, costUSD float64, inputTokens, outputTokens, turns int) {
+func (c *CostData) Record(name string, phaseIndex int, costUSD float64, inputTokens, outputTokens, cacheCreationInputTokens, cacheReadInputTokens, turns int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.Phases = append(c.Phases, CostEntry{
-		Name:         name,
-		PhaseIndex:   phaseIndex,
-		CostUSD:      costUSD,
-		InputTokens:  inputTokens,
-		OutputTokens: outputTokens,
-		Turns:        turns,
+		Name:                     name,
+		PhaseIndex:               phaseIndex,
+		CostUSD:                  costUSD,
+		InputTokens:              inputTokens,
+		OutputTokens:             outputTokens,
+		CacheCreationInputTokens: cacheCreationInputTokens,
+		CacheReadInputTokens:     cacheReadInputTokens,
+		Turns:                    turns,
 	})
 	c.TotalCostUSD += costUSD
 	c.TotalInputTokens += inputTokens
 	c.TotalOutputTokens += outputTokens
+	c.TotalCacheCreationInputTokens += cacheCreationInputTokens
+	c.TotalCacheReadInputTokens += cacheReadInputTokens
 }
 
 // Flush writes cost data to disk atomically.
