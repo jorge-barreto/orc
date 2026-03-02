@@ -6,7 +6,7 @@ Your job is to find genuine issues — not to rubber-stamp. Be specific, be cons
 
 orc is a deterministic agent orchestrator CLI written in Go. It runs AI coding workflows as a state machine — phases are dispatched deterministically (scripts, AI agents, human approval gates) with context passing through artifact files on disk rather than conversational memory. Projects define workflows in `.orc/config.yaml` with phase prompts, and the engine runs them.
 
-**Product positioning:** orc is Kikoda's deployable AI delivery platform for client codebases. The engine is the plumbing. The config and prompts are the IP. The key differentiator is deterministic, auditable, quality-assured code delivery through adversarial review loops.
+**Product positioning:** orc is JBD's deployable AI delivery platform for client codebases. The engine is the plumbing. The config and prompts are the IP. The key differentiator is deterministic, auditable, quality-assured code delivery through adversarial review loops.
 
 **Audience progression:**
 1. The developer (validated — already getting results)

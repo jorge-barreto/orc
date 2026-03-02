@@ -2,7 +2,7 @@
 
 ## Vision
 
-orc becomes a **deterministic, auditable AI code delivery engine** that Kikoda deploys on client codebases. The product isn't "AI writes code" — it's "every ticket follows a guaranteed process with adversarial quality assurance, full cost visibility, and auditable artifacts." The config and prompts are the IP. The engine is the plumbing.
+orc becomes a **deterministic, auditable AI code delivery engine** that JBD deploys on client codebases. The product isn't "AI writes code" — it's "every ticket follows a guaranteed process with adversarial quality assurance, full cost visibility, and auditable artifacts." The config and prompts are the IP. The engine is the plumbing.
 
 ## Strategic Context
 
@@ -13,8 +13,8 @@ orc becomes a **deterministic, auditable AI code delivery engine** that Kikoda d
 **Audience progression:**
 1. jb on his own projects (now — validated)
 2. jb on client projects (next week — needs cost tracking, reporting, config speed)
-3. Other Kikoda engineers (month 2 — needs docs, distribution, polish)
-4. Clients self-serving with Kikoda-maintained configs (quarter 2 — needs audit, multi-project)
+3. Other engineers (month 2 — needs docs, distribution, polish)
+4. Clients self-serving with JBD-maintained configs (quarter 2 — needs audit, multi-project) [[JBD = JorgeBarreto.Dev]]
 
 ## Design Principles
 
@@ -22,7 +22,7 @@ orc becomes a **deterministic, auditable AI code delivery engine** that Kikoda d
 
 2. **Files on disk are the communication layer.** Phases communicate through artifact files. No hidden state, no in-memory handoffs. Everything is inspectable.
 
-3. **The config is the product.** orc's engine is plumbing. The value is in the phase definitions, prompt templates, and review criteria that Kikoda tunes per client.
+3. **The config is the product.** orc's engine is plumbing. The value is in the phase definitions, prompt templates, and review criteria that JBD tunes per client.
 
 4. **Composability over features.** Simple primitives that combine well beat special-purpose features. `on-fail` + `loop` + `condition` + `parallel-with` cover an enormous design space.
 
@@ -1257,7 +1257,7 @@ This metadata enables `orc report` to produce richer reports and gives `orc impr
 
 **Theme:** Make orc installable by people who aren't jb. Binary releases, documentation, and the groundwork for wider adoption.
 
-**Validation checkpoint:** After Wave 5, another engineer at Kikoda can install orc, follow the getting-started guide, set up a workflow on their project, and run it successfully.
+**Validation checkpoint:** After Wave 5, another engineer at JBD can install orc, follow the getting-started guide, set up a workflow on their project, and run it successfully.
 
 ---
 
@@ -1491,7 +1491,7 @@ Or more practically: orc passes the API key via environment variable to the Clau
 
 **Theme:** Features for licensing orc as a product. Multi-project management, audit trails, and self-improving workflows. These are the features that justify a maintenance contract.
 
-**Validation checkpoint:** After Wave 7, Kikoda can license orc to a client with: auditable run history, cost tracking per project, and workflow configs that improve over time based on run data.
+**Validation checkpoint:** After Wave 7, JBD can license orc to a client with: auditable run history, cost tracking per project, and workflow configs that improve over time based on run data.
 
 ---
 
@@ -1536,13 +1536,13 @@ Structured JSON log of every action orc takes. Who ran what, when, with what con
 
 ### R-027: Multi-project config management
 
-When Kikoda manages orc configs for multiple clients, there needs to be a way to maintain shared patterns across projects while keeping project-specific customization.
+When JBD manages orc configs for multiple clients, there needs to be a way to maintain shared patterns across projects while keeping project-specific customization.
 
 **Approach: Config imports**
 ```yaml
 name: client-project
 import:
-  - https://github.com/kikoda/orc-recipes/blob/main/standard-quality.yaml
+  - https://github.com/JBD/orc-recipes/blob/main/standard-quality.yaml
   - .orc/local-overrides.yaml
 
 phases:
@@ -1551,14 +1551,14 @@ phases:
 
 Or simpler: a shared directory of prompt templates and scripts that projects reference.
 
-**This is exploratory.** The right design depends on how many clients Kikoda onboards and what patterns emerge. For now, the best approach might be:
+**This is exploratory.** The right design depends on how many clients JBD onboards and what patterns emerge. For now, the best approach might be:
 1. A private GitHub repo of prompt templates and scripts
 2. Projects clone/copy from this repo during `orc init`
 3. Updates are applied via `orc improve` with instructions referencing the shared repo
 
 **Acceptance criteria:**
 - A mechanism exists for sharing workflow patterns across projects (either config imports or a shared template repo referenced by `orc init --recipe`)
-- At least 2 Kikoda projects can use the same base workflow config with project-specific overrides (different ticket patterns, different prompt customizations)
+- At least 2 JBD projects can use the same base workflow config with project-specific overrides (different ticket patterns, different prompt customizations)
 - Updates to shared patterns can be propagated to existing projects via `orc improve` with an instruction referencing the updated shared pattern
 - A project using shared patterns can diverge from the base without breaking the shared mechanism
 

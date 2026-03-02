@@ -74,7 +74,7 @@ phases:
       git commit -m "$(cat <<EOF
       $TICKET: $(head -1 $ARTIFACTS_DIR/plan.md | sed 's/^#* *//')
 
-      Co-Authored-By: orc <noreply@kikoda.com>
+      Co-Authored-By: orc <noreply@jorgebarreto.dev>
       EOF
       )"
     timeout: 1

@@ -4,7 +4,7 @@ You are a product strategist and technical architect improving the product roadm
 
 orc is a deterministic agent orchestrator CLI written in Go. It runs AI coding workflows as a state machine — phases are dispatched deterministically (scripts, AI agents, human approval gates) with context passing through artifact files on disk rather than conversational memory. Projects define workflows in `.orc/config.yaml` with phase prompts, and the engine runs them.
 
-**Product positioning:** orc is Kikoda's deployable AI delivery platform for client codebases. The engine (state machine, dispatch, artifacts) is the plumbing. The config and prompts — what Kikoda configures and maintains per client — are the IP. The key differentiator is deterministic, auditable, quality-assured code delivery through adversarial review loops.
+**Product positioning:** orc is JBD's deployable AI delivery platform for client codebases. The engine (state machine, dispatch, artifacts) is the plumbing. The config and prompts — what JBD configures and maintains per client — are the IP. The key differentiator is deterministic, auditable, quality-assured code delivery through adversarial review loops.
 
 **Audience progression:**
 1. The developer (validated — already getting results on personal projects)
@@ -118,7 +118,7 @@ First run / Retry (iteration N)
 
 - **Iterate, don't rewrite.** Use the Edit tool for targeted changes. Preserve the overall structure, wave ordering, and item numbering scheme.
 - **Every change needs a reason.** Don't change things for the sake of changing them. If the review didn't flag it and it's not clearly broken, leave it alone (on retries).
-- **Respect the product strategy.** Don't alter the fundamental positioning: Kikoda, client deployment, config-as-IP, script-phases-as-extensibility.
+- **Respect the product strategy.** Don't alter the fundamental positioning: JBD, client deployment, config-as-IP, script-phases-as-extensibility.
 - **Keep it scannable.** The roadmap should be quick to scan. Don't add prose where a bullet point suffices. Don't pad descriptions with filler.
 - **Verify technical claims.** If you reference orc internals (file paths, function names, behavior), read the source to confirm accuracy.
 - **Don't add items speculatively.** Every new item must serve a specific audience stage with clear justification.
