@@ -169,7 +169,13 @@ func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 	if tr.Stream != nil {
 		output = tr.Stream.Text
 	}
-	return &Result{ExitCode: tr.ExitCode, Output: output}, nil
+	res := &Result{ExitCode: tr.ExitCode, Output: output, Turns: 1}
+	if tr.Stream != nil {
+		res.CostUSD = tr.Stream.CostUSD
+		res.InputTokens = tr.Stream.InputTokens
+		res.OutputTokens = tr.Stream.OutputTokens
+	}
+	return res, nil
 }
 
 // RunAgentWithPrompt invokes claude with an explicit prompt string (for output re-prompting).
@@ -196,7 +202,13 @@ func RunAgentWithPrompt(ctx context.Context, phase config.Phase, env *Environmen
 	if tr.Stream != nil {
 		output = tr.Stream.Text
 	}
-	return &Result{ExitCode: tr.ExitCode, Output: output}, nil
+	res := &Result{ExitCode: tr.ExitCode, Output: output, Turns: 1}
+	if tr.Stream != nil {
+		res.CostUSD = tr.Stream.CostUSD
+		res.InputTokens = tr.Stream.InputTokens
+		res.OutputTokens = tr.Stream.OutputTokens
+	}
+	return res, nil
 }
 
 // RunAgentAttended executes an agent phase in attended mode with steering support.
@@ -230,6 +242,9 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 	isFirst := true
 	prompt := rendered
 	var lastTurn *turnResult
+	var totalCost float64
+	var totalInput, totalOutput int
+	var turns int
 
 	for {
 		tr, err := runAgentTurn(ctx, phase, env, prompt, sessionID, isFirst, logFile, extraTools)
@@ -238,6 +253,12 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 		}
 		lastTurn = tr
 		isFirst = false
+		turns++
+		if tr.Stream != nil {
+			totalCost += tr.Stream.CostUSD
+			totalInput += tr.Stream.InputTokens
+			totalOutput += tr.Stream.OutputTokens
+		}
 
 		// Handle permission denials
 		if tr.Stream != nil && len(tr.Stream.PermissionDenials) > 0 {
@@ -268,7 +289,14 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 	if lastTurn != nil {
 		exitCode = lastTurn.ExitCode
 	}
-	return &Result{ExitCode: exitCode, Output: output}, nil
+	return &Result{
+		ExitCode:     exitCode,
+		Output:       output,
+		CostUSD:      totalCost,
+		InputTokens:  totalInput,
+		OutputTokens: totalOutput,
+		Turns:        turns,
+	}, nil
 }
 
 // handleDenials prompts the user about permission denials and returns

@@ -23,6 +23,7 @@ type Runner struct {
 	Env        *dispatch.Environment
 	Dispatcher dispatch.Dispatcher
 	Timing     *state.Timing
+	Costs      *state.CostData
 }
 
 // appendPhaseLog appends a message to the phase log file.
@@ -48,6 +49,11 @@ func (r *Runner) failAndHint(status string, err error) error {
 			fmt.Fprintf(os.Stderr, "warning: failed to flush timing: %v\n", flushErr)
 		}
 	}
+	if r.Costs != nil {
+		if flushErr := r.Costs.Flush(r.Env.ArtifactsDir); flushErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to flush costs: %v\n", flushErr)
+		}
+	}
 	ux.ResumeHint(r.State.Ticket)
 	return err
 }
@@ -68,6 +74,12 @@ func (r *Runner) Run(ctx context.Context) error {
 		return fmt.Errorf("loading timing: %w", err)
 	}
 	r.Timing = timing
+
+	costs, err := state.LoadCosts(r.Env.ArtifactsDir)
+	if err != nil {
+		return fmt.Errorf("loading costs: %w", err)
+	}
+	r.Costs = costs
 
 	total := len(r.Config.Phases)
 
@@ -118,6 +130,18 @@ func (r *Runner) Run(ctx context.Context) error {
 		if ctx.Err() != nil {
 			appendPhaseLog(r.Env.ArtifactsDir, i, fmt.Sprintf("\n[orc] phase interrupted: %v\n", ctx.Err()))
 			return r.failAndHint(state.StatusInterrupted, ctx.Err())
+		}
+
+		// Record cost data for agent phases (cost is incurred regardless of success/failure)
+		if phase.Type == "agent" && result != nil {
+			r.Costs.Record(phase.Name, i, result.CostUSD, result.InputTokens, result.OutputTokens, result.Turns)
+			// Warn if agent completed but reported no token counts (best-effort tracking)
+			if result.InputTokens == 0 && result.OutputTokens == 0 {
+				fmt.Fprintf(os.Stderr, "  note: no token counts in stream output for phase %q (token tracking is best-effort)\n", phase.Name)
+			}
+			if flushErr := r.Costs.Flush(r.Env.ArtifactsDir); flushErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to flush costs: %v\n", flushErr)
+			}
 		}
 
 		if err != nil || (result != nil && result.ExitCode != 0) {
@@ -218,6 +242,9 @@ func (r *Runner) Run(ctx context.Context) error {
 	}
 	if err := r.Timing.Flush(r.Env.ArtifactsDir); err != nil {
 		return fmt.Errorf("flushing timing: %w", err)
+	}
+	if err := r.Costs.Flush(r.Env.ArtifactsDir); err != nil {
+		return fmt.Errorf("flushing costs: %w", err)
 	}
 	ux.Success(len(r.Config.Phases))
 	return nil
@@ -333,6 +360,13 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 	var firstErr error
 	for pr := range results {
 		phase := r.Config.Phases[pr.idx]
+		// Record cost data for agent phases (cost is incurred regardless of success/failure)
+		if phase.Type == "agent" && pr.result != nil {
+			r.Costs.Record(phase.Name, pr.idx, pr.result.CostUSD, pr.result.InputTokens, pr.result.OutputTokens, pr.result.Turns)
+			if pr.result.InputTokens == 0 && pr.result.OutputTokens == 0 {
+				fmt.Fprintf(os.Stderr, "  note: no token counts in stream output for phase %q (token tracking is best-effort)\n", phase.Name)
+			}
+		}
 		if pr.err != nil || (pr.result != nil && pr.result.ExitCode != 0) {
 			cancel() // cancel the other goroutine
 			errMsg := "non-zero exit"
@@ -383,6 +417,9 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 	}
 	if err := r.Timing.Flush(r.Env.ArtifactsDir); err != nil {
 		return fmt.Errorf("flushing timing after parallel: %w", err)
+	}
+	if err := r.Costs.Flush(r.Env.ArtifactsDir); err != nil {
+		return fmt.Errorf("flushing costs after parallel: %w", err)
 	}
 	return nil
 }

@@ -242,3 +242,58 @@ func TestPermissionDenial_String(t *testing.T) {
 		t.Fatalf("got %q", s)
 	}
 }
+
+func TestProcessStream_TokenCounts(t *testing.T) {
+	input := streamLines(
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello"}}}`,
+		`{"type":"result","result":{"cost_usd":0.05,"session_id":"s1","input_tokens":1500,"output_tokens":800}}`,
+	)
+
+	result, err := processStream(context.Background(), input, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.InputTokens != 1500 {
+		t.Fatalf("InputTokens = %d, want 1500", result.InputTokens)
+	}
+	if result.OutputTokens != 800 {
+		t.Fatalf("OutputTokens = %d, want 800", result.OutputTokens)
+	}
+	if result.CostUSD != 0.05 {
+		t.Fatalf("CostUSD = %f, want 0.05", result.CostUSD)
+	}
+}
+
+func TestProcessStream_NoTokenCounts(t *testing.T) {
+	input := streamLines(
+		`{"type":"result","result":{"cost_usd":0,"session_id":"s1"}}`,
+	)
+
+	result, err := processStream(context.Background(), input, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.InputTokens != 0 {
+		t.Fatalf("InputTokens = %d, want 0", result.InputTokens)
+	}
+	if result.OutputTokens != 0 {
+		t.Fatalf("OutputTokens = %d, want 0", result.OutputTokens)
+	}
+}
+
+func TestProcessStream_TopLevelTokenFallback(t *testing.T) {
+	input := streamLines(
+		`{"type":"result","cost_usd":0.03,"session_id":"s1","input_tokens":2000,"output_tokens":1000}`,
+	)
+
+	result, err := processStream(context.Background(), input, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.InputTokens != 2000 {
+		t.Fatalf("InputTokens = %d, want 2000", result.InputTokens)
+	}
+	if result.OutputTokens != 1000 {
+		t.Fatalf("OutputTokens = %d, want 1000", result.OutputTokens)
+	}
+}

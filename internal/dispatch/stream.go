@@ -31,6 +31,8 @@ type StreamResult struct {
 	PermissionDenials []PermissionDenial
 	CostUSD           float64
 	SessionID         string
+	InputTokens       int
+	OutputTokens      int
 }
 
 // streamState tracks tool use accumulation across stream events.
@@ -97,8 +99,10 @@ type streamEvent struct {
 	SessionID string          `json:"session_id"`
 
 	// Fields for "result" type
-	Result    json.RawMessage `json:"result"`
-	CostUSD   float64         `json:"cost_usd"`
+	Result       json.RawMessage `json:"result"`
+	CostUSD      float64         `json:"cost_usd"`
+	InputTokens  int             `json:"input_tokens"`
+	OutputTokens int             `json:"output_tokens"`
 
 	// Fields for "user"/"assistant" message types
 	Content []contentBlock `json:"content"`
@@ -133,6 +137,8 @@ type resultPayload struct {
 	PermissionDenials []permDenialEntry `json:"permission_denials"`
 	CostUSD           float64           `json:"cost_usd"`
 	SessionID         string            `json:"session_id"`
+	InputTokens       int               `json:"input_tokens"`
+	OutputTokens      int               `json:"output_tokens"`
 }
 
 type permDenialEntry struct {
@@ -253,6 +259,8 @@ func handleResultEvent(event *streamEvent, result *StreamResult) {
 		if err := json.Unmarshal(event.Result, &payload); err == nil {
 			result.CostUSD = payload.CostUSD
 			result.SessionID = payload.SessionID
+			result.InputTokens = payload.InputTokens
+			result.OutputTokens = payload.OutputTokens
 			for _, d := range payload.PermissionDenials {
 				result.PermissionDenials = append(result.PermissionDenials, PermissionDenial{
 					Tool:  d.ToolName,
@@ -263,9 +271,15 @@ func handleResultEvent(event *streamEvent, result *StreamResult) {
 		}
 	}
 
-	// Fallback: cost might be at top level
+	// Fallback: fields might be at top level
 	if event.CostUSD > 0 {
 		result.CostUSD = event.CostUSD
+	}
+	if event.InputTokens > 0 {
+		result.InputTokens = event.InputTokens
+	}
+	if event.OutputTokens > 0 {
+		result.OutputTokens = event.OutputTokens
 	}
 	if event.SessionID != "" {
 		result.SessionID = event.SessionID
