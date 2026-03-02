@@ -833,3 +833,208 @@ func TestRun_SuccessExitCode(t *testing.T) {
 	assertExitCode(t, err, ExitSuccess)
 }
 
+// Cost limit tests — sequential path
+
+func TestRun_RunCostLimitExceeded(t *testing.T) {
+	cfg := &config.Config{
+		Name:    "test",
+		MaxCost: 1.0,
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "agent", Prompt: "unused.md", Model: "sonnet"},
+			{Name: "c", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	mock.results["b"] = &dispatch.Result{ExitCode: 0, CostUSD: 1.5, InputTokens: 100, OutputTokens: 50, Turns: 1}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "run exceeded cost limit") {
+		t.Fatalf("expected run cost limit error, got %v", err)
+	}
+	assertExitCode(t, err, ExitHumanNeeded)
+	if r.State.Status != state.StatusFailed {
+		t.Fatalf("status = %q, want failed", r.State.Status)
+	}
+	// Phase c should NOT have been dispatched
+	for _, c := range mock.callNames() {
+		if c == "c" {
+			t.Fatal("phase c should not run after cost limit exceeded")
+		}
+	}
+}
+
+func TestRun_RunCostLimitNotExceeded(t *testing.T) {
+	cfg := &config.Config{
+		Name:    "test",
+		MaxCost: 5.0,
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet"},
+			{Name: "b", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	mock.results["a"] = &dispatch.Result{ExitCode: 0, CostUSD: 2.0, InputTokens: 100, OutputTokens: 50, Turns: 1}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertExitCode(t, err, ExitSuccess)
+}
+
+func TestRun_PhaseCostLimitExceeded(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet", MaxCost: 1.0},
+			{Name: "b", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	mock.results["a"] = &dispatch.Result{ExitCode: 0, CostUSD: 1.5, InputTokens: 100, OutputTokens: 50, Turns: 1}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), `phase "a" exceeded cost limit`) {
+		t.Fatalf("expected phase cost limit error, got %v", err)
+	}
+	assertExitCode(t, err, ExitHumanNeeded)
+	if r.State.Status != state.StatusFailed {
+		t.Fatalf("status = %q, want failed", r.State.Status)
+	}
+	// Phase b should NOT have been dispatched
+	for _, c := range mock.callNames() {
+		if c == "b" {
+			t.Fatal("phase b should not run after phase cost limit exceeded")
+		}
+	}
+}
+
+func TestRun_PhaseCostLimitNotExceeded(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet", MaxCost: 5.0},
+			{Name: "b", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	mock.results["a"] = &dispatch.Result{ExitCode: 0, CostUSD: 2.0, InputTokens: 100, OutputTokens: 50, Turns: 1}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertExitCode(t, err, ExitSuccess)
+	if mock.callCount() != 2 {
+		t.Fatalf("expected 2 calls, got %d", mock.callCount())
+	}
+}
+
+func TestRun_NoCostLimitSet(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet"},
+			{Name: "b", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	mock.results["a"] = &dispatch.Result{ExitCode: 0, CostUSD: 100.0, InputTokens: 100, OutputTokens: 50, Turns: 1}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertExitCode(t, err, ExitSuccess)
+	if mock.callCount() != 2 {
+		t.Fatalf("expected 2 calls, got %d", mock.callCount())
+	}
+}
+
+func TestRun_RunCostLimitWithRetryLoop(t *testing.T) {
+	cfg := &config.Config{
+		Name:    "test",
+		MaxCost: 3.0,
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "agent", Prompt: "unused.md", Model: "sonnet", OnFail: &config.OnFail{Goto: "a", Max: 3}},
+			{Name: "c", Type: "script", Run: "echo"},
+		},
+	}
+	// b always fails with CostUSD=2.0
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		if phase.Name == "b" {
+			return &dispatch.Result{ExitCode: 1, Output: "fail", CostUSD: 2.0, InputTokens: 100, OutputTokens: 50, Turns: 1}, nil
+		}
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "run exceeded cost limit") {
+		t.Fatalf("expected run cost limit error, got %v", err)
+	}
+	assertExitCode(t, err, ExitHumanNeeded)
+}
+
+// Cost limit tests — parallel path
+
+func TestRun_ParallelRunCostLimitExceeded(t *testing.T) {
+	cfg := &config.Config{
+		Name:    "test",
+		MaxCost: 3.0,
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet", ParallelWith: "b"},
+			{Name: "b", Type: "agent", Prompt: "unused.md", Model: "sonnet"},
+			{Name: "c", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	mock.results["a"] = &dispatch.Result{ExitCode: 0, CostUSD: 2.0, InputTokens: 100, OutputTokens: 50, Turns: 1}
+	mock.results["b"] = &dispatch.Result{ExitCode: 0, CostUSD: 2.0, InputTokens: 100, OutputTokens: 50, Turns: 1}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "run exceeded cost limit") {
+		t.Fatalf("expected run cost limit error, got %v", err)
+	}
+	assertExitCode(t, err, ExitHumanNeeded)
+	if r.State.Status != state.StatusFailed {
+		t.Fatalf("status = %q, want failed", r.State.Status)
+	}
+	// Phase c should NOT have been dispatched
+	for _, c := range mock.callNames() {
+		if c == "c" {
+			t.Fatal("phase c should not run after parallel cost limit exceeded")
+		}
+	}
+}
+
+func TestRun_ParallelPhaseCostLimitExceeded(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet", MaxCost: 1.0, ParallelWith: "b"},
+			{Name: "b", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	mock.results["a"] = &dispatch.Result{ExitCode: 0, CostUSD: 1.5, InputTokens: 100, OutputTokens: 50, Turns: 1}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), `phase "a" exceeded cost limit`) {
+		t.Fatalf("expected phase cost limit error, got %v", err)
+	}
+	assertExitCode(t, err, ExitHumanNeeded)
+	if r.State.Status != state.StatusFailed {
+		t.Fatalf("status = %q, want failed", r.State.Status)
+	}
+}
+

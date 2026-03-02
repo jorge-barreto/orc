@@ -772,6 +772,68 @@ func TestValidate_TopLevelValidEfforts(t *testing.T) {
 	}
 }
 
+// max-cost validation tests
+
+func TestValidate_MaxCostNegative(t *testing.T) {
+	cfg := minimalConfig(scriptPhase("a"))
+	cfg.MaxCost = -1.0
+	err := Validate(cfg, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "'max-cost' must not be negative") {
+		t.Fatalf("expected negative max-cost error, got %v", err)
+	}
+}
+
+func TestValidate_MaxCostPositive(t *testing.T) {
+	cfg := minimalConfig(scriptPhase("a"))
+	cfg.MaxCost = 10.0
+	if err := Validate(cfg, t.TempDir()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_MaxCostZero(t *testing.T) {
+	cfg := minimalConfig(scriptPhase("a"))
+	cfg.MaxCost = 0
+	if err := Validate(cfg, t.TempDir()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_PhaseMaxCostNegative(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "p.md"), []byte("x"), 0644)
+	cfg := minimalConfig(Phase{Name: "a", Type: "agent", Prompt: "p.md", MaxCost: -5.0})
+	err := Validate(cfg, root)
+	if err == nil || !strings.Contains(err.Error(), "'max-cost' must not be negative") {
+		t.Fatalf("expected negative phase max-cost error, got %v", err)
+	}
+}
+
+func TestValidate_PhaseMaxCostPositive(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "p.md"), []byte("x"), 0644)
+	cfg := minimalConfig(Phase{Name: "a", Type: "agent", Prompt: "p.md", MaxCost: 5.0})
+	if err := Validate(cfg, root); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_PhaseMaxCostOnScript(t *testing.T) {
+	cfg := minimalConfig(Phase{Name: "a", Type: "script", Run: "echo", MaxCost: 5.0})
+	err := Validate(cfg, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "only valid on agent") {
+		t.Fatalf("expected agent-only error, got %v", err)
+	}
+}
+
+func TestValidate_PhaseMaxCostOnGate(t *testing.T) {
+	cfg := minimalConfig(Phase{Name: "a", Type: "gate", MaxCost: 5.0})
+	err := Validate(cfg, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "only valid on agent") {
+		t.Fatalf("expected agent-only error, got %v", err)
+	}
+}
+
 func TestValidate_VarsBuiltinOverride_PhaseCount(t *testing.T) {
 	cfg := &Config{
 		Name: "test",

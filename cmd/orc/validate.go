@@ -87,6 +87,10 @@ func printConfigSummary(w io.Writer, cfg *config.Config, projectRoot string) {
 	}
 	fmt.Fprintf(w, "%s✓ Config valid — %s (%d %s)%s\n", ux.Green, cfg.Name, len(cfg.Phases), noun, ux.Reset)
 
+	if cfg.MaxCost > 0 {
+		fmt.Fprintf(w, "  max-cost: $%.2f\n", cfg.MaxCost)
+	}
+
 	// Ticket pattern
 	if cfg.TicketPattern != "" {
 		fmt.Fprintf(w, "  ticket-pattern: %s\n", cfg.TicketPattern)
@@ -148,6 +152,9 @@ func printConfigSummary(w io.Writer, cfg *config.Config, projectRoot string) {
 		}
 		if p.Cwd != "" {
 			fmt.Fprintf(w, "%scwd: %s\n", indent, p.Cwd)
+		}
+		if p.MaxCost > 0 {
+			fmt.Fprintf(w, "%smax-cost: $%.2f\n", indent, p.MaxCost)
 		}
 	}
 }

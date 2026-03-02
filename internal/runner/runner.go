@@ -109,6 +109,13 @@ func (r *Runner) Run(ctx context.Context) error {
 			return r.failAndHint(state.StatusInterrupted, ExitSignal, ctx.Err())
 		}
 
+		// Check run-level cost limit before starting next phase
+		if r.Config.MaxCost > 0 && r.Costs.TotalCost() > r.Config.MaxCost {
+			r.printRunSummary(i)
+			return r.failAndHint(state.StatusFailed, ExitHumanNeeded,
+				fmt.Errorf("run exceeded cost limit: $%.2f > $%.2f", r.Costs.TotalCost(), r.Config.MaxCost))
+		}
+
 		// Evaluate condition
 		if phase.Condition != "" {
 			if !evalCondition(ctx, phase, r.Env) {
@@ -161,6 +168,16 @@ func (r *Runner) Run(ctx context.Context) error {
 			}
 			if flushErr := r.Costs.Flush(r.Env.ArtifactsDir); flushErr != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to flush costs: %v\n", flushErr)
+			}
+			// Check phase-level cost limit
+			if phase.MaxCost > 0 {
+				phaseCost := r.Costs.PhaseCost(phase.Name)
+				if phaseCost > phase.MaxCost {
+					r.Timing.AddEnd(phase.Name)
+					r.printRunSummary(i)
+					return r.failAndHint(state.StatusFailed, ExitHumanNeeded,
+						fmt.Errorf("phase %q exceeded cost limit: $%.2f > $%.2f", phase.Name, phaseCost, phase.MaxCost))
+				}
 			}
 		}
 
@@ -284,6 +301,10 @@ func (r *Runner) DryRunPrint() {
 	total := len(r.Config.Phases)
 	fmt.Printf("\n%sDry run — %d phases:%s\n\n", ux.Bold, total, ux.Reset)
 
+	if r.Config.MaxCost > 0 {
+		fmt.Printf("  max-cost: $%.2f\n", r.Config.MaxCost)
+	}
+
 	if len(r.Env.CustomVars) > 0 {
 		fmt.Printf("  %sVars:%s\n", ux.Bold, ux.Reset)
 		keys := make([]string, 0, len(r.Env.CustomVars))
@@ -311,6 +332,9 @@ func (r *Runner) DryRunPrint() {
 		case "agent":
 			fmt.Printf("     prompt: %s\n", p.Prompt)
 			fmt.Printf("     model: %s, timeout: %dm\n", p.Model, p.Timeout)
+			if p.MaxCost > 0 {
+				fmt.Printf("     max-cost: $%.2f\n", p.MaxCost)
+			}
 			if len(p.AllowTools) > 0 {
 				fmt.Printf("     allow-tools: %v\n", p.AllowTools)
 			}
@@ -348,6 +372,13 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 
 	r.Timing.AddStart(phase1.Name)
 	r.Timing.AddStart(phase2.Name)
+
+	// Check run-level cost limit before starting parallel phases
+	if r.Config.MaxCost > 0 && r.Costs.TotalCost() > r.Config.MaxCost {
+		r.printRunSummary(idx1)
+		return r.failAndHint(state.StatusFailed, ExitHumanNeeded,
+			fmt.Errorf("run exceeded cost limit: $%.2f > $%.2f", r.Costs.TotalCost(), r.Config.MaxCost))
+	}
 
 	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
@@ -423,6 +454,29 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 		}
 		r.printRunSummary(failedIdx)
 		return r.failAndHint(state.StatusFailed, ExitRetryable, firstErr)
+	}
+
+	// Flush costs and check cost limits after parallel phases complete
+	if err := r.Costs.Flush(r.Env.ArtifactsDir); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to flush costs: %v\n", err)
+	}
+	for _, pi := range []struct {
+		idx   int
+		phase config.Phase
+	}{{idx1, phase1}, {idx2, phase2}} {
+		if pi.phase.MaxCost > 0 && pi.phase.Type == "agent" {
+			phaseCost := r.Costs.PhaseCost(pi.phase.Name)
+			if phaseCost > pi.phase.MaxCost {
+				r.printRunSummary(pi.idx)
+				return r.failAndHint(state.StatusFailed, ExitHumanNeeded,
+					fmt.Errorf("phase %q exceeded cost limit: $%.2f > $%.2f", pi.phase.Name, phaseCost, pi.phase.MaxCost))
+			}
+		}
+	}
+	if r.Config.MaxCost > 0 && r.Costs.TotalCost() > r.Config.MaxCost {
+		r.printRunSummary(idx1)
+		return r.failAndHint(state.StatusFailed, ExitHumanNeeded,
+			fmt.Errorf("run exceeded cost limit: $%.2f > $%.2f", r.Costs.TotalCost(), r.Config.MaxCost))
 	}
 
 	// Check declared outputs for both phases

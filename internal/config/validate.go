@@ -69,6 +69,10 @@ func Validate(cfg *Config, projectRoot string) error {
 		return fmt.Errorf("config: unknown effort %q (must be low, medium, or high)", cfg.Effort)
 	}
 
+	if cfg.MaxCost < 0 {
+		return fmt.Errorf("config: 'max-cost' must not be negative (got %.2f)", cfg.MaxCost)
+	}
+
 	seen := make(map[string]bool)
 	for i := range cfg.Phases {
 		p := &cfg.Phases[i]
@@ -148,6 +152,13 @@ func Validate(cfg *Config, projectRoot string) error {
 
 		if p.Timeout < 0 {
 			return fmt.Errorf("config: phase %q: timeout must be >= 0", p.Name)
+		}
+
+		if p.MaxCost < 0 {
+			return fmt.Errorf("config: phase %q: 'max-cost' must not be negative (got %.2f)", p.Name, p.MaxCost)
+		}
+		if p.MaxCost > 0 && p.Type != "agent" {
+			return fmt.Errorf("config: phase %q: 'max-cost' is only valid on agent phases", p.Name)
 		}
 
 		for _, o := range p.Outputs {

@@ -97,6 +97,45 @@ func TestCosts_ZeroCostSubscriptionMode(t *testing.T) {
 	}
 }
 
+func TestCostData_TotalCost(t *testing.T) {
+	c := &CostData{}
+	c.Record("a", 0, 0.5, 100, 50, 0, 0, 1)
+	c.Record("b", 1, 0.25, 200, 100, 0, 0, 1)
+	if got := c.TotalCost(); got != 0.75 {
+		t.Fatalf("TotalCost() = %f, want 0.75", got)
+	}
+}
+
+func TestCostData_PhaseCost(t *testing.T) {
+	c := &CostData{}
+	c.Record("a", 0, 0.5, 100, 50, 0, 0, 1)
+	c.Record("b", 1, 0.3, 200, 100, 0, 0, 1)
+	c.Record("a", 0, 0.2, 100, 50, 0, 0, 1)
+	if got := c.PhaseCost("a"); got != 0.7 {
+		t.Fatalf("PhaseCost(\"a\") = %f, want 0.7", got)
+	}
+	if got := c.PhaseCost("b"); got != 0.3 {
+		t.Fatalf("PhaseCost(\"b\") = %f, want 0.3", got)
+	}
+	if got := c.PhaseCost("c"); got != 0 {
+		t.Fatalf("PhaseCost(\"c\") = %f, want 0", got)
+	}
+}
+
+func TestCostData_TotalCostEmpty(t *testing.T) {
+	c := &CostData{}
+	if got := c.TotalCost(); got != 0 {
+		t.Fatalf("TotalCost() = %f, want 0", got)
+	}
+}
+
+func TestCostData_PhaseCostEmpty(t *testing.T) {
+	c := &CostData{}
+	if got := c.PhaseCost("any"); got != 0 {
+		t.Fatalf("PhaseCost(\"any\") = %f, want 0", got)
+	}
+}
+
 func TestCosts_JSONFormat(t *testing.T) {
 	dir := t.TempDir()
 	costs := &CostData{}
