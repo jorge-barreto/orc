@@ -27,6 +27,7 @@ func main() {
 		Commands: []*cli.Command{
 			initCmd(),
 			runCmd(),
+			validateCmd(),
 			cancelCmd(),
 			statusCmd(),
 			doctorCmd(),
