@@ -7,6 +7,14 @@ default-allow-tools:
   - Bash
 
 phases:
+  - name: bead-claim
+    type: script
+    description: Mark the ticket's bead as in-progress
+    run: |
+      bd search "$TICKET" | grep " - $TICKET:" | head -1 | cut -d' ' -f1 | xargs -r -I{} bd update {} --status=in_progress
+      exit 0
+    timeout: 1
+
   - name: plan
     type: agent
     description: Read the roadmap item and produce an implementation plan
@@ -77,4 +85,12 @@ phases:
       Co-Authored-By: orc <noreply@jorgebarreto.dev>
       EOF
       )"
+    timeout: 1
+
+  - name: bead-close
+    type: script
+    description: Close the ticket's bead after successful commit
+    run: |
+      bd search "$TICKET" | grep " - $TICKET:" | head -1 | cut -d' ' -f1 | xargs -r -I{} bd close {}
+      exit 0
     timeout: 1
