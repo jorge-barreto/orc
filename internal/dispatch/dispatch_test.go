@@ -209,6 +209,20 @@ func TestClone_DeepCopiesFilteredEnv(t *testing.T) {
 	}
 }
 
+func TestClone_CopiesVerbose(t *testing.T) {
+	env := &Environment{
+		ProjectRoot:  "/proj",
+		WorkDir:      "/work",
+		ArtifactsDir: "/art",
+		Ticket:       "T-1",
+		Verbose:      true,
+	}
+	cp := env.Clone()
+	if !cp.Verbose {
+		t.Fatal("Verbose not copied to clone")
+	}
+}
+
 // Fix 8: PhaseWorkDir fallback for undefined var
 
 func TestPhaseWorkDir_UndefinedVarFallsBack(t *testing.T) {

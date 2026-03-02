@@ -116,3 +116,8 @@ func PromptPath(artifactsDir string, idx int) string {
 func LogPath(artifactsDir string, idx int) string {
 	return filepath.Join(artifactsDir, "logs", fmt.Sprintf("phase-%d.log", idx+1))
 }
+
+// StreamLogPath returns the path for a raw stream-json log file.
+func StreamLogPath(artifactsDir string, idx int) string {
+	return filepath.Join(artifactsDir, "logs", fmt.Sprintf("phase-%d.stream.jsonl", idx+1))
+}

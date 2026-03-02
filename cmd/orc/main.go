@@ -51,6 +51,7 @@ func runCmd() *cli.Command {
 			&cli.IntFlag{Name: "retry", Usage: "Retry from phase N (1-indexed)"},
 			&cli.IntFlag{Name: "from", Usage: "Start from phase N (1-indexed)"},
 			&cli.BoolFlag{Name: "dry-run", Usage: "Print phase plan without executing"},
+			&cli.BoolFlag{Name: "verbose", Aliases: []string{"v"}, Usage: "Save raw stream-json output to .stream.jsonl files"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfgErr := func(err error) error {
@@ -93,6 +94,7 @@ func runCmd() *cli.Command {
 				ArtifactsDir:      artifactsDir,
 				Ticket:            ticket,
 				AutoMode:          cmd.Bool("auto"),
+				Verbose:           cmd.Bool("verbose"),
 				PhaseCount:        len(cfg.Phases),
 				DefaultAllowTools: cfg.DefaultAllowTools,
 			}

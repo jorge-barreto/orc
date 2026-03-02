@@ -17,6 +17,7 @@ type Environment struct {
 	Ticket            string
 	PhaseIndex        int
 	AutoMode          bool
+	Verbose           bool
 	PhaseCount        int
 	DefaultAllowTools []string
 	CustomVars        map[string]string
