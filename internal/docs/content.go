@@ -37,6 +37,12 @@ var topics = []Topic{
 		Summary: "Structure of .orc/artifacts/ and what gets saved",
 		Content: topicArtifacts,
 	},
+	{
+		Name:    "quality-loops",
+		Title:   "Adversarial Quality Loops",
+		Summary: "Writing review prompts that catch real issues",
+		Content: topicQualityLoops,
+	},
 }
 
 const topicQuickstart = `Quick Start
@@ -519,6 +525,235 @@ Declared Outputs
 Phases can declare expected output files via the outputs field. These
 files are expected to appear directly in the .orc/artifacts/ directory (not
 in subdirectories). Output filenames must not contain path separators.
+`
+
+const topicQualityLoops = `Adversarial Quality Loops
+========================
+
+orc's core differentiator is deterministic, auditable, quality-assured code
+delivery through adversarial review loops. The on-fail mechanism provides
+the loop structure. The prompts provide the teeth. This doc covers how to
+write review prompts that actually catch real issues.
+
+Anatomy of an Adversarial Loop
+------------------------------
+
+Every adversarial loop has three components:
+
+  1. Doer phase (agent)    — produces work (a plan, code, a document)
+  2. Checker phase (agent) — reviews the work, writes findings
+  3. Decision gate (script) — checks for a pass signal file; fails if absent
+
+Example config:
+
+  - name: implement
+    type: agent
+    prompt: .orc/phases/implement.md
+
+  - name: review
+    type: agent
+    prompt: .orc/phases/review.md
+    outputs:
+      - review-findings.md
+
+  - name: review-check
+    type: script
+    run: >
+      test -f $ARTIFACTS_DIR/review-pass.txt ||
+      { cat $ARTIFACTS_DIR/review-findings.md 2>/dev/null; exit 1; }
+    on-fail:
+      goto: implement
+      max: 2
+
+The checker writes a findings file every time. It only writes the pass
+signal file (review-pass.txt) when zero blocking issues remain. The
+decision gate's on-fail loop sends the doer back with feedback injected
+automatically.
+
+The Asymmetry Principle
+-----------------------
+
+The doer and checker have fundamentally different jobs. Do not write them
+symmetrically.
+
+The doer is:
+  - Surgical and targeted (especially on retries)
+  - Plan-following and constrained
+  - Focused on fixing specific issues from feedback
+
+The checker is:
+  - Comprehensive and aggressive
+  - Independent — reviews the work with fresh eyes
+  - Responsible for finding issues the doer didn't anticipate
+
+A common mistake is writing a checker that is deferential to the doer
+("only flag issues the plan asked for"). This defeats the purpose. The
+checker must review the WORK, not just verify the plan was followed. If
+the checker finds a real bug the plan didn't anticipate, that is a
+blocking issue.
+
+Clean Slate
+-----------
+
+Every checker prompt should start by removing the previous pass signal:
+
+  rm -f "$ARTIFACTS_DIR/review-pass.txt"
+
+Without this, a pass signal from a prior run can short-circuit the
+review entirely.
+
+Iteration-Aware Rigor
+---------------------
+
+The checker should behave differently depending on which loop iteration
+it's on. Read the loop counter from artifacts:
+
+  cat "$ARTIFACTS_DIR/loop-counts.json" 2>/dev/null || echo "first"
+
+Apply rigor by iteration:
+
+  First review    Maximum scrutiny. Examine everything. You MUST find
+                  blocking issues — non-trivial work invariably has
+                  substantive problems on first inspection. A reviewer
+                  that passes on the first iteration is rubber-stamping.
+
+  Second review   Verify prior issues are resolved. Apply fresh scrutiny
+                  to areas the doer changed — fixes often introduce new
+                  problems. Still expect to find issues.
+
+  Third+ review   May pass if zero blocking issues remain. Apply the
+                  convergence rule: don't hold work hostage over minor
+                  preferences. The work doesn't need to be perfect — it
+                  needs to be correct and complete.
+
+This creates natural convergence: each loop tightens around remaining
+substantive problems, then releases when quality is sufficient.
+
+The "When in Doubt, Block" Policy
+---------------------------------
+
+The checker prompt must explicitly state: if you're uncertain whether
+something is blocking or a suggestion, classify it as blocking.
+
+This flips the natural bias. Without this instruction, reviewers
+default to permissive — they avoid raising issues to seem cooperative.
+The explicit policy gives the reviewer permission to be aggressive.
+
+The cost asymmetry supports this: a false positive (flagging something
+minor as blocking) costs one loop iteration where the doer addresses
+it and the checker downgrades it. A false negative (missing a real
+issue) ships broken code.
+
+Structured Blocking Taxonomy
+----------------------------
+
+Don't leave "what counts as blocking" to the reviewer's judgment.
+Enumerate it explicitly. The taxonomy should be domain-specific.
+
+For code review, blocking means:
+  - Tests failing
+  - Bugs or incorrect behavior
+  - Missing acceptance criteria
+  - Regressions in existing functionality
+  - Security issues (injection, traversal, unsanitized input)
+  - Missing error handling at system boundaries
+  - Race conditions, nil dereferences, index-out-of-range risks
+
+For code review, NOT blocking means:
+  - Stylistic convention violations
+  - Alternative approaches when the current one works
+  - Additional tests beyond adequate coverage
+  - Cosmetic issues
+
+Always pair the blocking taxonomy with a "what is NOT blocking" section.
+Without it, aggressive reviewers will block on style.
+
+Verification Requirement
+------------------------
+
+The checker must read the actual source before asserting something is
+wrong. Include this as an explicit rule:
+
+  "If you assert something is a bug or that behavior is incorrect,
+   trace through the code to confirm. Do not make unverified claims."
+
+Without this, the checker can hallucinate issues, sending the doer on
+wild goose chases that waste loop iterations.
+
+Convergence Rules
+-----------------
+
+Adversarial loops need a convergence mechanism. Without one, an
+aggressive checker can hold work hostage indefinitely.
+
+Two mechanisms work together:
+
+  1. max retries (config)    Hard limit on loop iterations. Set this
+                             based on domain: 2 for plan review,
+                             2-3 for code review, up to 10 for
+                             test-fix loops.
+
+  2. Convergence rule        On iteration 3+, the checker may pass if
+     (prompt)                all remaining issues are stylistic rather
+                             than substantive.
+
+Additionally, the "don't move goalposts" rule prevents the checker
+from escalating prior suggestions to blocking on later iterations
+(unless the doer's changes created a new problem in that area).
+
+Previously Flagged Issues
+-------------------------
+
+On iterations after the first, the checker should track what was
+previously flagged and whether it was resolved. Use this structure
+in the findings file:
+
+  ## Previously Flagged Issues — Resolution Status
+  1. [RESOLVED] Description — confirmed fixed.
+  2. [UNRESOLVED] Description — still present.
+  3. [PARTIALLY RESOLVED] Description — improved but incomplete.
+
+This creates an auditable trail and prevents the checker from
+re-flagging issues that were already addressed.
+
+Structured Findings Format
+--------------------------
+
+Every blocking issue must include three things:
+
+  1. What is wrong (specific: file, line, function, quoted code)
+  2. Why it's blocking (what would break or fail)
+  3. How to fix it (concrete, actionable suggestion)
+
+A finding without a suggested fix is not useful — it sends the doer
+to figure out what the checker already analyzed. Every blocking issue
+must include a concrete fix.
+
+Common Mistakes
+---------------
+
+Too gentle         "Find real issues — not to rubber-stamp" sounds
+                   adversarial but isn't. The reviewer still defaults
+                   to permissive. Use "Be aggressive, not lenient" and
+                   "You MUST find blocking issues on first review."
+
+No clean slate     Without removing the pass signal file first, a
+                   stale pass signal can bypass the review entirely.
+
+Plan-scoped only   "Don't flag issues the plan didn't ask for" means
+                   the reviewer can't catch bugs the plan missed.
+                   The reviewer reviews the WORK, not the plan.
+
+No iteration       Reviewing identically every time means the first
+awareness          review is too weak and later reviews don't converge.
+                   Scale rigor by iteration.
+
+Unverified         Asserting code is wrong without reading it wastes
+claims             loop iterations on phantom issues.
+
+No taxonomy        Leaving "blocking vs. suggestion" to judgment means
+                   the reviewer either blocks on style (too strict) or
+                   passes on bugs (too lenient). Enumerate explicitly.
 `
 
 // SchemaReference returns the combined config schema, phase types, and

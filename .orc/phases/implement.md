@@ -10,7 +10,7 @@ Follow the implementation plan exactly. Write code, write tests, and verify ever
 2. Read `$PROJECT_ROOT/CLAUDE.md` — project conventions.
 3. Check `$ARTIFACTS_DIR/feedback/` for feedback from previous attempts:
    - If feedback exists from **test** failures: read the error output carefully. The test suite failed. Fix the specific failures.
-   - If feedback exists from **review-check**: read the review findings. The reviewer found issues with your implementation. Address each blocking issue.
+   - If feedback exists from **review-check**: read the review findings. The reviewer found issues with your implementation. Address every blocking issue — the reviewer may have flagged issues beyond the plan's scope (bugs, regressions, security issues). These are legitimate and must be fixed.
    - If no feedback exists: this is the first attempt. Follow the plan from scratch.
 
 ## Step 2: Implement
