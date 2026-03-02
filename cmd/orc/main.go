@@ -61,6 +61,9 @@ func runCmd() *cli.Command {
 			if ticket == "" {
 				return fmt.Errorf("ticket argument is required")
 			}
+			if err := validateTicketPath(ticket); err != nil {
+				return err
+			}
 
 			projectRoot, err := findProjectRoot()
 			if err != nil {
@@ -77,7 +80,7 @@ func runCmd() *cli.Command {
 				return err
 			}
 
-			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts")
+			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts", ticket)
 
 			env := &dispatch.Environment{
 				ProjectRoot:       projectRoot,
@@ -177,13 +180,16 @@ func cancelCmd() *cli.Command {
 			if ticket == "" {
 				return fmt.Errorf("ticket argument is required")
 			}
+			if err := validateTicketPath(ticket); err != nil {
+				return err
+			}
 
 			projectRoot, err := findProjectRoot()
 			if err != nil {
 				return err
 			}
 
-			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts")
+			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts", ticket)
 
 			// Check if artifacts directory exists
 			if _, err := os.Stat(artifactsDir); os.IsNotExist(err) {
@@ -219,32 +225,22 @@ func statusCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "status",
 		Usage:     "Show workflow status",
-		ArgsUsage: "[ticket]",
+		ArgsUsage: "<ticket>",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			ticket := cmd.Args().First()
+			if ticket == "" {
+				return fmt.Errorf("ticket argument is required")
+			}
+			if err := validateTicketPath(ticket); err != nil {
+				return err
+			}
+
 			projectRoot, err := findProjectRoot()
 			if err != nil {
 				return err
 			}
 
-			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts")
-
-			ticket := cmd.Args().First()
-			if ticket == "" {
-				// No ticket arg — check if there's an active run
-				if _, err := os.Stat(filepath.Join(artifactsDir, "state.json")); os.IsNotExist(err) {
-					fmt.Println("No active run.")
-					return nil
-				}
-				st, err := state.Load(artifactsDir)
-				if err != nil {
-					return fmt.Errorf("loading state: %w", err)
-				}
-				if st.Ticket == "" {
-					fmt.Println("No active run.")
-					return nil
-				}
-				ticket = st.Ticket
-			}
+			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts", ticket)
 
 			configPath := filepath.Join(projectRoot, ".orc", "config.yaml")
 			cfg, err := config.Load(configPath, projectRoot)
@@ -257,10 +253,6 @@ func statusCmd() *cli.Command {
 				return fmt.Errorf("loading state: %w", err)
 			}
 
-			if st.Ticket != "" && st.Ticket != ticket {
-				return fmt.Errorf("state is for ticket %q, not %q", st.Ticket, ticket)
-			}
-
 			ux.RenderStatus(cfg, st, artifactsDir)
 			return nil
 		},
@@ -269,9 +261,18 @@ func statusCmd() *cli.Command {
 
 func doctorCmd() *cli.Command {
 	return &cli.Command{
-		Name:  "doctor",
-		Usage: "Diagnose a failed workflow run using AI",
+		Name:      "doctor",
+		Usage:     "Diagnose a failed workflow run using AI",
+		ArgsUsage: "<ticket>",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			ticket := cmd.Args().First()
+			if ticket == "" {
+				return fmt.Errorf("ticket argument is required")
+			}
+			if err := validateTicketPath(ticket); err != nil {
+				return err
+			}
+
 			projectRoot, err := findProjectRoot()
 			if err != nil {
 				return err
@@ -283,7 +284,7 @@ func doctorCmd() *cli.Command {
 				return fmt.Errorf("loading config: %w", err)
 			}
 
-			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts")
+			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts", ticket)
 			st, err := state.Load(artifactsDir)
 			if err != nil {
 				return fmt.Errorf("loading state: %w", err)
@@ -331,6 +332,14 @@ func docsCmd() *cli.Command {
 			return nil
 		},
 	}
+}
+
+// validateTicketPath rejects ticket values that would escape the artifacts directory.
+func validateTicketPath(ticket string) error {
+	if ticket != filepath.Base(ticket) || ticket == ".." || ticket == "." {
+		return fmt.Errorf("invalid ticket %q: must not contain path separators", ticket)
+	}
+	return nil
 }
 
 // findProjectRoot walks up from cwd looking for .orc/config.yaml.

@@ -82,8 +82,8 @@ CLI Flags
   orc run <ticket> --from N     Start from phase N (1-indexed)
   orc cancel <ticket>           Cancel run and remove all artifacts
   orc cancel <ticket> --force   Cancel even if a run appears active
-  orc status                    Show current run status
   orc status <ticket>           Show workflow status for a ticket
+  orc doctor <ticket>           Diagnose a failed run using AI
   orc init                      Initialize .orc/ directory (AI-powered)
   orc docs                      List documentation topics
   orc docs <topic>              Show a documentation topic
@@ -229,8 +229,8 @@ Reads a prompt template file, expands variables, and invokes:
 
   claude -p <prompt> --model <model> --allowedTools <tools...>
 
-Output is streamed to the terminal and saved to .orc/artifacts/logs/phase-N.log.
-The rendered prompt is saved to .orc/artifacts/prompts/phase-N.md.
+Output is streamed to the terminal and saved to .orc/artifacts/<ticket>/logs/phase-N.log.
+The rendered prompt is saved to .orc/artifacts/<ticket>/prompts/phase-N.md.
 
 Tool Permissions
 ~~~~~~~~~~~~~~~~
@@ -298,7 +298,7 @@ Built-in Variables
 ------------------
 
   $TICKET          The ticket identifier passed to orc run.
-  $ARTIFACTS_DIR   Absolute path to the .orc/artifacts/ directory.
+  $ARTIFACTS_DIR   Absolute path to the .orc/artifacts/<ticket>/ directory.
   $WORK_DIR        Absolute path to the working directory (project root).
   $PROJECT_ROOT    Absolute path to the project root (where .orc/ lives).
 
@@ -331,7 +331,7 @@ Child processes (scripts and agents) inherit the parent environment with
 these additional ORC_-prefixed variables:
 
   ORC_TICKET           The ticket identifier.
-  ORC_ARTIFACTS_DIR    Absolute path to .orc/artifacts/.
+  ORC_ARTIFACTS_DIR    Absolute path to .orc/artifacts/<ticket>/.
   ORC_WORK_DIR         Working directory.
   ORC_PROJECT_ROOT     Project root directory.
   ORC_PHASE_INDEX      Current phase index (0-based).
@@ -387,14 +387,14 @@ On-Fail Retry Loops
 
 When a phase with on-fail fails:
 
-  1. The failure output is written to .orc/artifacts/feedback/from-<phase>.md.
+  1. The failure output is written to .orc/artifacts/<ticket>/feedback/from-<phase>.md.
   2. The loop counter for that phase is incremented.
   3. The runner jumps back to the phase named in on-fail.goto.
   4. Execution resumes from there. Feedback is automatically injected
      into agent prompts — no manual file reading required.
 
 If the loop counter exceeds on-fail.max (default: 2), the workflow stops.
-Loop counts are persisted to .orc/artifacts/loop-counts.json and reset when
+Loop counts are persisted to .orc/artifacts/<ticket>/loop-counts.json and reset when
 using --retry or --from.
 
 The on-fail.goto target must reference an earlier phase (no forward jumps).
@@ -428,7 +428,7 @@ Resuming
 --------
 
 orc automatically resumes from the last completed phase. State is saved
-to .orc/artifacts/state.json after every phase. To manually control the
+to .orc/artifacts/<ticket>/state.json after every phase. To manually control the
 resume point:
 
   orc run TICKET --retry 3    Retry from phase 3 (re-runs phase 3)
@@ -443,7 +443,7 @@ To permanently cancel a run and wipe all artifacts:
 
   orc cancel TICKET
 
-This removes the entire .orc/artifacts/ directory (state, timing, logs,
+This removes the .orc/artifacts/<ticket>/ directory for that ticket (state, timing, logs,
 prompts, feedback, and any declared outputs). The workflow config and
 prompt files under .orc/ are not affected.
 
@@ -456,7 +456,7 @@ Ctrl+C in the running terminal first, or pass --force:
 const topicArtifacts = `Artifacts Directory
 ===================
 
-orc creates a .orc/artifacts/ directory in the project root to store all
+orc creates a .orc/artifacts/<ticket>/ directory in the project root to store all
 run data. This directory is the primary mechanism for passing context
 between phases — phases read and write files here rather than relying
 on conversational memory.
@@ -464,7 +464,7 @@ on conversational memory.
 Directory Structure
 -------------------
 
-  .orc/artifacts/
+  .orc/artifacts/<ticket>/
   ├── state.json              Current run state
   ├── timing.json             Start/end timestamps per phase
   ├── loop-counts.json        On-fail retry counters per phase
@@ -523,7 +523,7 @@ Declared Outputs
 ----------------
 
 Phases can declare expected output files via the outputs field. These
-files are expected to appear directly in the .orc/artifacts/ directory (not
+files are expected to appear directly in the .orc/artifacts/<ticket>/ directory (not
 in subdirectories). Output filenames must not contain path separators.
 `
 

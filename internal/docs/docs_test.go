@@ -1,6 +1,9 @@
 package docs
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestAll_ReturnsTopics(t *testing.T) {
 	topics := All()
@@ -53,5 +56,26 @@ func TestGet_NotFound(t *testing.T) {
 	_, err := Get("nonexistent")
 	if err == nil {
 		t.Fatal("Get(nonexistent) should return error")
+	}
+}
+
+func TestDocs_ArtifactsTicketScoped(t *testing.T) {
+	topic, err := Get("artifacts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(topic.Content, "<ticket>") {
+		t.Error("artifacts topic should reference <ticket> scoped paths")
+	}
+}
+
+func TestDocs_NoBareArtifactPaths(t *testing.T) {
+	for _, topic := range All() {
+		lines := strings.Split(topic.Content, "\n")
+		for i, line := range lines {
+			if strings.Contains(line, ".orc/artifacts/") && !strings.Contains(line, ".orc/artifacts/<ticket>") {
+				t.Errorf("topic %q line %d has bare .orc/artifacts/ path: %s", topic.Name, i+1, strings.TrimSpace(line))
+			}
+		}
 	}
 }
