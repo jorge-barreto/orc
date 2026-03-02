@@ -3,6 +3,7 @@ package runner
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -77,6 +78,14 @@ func newTestRunner(t *testing.T, cfg *config.Config, mock dispatch.Dispatcher) *
 	}
 }
 
+func assertExitCode(t *testing.T, err error, want int) {
+	t.Helper()
+	got := ExitCodeFrom(err)
+	if got != want {
+		t.Fatalf("exit code = %d, want %d (err: %v)", got, want, err)
+	}
+}
+
 func TestRun_AllPhasesSucceed(t *testing.T) {
 	cfg := &config.Config{
 		Name: "test",
@@ -122,6 +131,7 @@ func TestRun_FailNoOnFail(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), `phase "b" failed`) {
 		t.Fatalf("expected phase b failure, got %v", err)
 	}
+	assertExitCode(t, err, ExitRetryable)
 	if r.State.Status != state.StatusFailed {
 		t.Fatalf("status = %q", r.State.Status)
 	}
@@ -210,6 +220,7 @@ func TestRun_OnFailExceedsMax(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "exceeded max retries") {
 		t.Fatalf("expected max retries error, got %v", err)
 	}
+	assertExitCode(t, err, ExitRetryable)
 }
 
 func TestRun_OnFailLoopCountPersisted(t *testing.T) {
@@ -334,9 +345,10 @@ func TestRun_ContextCancelled(t *testing.T) {
 	cancel() // cancel immediately
 
 	err := r.Run(ctx)
-	if err != context.Canceled {
-		t.Fatalf("expected context.Canceled, got %v", err)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected error wrapping context.Canceled, got %v", err)
 	}
+	assertExitCode(t, err, ExitSignal)
 	if r.State.Status != state.StatusInterrupted {
 		t.Fatalf("status = %q", r.State.Status)
 	}
@@ -765,5 +777,59 @@ func TestRun_NoCostsForScriptPhases(t *testing.T) {
 	if len(costs.Phases) != 0 {
 		t.Fatalf("expected 0 cost entries for script-only run, got %d", len(costs.Phases))
 	}
+}
+
+func TestRun_GateDenialExitCode(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "approve", Type: "gate"},
+		},
+	}
+	mock := newMock()
+	// Gate denial: ExitCode 1 from gate, same as RunGate returning "n"
+	mock.results["approve"] = &dispatch.Result{ExitCode: 1, Output: "no"}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected error for gate denial")
+	}
+	assertExitCode(t, err, ExitHumanNeeded)
+	if r.State.Status != state.StatusFailed {
+		t.Fatalf("status = %q, want failed", r.State.Status)
+	}
+}
+
+func TestRun_ConfigErrorExitCode(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			// parallel-with references nonexistent phase — config error at runtime
+			{Name: "a", Type: "script", Run: "echo", ParallelWith: "nonexistent"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected error for config error")
+	}
+	assertExitCode(t, err, ExitConfigError)
+}
+
+func TestRun_SuccessExitCode(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	assertExitCode(t, err, ExitSuccess)
 }
 

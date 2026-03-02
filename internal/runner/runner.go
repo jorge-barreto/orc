@@ -39,7 +39,7 @@ func appendPhaseLog(artifactsDir string, phaseIdx int, msg string) {
 
 // failAndHint sets the failure status, saves state (warning on error),
 // flushes timing, prints a resume hint, and returns the given error.
-func (r *Runner) failAndHint(status string, err error) error {
+func (r *Runner) failAndHint(status string, exitCode int, err error) error {
 	r.State.Status = status
 	if saveErr := r.State.Save(r.Env.ArtifactsDir); saveErr != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to save state: %v\n", saveErr)
@@ -55,29 +55,33 @@ func (r *Runner) failAndHint(status string, err error) error {
 		}
 	}
 	ux.ResumeHint(r.State.Ticket)
-	return err
+	return &ExitError{Code: exitCode, Err: err}
 }
 
 // Run executes the workflow from the current state.
 func (r *Runner) Run(ctx context.Context) error {
+	setupErr := func(err error) error {
+		return &ExitError{Code: ExitConfigError, Err: err}
+	}
+
 	if err := state.EnsureDir(r.Env.ArtifactsDir); err != nil {
-		return err
+		return setupErr(err)
 	}
 
 	loopCounts, err := state.LoadLoopCounts(r.Env.ArtifactsDir)
 	if err != nil {
-		return fmt.Errorf("loading loop counts: %w", err)
+		return setupErr(fmt.Errorf("loading loop counts: %w", err))
 	}
 
 	timing, err := state.LoadTiming(r.Env.ArtifactsDir)
 	if err != nil {
-		return fmt.Errorf("loading timing: %w", err)
+		return setupErr(fmt.Errorf("loading timing: %w", err))
 	}
 	r.Timing = timing
 
 	costs, err := state.LoadCosts(r.Env.ArtifactsDir)
 	if err != nil {
-		return fmt.Errorf("loading costs: %w", err)
+		return setupErr(fmt.Errorf("loading costs: %w", err))
 	}
 	r.Costs = costs
 
@@ -89,7 +93,7 @@ func (r *Runner) Run(ctx context.Context) error {
 
 		// Check for context cancellation
 		if ctx.Err() != nil {
-			return r.failAndHint(state.StatusInterrupted, ctx.Err())
+			return r.failAndHint(state.StatusInterrupted, ExitSignal, ctx.Err())
 		}
 
 		// Evaluate condition
@@ -108,7 +112,7 @@ func (r *Runner) Run(ctx context.Context) error {
 		if phase.ParallelWith != "" {
 			partnerIdx := r.Config.PhaseIndex(phase.ParallelWith)
 			if partnerIdx < 0 {
-				return r.failAndHint(state.StatusFailed, fmt.Errorf("phase %q: parallel-with %q not found", phase.Name, phase.ParallelWith))
+				return r.failAndHint(state.StatusFailed, ExitConfigError, fmt.Errorf("phase %q: parallel-with %q not found", phase.Name, phase.ParallelWith))
 			}
 			if partnerIdx > i {
 				err := r.runParallel(ctx, i, partnerIdx, total, loopCounts)
@@ -129,7 +133,7 @@ func (r *Runner) Run(ctx context.Context) error {
 
 		if ctx.Err() != nil {
 			appendPhaseLog(r.Env.ArtifactsDir, i, fmt.Sprintf("\n[orc] phase interrupted: %v\n", ctx.Err()))
-			return r.failAndHint(state.StatusInterrupted, ctx.Err())
+			return r.failAndHint(state.StatusInterrupted, ExitSignal, ctx.Err())
 		}
 
 		// Record cost data for agent phases (cost is incurred regardless of success/failure)
@@ -161,12 +165,12 @@ func (r *Runner) Run(ctx context.Context) error {
 				if count > phase.OnFail.Max {
 					fmt.Printf("\n  Phase %q failed after %d retry loops. Manual intervention needed.\n",
 						phase.Name, phase.OnFail.Max)
-					return r.failAndHint(state.StatusFailed, fmt.Errorf("phase %q exceeded max retries (%d)", phase.Name, phase.OnFail.Max))
+					return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("phase %q exceeded max retries (%d)", phase.Name, phase.OnFail.Max))
 				}
 
 				loopCounts[phase.Name] = count
 				if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
-					return r.failAndHint(state.StatusFailed, fmt.Errorf("saving loop counts: %w", err))
+					return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("saving loop counts: %w", err))
 				}
 
 				// Write feedback from failed phase
@@ -183,7 +187,7 @@ func (r *Runner) Run(ctx context.Context) error {
 
 				gotoIdx := r.Config.PhaseIndex(phase.OnFail.Goto)
 				if gotoIdx < 0 {
-					return r.failAndHint(state.StatusFailed, fmt.Errorf("phase %q: on-fail.goto %q not found", phase.Name, phase.OnFail.Goto))
+					return r.failAndHint(state.StatusFailed, ExitConfigError, fmt.Errorf("phase %q: on-fail.goto %q not found", phase.Name, phase.OnFail.Goto))
 				}
 				ux.LoopBack(phase.Name, phase.OnFail.Goto, count, phase.OnFail.Max)
 
@@ -195,7 +199,11 @@ func (r *Runner) Run(ctx context.Context) error {
 			}
 
 			// No on-fail: stop
-			return r.failAndHint(state.StatusFailed, fmt.Errorf("phase %q failed", phase.Name))
+			exitCode := ExitRetryable
+			if phase.Type == "gate" {
+				exitCode = ExitHumanNeeded
+			}
+			return r.failAndHint(state.StatusFailed, exitCode, fmt.Errorf("phase %q failed", phase.Name))
 		}
 
 		// Check declared outputs
@@ -219,7 +227,7 @@ func (r *Runner) Run(ctx context.Context) error {
 				if phase.Type == "agent" {
 					fmt.Fprintf(os.Stderr, "  hint: if the agent couldn't perform actions, check your .claude/settings.local.json permissions\n")
 				}
-				return r.failAndHint(state.StatusFailed, fmt.Errorf("phase %q: %s", phase.Name, errMsg))
+				return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("phase %q: %s", phase.Name, errMsg))
 			}
 		}
 
@@ -386,9 +394,9 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 
 	if firstErr != nil {
 		if parentCtx.Err() != nil {
-			return r.failAndHint(state.StatusInterrupted, parentCtx.Err())
+			return r.failAndHint(state.StatusInterrupted, ExitSignal, parentCtx.Err())
 		}
-		return r.failAndHint(state.StatusFailed, firstErr)
+		return r.failAndHint(state.StatusFailed, ExitRetryable, firstErr)
 	}
 
 	// Check declared outputs for both phases
@@ -401,7 +409,7 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 			if len(missing) > 0 {
 				errMsg := fmt.Sprintf("missing outputs: %v", missing)
 				ux.PhaseFail(pi.idx, pi.phase.Name, errMsg)
-				return r.failAndHint(state.StatusFailed, fmt.Errorf("phase %q: %s", pi.phase.Name, errMsg))
+				return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("phase %q: %s", pi.phase.Name, errMsg))
 			}
 		}
 	}
