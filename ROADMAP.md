@@ -13,8 +13,8 @@ orc becomes a **deterministic, auditable AI code delivery engine** that JBD depl
 **Audience progression:**
 1. jb on his own projects (now — validated)
 2. jb on client projects (next week — needs cost tracking, reporting, config speed)
-3. Other JBD engineers (month 2 — needs docs, distribution, polish)
-4. Clients self-serving with JBD-maintained configs (quarter 2 — needs audit, multi-project)
+3. Other engineers (month 2 — needs docs, distribution, polish)
+4. Clients self-serving with JBD-maintained configs (quarter 2 — needs audit, multi-project) [[JBD = JorgeBarreto.Dev]]
 
 ## Design Principles
 
@@ -1542,7 +1542,7 @@ When JBD manages orc configs for multiple clients, there needs to be a way to ma
 ```yaml
 name: client-project
 import:
-  - https://github.com/jbd/orc-recipes/blob/main/standard-quality.yaml
+  - https://github.com/JBD/orc-recipes/blob/main/standard-quality.yaml
   - .orc/local-overrides.yaml
 
 phases:
