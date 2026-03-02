@@ -9,9 +9,27 @@ import (
 	"github.com/jorge-barreto/orc/internal/state"
 )
 
+// formatTokens returns a compact "in/out" string for token counts.
+func formatTokens(input, output int) string {
+	if input == 0 && output == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d/%d", input, output)
+}
+
+// formatCache returns a compact "read/write" string for cache token counts.
+func formatCache(read, creation int) string {
+	if read == 0 && creation == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d/%d", read, creation)
+}
+
 // RenderStatus prints the full status display for a ticket.
 func RenderStatus(cfg *config.Config, st *state.State, artifactsDir string) {
 	timing, _ := state.LoadTiming(artifactsDir)
+	costs, _ := state.LoadCosts(artifactsDir)
+	loopCounts, _ := state.LoadLoopCounts(artifactsDir)
 
 	// Header
 	fmt.Printf("%sTicket:%s  %s\n", Bold, Reset, st.Ticket)
@@ -23,14 +41,55 @@ func RenderStatus(cfg *config.Config, st *state.State, artifactsDir string) {
 			Bold, Reset, st.PhaseIndex+1, len(cfg.Phases), phase.Name, st.Status)
 	}
 
-	// Completed phases
-	if st.PhaseIndex > 0 {
+	// Completed phases — show full execution trace from timing entries
+	hasCompleted := timing != nil && len(timing.Entries) > 0
+	if hasCompleted {
+		fmt.Printf("\n  %s%-4s%-20s%8s%10s%16s%18s%8s%s\n",
+			Bold, "#", "PHASE", "TIME", "COST", "TOKENS IN/OUT", "CACHE R/W", "LOOPS", Reset)
+
+		costIdx := 0
+		for i, te := range timing.Entries {
+			dur := te.Duration
+			if dur == "" {
+				dur = "-"
+			}
+
+			// Match cost entry (costs are chronological, only for agent phases)
+			var costStr, tokenStr, cacheStr string
+			if costs != nil && costIdx < len(costs.Phases) && costs.Phases[costIdx].Name == te.Phase {
+				ce := costs.Phases[costIdx]
+				costIdx++
+				if ce.CostUSD > 0 {
+					costStr = fmt.Sprintf("$%.2f", ce.CostUSD)
+				}
+				tokenStr = formatTokens(ce.InputTokens, ce.OutputTokens)
+				cacheStr = formatCache(ce.CacheReadInputTokens, ce.CacheCreationInputTokens)
+			}
+
+			// Loop count — show on check phases that triggered loops
+			var loopStr string
+			if loopCounts != nil {
+				if count, ok := loopCounts[te.Phase]; ok && count > 0 {
+					loopStr = fmt.Sprintf("%d", count)
+				}
+			}
+
+			fmt.Printf("  %s%-4d%s%-20s%8s%10s%16s%18s%8s\n",
+				Dim, i+1, Reset, te.Phase, dur, costStr, tokenStr, cacheStr, loopStr)
+		}
+
+		// Total cost line
+		if costs != nil && costs.TotalCostUSD > 0 {
+			fmt.Printf("  %s%-4s%-20s%8s%s%10s%s\n",
+				"", "", "", "", Bold, fmt.Sprintf("$%.2f", costs.TotalCostUSD), Reset)
+		}
+	} else if st.PhaseIndex > 0 {
+		// Fallback: no timing data, just list completed phase names
 		fmt.Printf("\n%sCompleted:%s\n", Bold, Reset)
 		for i := 0; i < st.PhaseIndex && i < len(cfg.Phases); i++ {
 			p := cfg.Phases[i]
-			dur := findDuration(timing, p.Name)
-			fmt.Printf("  %s%d%s  %-20s %sdone%s  %s\n",
-				Dim, i+1, Reset, p.Name, Green, Reset, dur)
+			fmt.Printf("  %s%d%s  %-20s %sdone%s\n",
+				Dim, i+1, Reset, p.Name, Green, Reset)
 		}
 	}
 
@@ -114,14 +173,3 @@ func RenderStatusAll(cfg *config.Config, tickets []state.TicketSummary) {
 	fmt.Println()
 }
 
-func findDuration(timing *state.Timing, phaseName string) string {
-	if timing == nil {
-		return ""
-	}
-	for i := len(timing.Entries) - 1; i >= 0; i-- {
-		if timing.Entries[i].Phase == phaseName && timing.Entries[i].Duration != "" {
-			return fmt.Sprintf("(%s)", timing.Entries[i].Duration)
-		}
-	}
-	return ""
-}

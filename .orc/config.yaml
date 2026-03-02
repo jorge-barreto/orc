@@ -5,6 +5,7 @@ effort: high
 
 default-allow-tools:
   - Bash
+  - Task
 
 phases:
   - name: bead-claim
