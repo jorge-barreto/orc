@@ -660,3 +660,110 @@ func TestDryRunPrint_VarsAreSorted(t *testing.T) {
 	}
 }
 
+func TestRun_CostsTrackedForAgentPhases(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "agent", Prompt: "unused.md", Model: "sonnet"},
+			{Name: "c", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	mock.results["b"] = &dispatch.Result{
+		ExitCode:     0,
+		Output:       "done",
+		CostUSD:      0.5,
+		InputTokens:  15000,
+		OutputTokens: 8000,
+		Turns:        1,
+	}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify costs.json was created
+	costs, err := state.LoadCosts(r.Env.ArtifactsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(costs.Phases) != 1 {
+		t.Fatalf("expected 1 cost entry, got %d", len(costs.Phases))
+	}
+	if costs.Phases[0].Name != "b" {
+		t.Fatalf("phase name = %q, want 'b'", costs.Phases[0].Name)
+	}
+	if costs.Phases[0].CostUSD != 0.5 {
+		t.Fatalf("CostUSD = %f, want 0.5", costs.Phases[0].CostUSD)
+	}
+	if costs.Phases[0].InputTokens != 15000 {
+		t.Fatalf("InputTokens = %d, want 15000", costs.Phases[0].InputTokens)
+	}
+	if costs.TotalCostUSD != 0.5 {
+		t.Fatalf("TotalCostUSD = %f, want 0.5", costs.TotalCostUSD)
+	}
+}
+
+func TestRun_CostsTrackedZeroCost(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet"},
+		},
+	}
+	mock := newMock()
+	mock.results["a"] = &dispatch.Result{
+		ExitCode:     0,
+		Output:       "done",
+		CostUSD:      0,
+		InputTokens:  0,
+		OutputTokens: 0,
+		Turns:        1,
+	}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	costs, err := state.LoadCosts(r.Env.ArtifactsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(costs.Phases) != 1 {
+		t.Fatalf("expected 1 cost entry, got %d", len(costs.Phases))
+	}
+	if costs.Phases[0].CostUSD != 0 {
+		t.Fatalf("CostUSD = %f, want 0", costs.Phases[0].CostUSD)
+	}
+}
+
+func TestRun_NoCostsForScriptPhases(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	costs, err := state.LoadCosts(r.Env.ArtifactsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(costs.Phases) != 0 {
+		t.Fatalf("expected 0 cost entries for script-only run, got %d", len(costs.Phases))
+	}
+}
+

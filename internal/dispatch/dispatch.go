@@ -73,8 +73,12 @@ func PhaseWorkDir(phase config.Phase, env *Environment) string {
 
 // Result holds the outcome of a phase dispatch.
 type Result struct {
-	ExitCode int
-	Output   string
+	ExitCode     int
+	Output       string
+	CostUSD      float64
+	InputTokens  int
+	OutputTokens int
+	Turns        int
 }
 
 // BuildEnv returns the environment variables for child processes.
