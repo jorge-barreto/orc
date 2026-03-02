@@ -60,3 +60,58 @@ func (s *State) Advance() {
 func (s *State) SetPhase(idx int) {
 	s.PhaseIndex = idx
 }
+
+// TicketSummary holds the loaded state and cost data for one ticket.
+type TicketSummary struct {
+	Ticket       string
+	ArtifactsDir string
+	State        *State
+	Costs        *CostData
+}
+
+// ListTickets reads all ticket subdirectories under baseArtifactsDir,
+// loads each ticket's state and costs, and returns them sorted by directory name.
+// Directories that lack a state.json are skipped.
+func ListTickets(baseArtifactsDir string) ([]TicketSummary, error) {
+	entries, err := os.ReadDir(baseArtifactsDir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var tickets []TicketSummary
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		ad := filepath.Join(baseArtifactsDir, e.Name())
+
+		// Skip directories without a state.json
+		if _, err := os.Stat(statePath(ad)); err != nil {
+			continue
+		}
+
+		st, err := Load(ad)
+		if err != nil {
+			continue
+		}
+		if st.Ticket == "" {
+			st.Ticket = e.Name()
+		}
+
+		costs, err := LoadCosts(ad)
+		if err != nil {
+			costs = &CostData{}
+		}
+
+		tickets = append(tickets, TicketSummary{
+			Ticket:       st.Ticket,
+			ArtifactsDir: ad,
+			State:        st,
+			Costs:        costs,
+		})
+	}
+	return tickets, nil
+}

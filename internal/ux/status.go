@@ -74,6 +74,46 @@ func RenderStatus(cfg *config.Config, st *state.State, artifactsDir string) {
 	fmt.Println()
 }
 
+// RenderStatusAll prints a compact summary table of all tickets.
+func RenderStatusAll(cfg *config.Config, tickets []state.TicketSummary) {
+	if len(tickets) == 0 {
+		fmt.Printf("%sNo tickets found.%s\n", Dim, Reset)
+		return
+	}
+
+	fmt.Printf("%s%-14s%-14s%-17s%s%s\n", Bold, "TICKET", "STATUS", "PHASE", "COST", Reset)
+
+	for _, t := range tickets {
+		statusColor := Dim
+		switch t.State.Status {
+		case state.StatusCompleted:
+			statusColor = Green
+		case state.StatusRunning:
+			statusColor = Cyan
+		case state.StatusFailed:
+			statusColor = Red
+		case state.StatusInterrupted:
+			statusColor = Yellow
+		}
+
+		var phase string
+		if t.State.PhaseIndex >= len(cfg.Phases) {
+			phase = fmt.Sprintf("%d/%d", len(cfg.Phases), len(cfg.Phases))
+		} else {
+			p := cfg.Phases[t.State.PhaseIndex]
+			phase = fmt.Sprintf("%d/%d (%s)", t.State.PhaseIndex+1, len(cfg.Phases), p.Name)
+		}
+
+		cost := fmt.Sprintf("$%.2f", t.Costs.TotalCostUSD)
+
+		fmt.Printf("%-14s%s%-14s%s%-17s%s\n",
+			t.Ticket,
+			statusColor, t.State.Status, Reset,
+			phase, cost)
+	}
+	fmt.Println()
+}
+
 func findDuration(timing *state.Timing, phaseName string) string {
 	if timing == nil {
 		return ""
