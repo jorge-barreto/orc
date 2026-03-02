@@ -21,6 +21,7 @@ type Phase struct {
 	Model        string   `yaml:"model"`
 	Effort       string   `yaml:"effort"`
 	Timeout      int      `yaml:"timeout"`
+	MaxCost      float64  `yaml:"max-cost"`
 	Outputs      []string `yaml:"outputs"`
 	AllowTools   []string `yaml:"allow-tools"`
 	Condition    string   `yaml:"condition"`
@@ -67,6 +68,7 @@ type Config struct {
 	Model             string      `yaml:"model"`
 	Cwd               string      `yaml:"cwd"`
 	Effort            string      `yaml:"effort"`
+	MaxCost           float64     `yaml:"max-cost"`
 	Vars              OrderedVars `yaml:"vars"`
 	Phases            []Phase     `yaml:"phases"`
 }

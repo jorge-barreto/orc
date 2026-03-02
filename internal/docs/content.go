@@ -110,6 +110,8 @@ Top-level fields
                                 Not applied to gate phases.
   effort              string    Default effort for all agent phases. "low", "medium",
                                 or "high". Per-phase effort overrides this.
+  max-cost            float     Per-run cost budget in USD. Workflow stops with
+                                exit code 2 if cumulative cost exceeds this.
   vars                map       Custom variables expanded at startup (declaration order).
   phases              list      Required. Ordered list of phases.
 
@@ -124,6 +126,8 @@ Phase fields
                              (required for agent phases).
   model            string    "opus" (default), "sonnet", or "haiku" (agent only).
   timeout          int       Minutes. Default: 30 (agent), 10 (script).
+  max-cost         float     Per-phase cost budget in USD (agent only). Workflow
+                             stops with exit code 2 if phase cost exceeds this.
   outputs          list      Expected output filenames in artifacts dir.
   condition        string    Shell command; phase skipped if exit code non-zero.
   parallel-with    string    Name of another phase to run concurrently.
