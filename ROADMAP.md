@@ -34,7 +34,7 @@ orc becomes a **deterministic, auditable AI code delivery engine** that JBD depl
 
 **Theme:** Quick wins that unblock everything else. All items are independent, small, and immediately useful.
 
-**Validation checkpoint:** After Wave 0, jb can run the kitchen-scheduler workflow with a cleaner config (less `cwd` repetition), see what each run costs (or token counts if on a subscription plan), wrap orc in a Ralph loop with proper exit codes, and run multiple tickets concurrently without artifact collision.
+**Validation checkpoint:** After Wave 0, jb can run the kitchen-scheduler workflow with a cleaner config (less `cwd` repetition), see what each run costs (or token counts if on a subscription plan), wrap orc in a Ralph loop with proper exit codes, run multiple tickets concurrently without artifact collision, and see a clear summary table at the end of every run showing where time was spent.
 
 ---
 
@@ -269,6 +269,59 @@ orc validate --config path/to/config.yaml  # validate a specific file
 **Priority:** P1
 **Effort:** Small
 **Dependencies:** None
+
+---
+
+### R-035: Run summary table
+
+When a run finishes (success or failure), print a timeline table showing every phase that executed, how many times it ran, how long it took, and whether it passed or failed. Currently `ux.Success()` prints "All N phases complete" with no detail. For a multi-phase workflow with retry loops, that's not enough — you want to see at a glance where the time went and which phases looped.
+
+**Output format:**
+```
+  Run complete — 7 phases, 4m 32s
+
+  #  Phase          Type    Runs  Duration  Result
+  1  plan           agent      1     1m 12s  pass
+  2  review-plan    agent      1       38s   pass
+  3  plan-check     script     1        0s   pass
+  4  implement      agent      3     2m 05s  pass
+  5  test           script     3       22s   pass
+  6  review         agent      1       12s   pass
+  7  review-check   script     1        0s   pass
+
+  Total agent time: 4m 07s
+  Total script time: 22s
+```
+
+On failure, the table still prints (up to the phase that failed), with the failing phase marked `FAIL`.
+
+**Data sources:**
+- `timing.json` — already tracks per-phase start/end times via `state.Timing` (loaded in `runner.go`)
+- `loop-counts.json` — already tracks retry counts via `state.LoadLoopCounts()` (loop count + 1 = total runs for that phase)
+- Phase type comes from `config.Phases[i].Type`
+- Pass/fail is known from the runner's execution path
+
+**Implementation approach:**
+- Add `ux.RunSummary(phases []config.Phase, timing *state.Timing, loopCounts map[string]int, failedPhase int)` function in `internal/ux/output.go`
+- Called from `runner.Run()` at end of run (both success and failure paths) — replaces or augments the existing `ux.Success()` call
+- Compute run count per phase: `loopCounts[phase.Name] + 1` (0 retries = 1 run). For phases that were skipped (condition was false), show "skip" in the Result column
+- Compute duration from timing entries: `end - start` for each phase. For phases that ran multiple times, the timing only captures the last execution's start/end — sum is not available in v1. Show the last execution's duration with a note
+- For phases that ran but have no timing entry (e.g., script phases that complete instantly), show `<1s`
+- Column alignment: fixed-width columns, right-align numeric columns
+- Cost column is deferred to when R-004 is done — the table structure supports adding it later
+
+**Acceptance criteria:**
+- Every completed run (success or failure) prints a summary table to stdout
+- Table shows: phase number, name, type, run count, duration, result (pass/fail/skip)
+- Duration is human-readable (Xs, Xm Ys format)
+- Failed phase is clearly marked
+- Skipped phases (condition=false) show "skip"
+- Table aligns correctly for phase names up to 20 characters
+- Tests verify table formatting for: all-pass run, run with retries, run with failure, run with skipped phases
+
+**Priority:** P0
+**Effort:** Small
+**Dependencies:** None (uses existing timing.json and loop-counts.json)
 
 ---
 
@@ -1673,6 +1726,7 @@ R-003 (exit codes)          → standalone, enables Ralph wrapping
 R-004 (cost tracking)       → standalone, required by R-031 and R-019; enriches R-008, R-015, R-026, R-028
 R-005 (orc validate)        → standalone
 R-030 (artifact isolation)  → standalone
+R-035 (run summary table)   → standalone
 
 R-006 (loop field)          → standalone (requires feedback injection from commit 1892763; R-001 verifies)
 R-007 (review prompts)      → standalone (benefits from R-006)
@@ -1776,7 +1830,7 @@ R-034 (eval framework) ── systematic quality measurement
 
 | After | jb can... | Validates |
 |-------|-----------|-----------|
-| Wave 0 | Run workflows with cleaner configs, see costs, wrap in Ralph loop, run concurrent tickets | Core usability and safety work |
+| Wave 0 | Run workflows with cleaner configs, see costs, wrap in Ralph loop, run concurrent tickets, see run summary table | Core usability and safety work |
 | Wave 1 | Demonstrate adversarial quality assurance with guaranteed minimum review passes, iterate on configs with `orc improve`, cost limits prevent runaway | The product differentiator works safely, config iteration is fast |
 | Wave 2 | Set up orc on a new project in 30 minutes, step through phases to debug prompts, run `orc debug` to analyze failures | Iteration speed is sufficient for client onboarding |
 | Wave 3 | Show a client a run report, measure prompt quality with `orc eval`, track scores across prompt versions | Stakeholder communication and quality measurement work |

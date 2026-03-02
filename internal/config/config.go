@@ -64,6 +64,9 @@ type Config struct {
 	Name              string      `yaml:"name"`
 	TicketPattern     string      `yaml:"ticket-pattern"`
 	DefaultAllowTools []string    `yaml:"default-allow-tools"`
+	Model             string      `yaml:"model"`
+	Cwd               string      `yaml:"cwd"`
+	Effort            string      `yaml:"effort"`
 	Vars              OrderedVars `yaml:"vars"`
 	Phases            []Phase     `yaml:"phases"`
 }

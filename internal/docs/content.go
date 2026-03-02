@@ -97,6 +97,13 @@ Top-level fields
   ticket-pattern      string    Regex for ticket IDs (anchored automatically).
   default-allow-tools list      Tools auto-approved for all agent phases.
                                 Merged with built-in defaults (see 'orc docs phases').
+  model               string    Default model for all agent phases. "opus", "sonnet",
+                                or "haiku". Per-phase model overrides this.
+  cwd                 string    Default working directory for script and agent phases.
+                                Expanded with vars. Per-phase cwd overrides this.
+                                Not applied to gate phases.
+  effort              string    Default effort for all agent phases. "low", "medium",
+                                or "high". Per-phase effort overrides this.
   vars                map       Custom variables expanded at startup (declaration order).
   phases              list      Required. Ordered list of phases.
 
@@ -146,6 +153,8 @@ Example Config
 
   name: my-service
   ticket-pattern: '[A-Z]+-\d+'
+  model: opus
+  cwd: $WORKTREE
 
   default-allow-tools:
     - "mcp__atlassian__*"
@@ -160,13 +169,13 @@ Example Config
       type: script
       description: Create worktree
       run: git worktree add $WORKTREE
+      cwd: .                         # override: run in project root
 
     - name: implement
       type: agent
       description: Implement the ticket
       prompt: .orc/phases/implement.md
-      model: opus
-      cwd: $WORKTREE
+      # inherits model: opus, cwd: $WORKTREE
       outputs:
         - summary.md
       on-fail:
@@ -177,11 +186,12 @@ Example Config
       type: script
       description: Run tests
       run: make test
-      cwd: $WORKTREE
+      # inherits cwd: $WORKTREE
 
     - name: review
       type: gate
       description: Human approval
+      # gate phases don't inherit cwd
 `
 
 const topicPhases = `Phase Types

@@ -62,6 +62,13 @@ func Validate(cfg *Config, projectRoot string) error {
 		}
 	}
 
+	if !validModels[cfg.Model] {
+		return fmt.Errorf("config: unknown model %q (must be opus, sonnet, or haiku)", cfg.Model)
+	}
+	if !validEfforts[cfg.Effort] {
+		return fmt.Errorf("config: unknown effort %q (must be low, medium, or high)", cfg.Effort)
+	}
+
 	seen := make(map[string]bool)
 	for i := range cfg.Phases {
 		p := &cfg.Phases[i]
@@ -86,11 +93,20 @@ func Validate(cfg *Config, projectRoot string) error {
 			if _, err := os.Stat(promptPath); err != nil {
 				return fmt.Errorf("config: agent phase %q: prompt file %q not found", p.Name, promptPath)
 			}
+			if p.Model == "" && cfg.Model != "" {
+				p.Model = cfg.Model
+			}
 			if p.Model == "" {
 				p.Model = "opus"
 			}
+			if p.Effort == "" && cfg.Effort != "" {
+				p.Effort = cfg.Effort
+			}
 			if p.Effort == "" {
 				p.Effort = "high"
+			}
+			if p.Cwd == "" && cfg.Cwd != "" {
+				p.Cwd = cfg.Cwd
 			}
 			if p.Timeout == 0 {
 				p.Timeout = 30
@@ -98,6 +114,9 @@ func Validate(cfg *Config, projectRoot string) error {
 		case "script":
 			if p.Run == "" {
 				return fmt.Errorf("config: script phase %q: 'run' is required", p.Name)
+			}
+			if p.Cwd == "" && cfg.Cwd != "" {
+				p.Cwd = cfg.Cwd
 			}
 			if p.Timeout == 0 {
 				p.Timeout = 10
