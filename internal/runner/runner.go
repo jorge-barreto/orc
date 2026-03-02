@@ -138,7 +138,7 @@ func (r *Runner) Run(ctx context.Context) error {
 
 		// Record cost data for agent phases (cost is incurred regardless of success/failure)
 		if phase.Type == "agent" && result != nil {
-			r.Costs.Record(phase.Name, i, result.CostUSD, result.InputTokens, result.OutputTokens, result.Turns)
+			r.Costs.Record(phase.Name, i, result.CostUSD, result.InputTokens, result.OutputTokens, result.CacheCreationInputTokens, result.CacheReadInputTokens, result.Turns)
 			// Warn if agent completed but reported no token counts (best-effort tracking)
 			if result.InputTokens == 0 && result.OutputTokens == 0 {
 				fmt.Fprintf(os.Stderr, "  note: no token counts in stream output for phase %q (token tracking is best-effort)\n", phase.Name)
@@ -370,7 +370,7 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 		phase := r.Config.Phases[pr.idx]
 		// Record cost data for agent phases (cost is incurred regardless of success/failure)
 		if phase.Type == "agent" && pr.result != nil {
-			r.Costs.Record(phase.Name, pr.idx, pr.result.CostUSD, pr.result.InputTokens, pr.result.OutputTokens, pr.result.Turns)
+			r.Costs.Record(phase.Name, pr.idx, pr.result.CostUSD, pr.result.InputTokens, pr.result.OutputTokens, pr.result.CacheCreationInputTokens, pr.result.CacheReadInputTokens, pr.result.Turns)
 			if pr.result.InputTokens == 0 && pr.result.OutputTokens == 0 {
 				fmt.Fprintf(os.Stderr, "  note: no token counts in stream output for phase %q (token tracking is best-effort)\n", phase.Name)
 			}

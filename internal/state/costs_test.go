@@ -10,8 +10,8 @@ import (
 func TestCosts_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	costs := &CostData{}
-	costs.Record("plan", 0, 0.5, 15000, 8000, 1)
-	costs.Record("implement", 2, 0.25, 45000, 22000, 3)
+	costs.Record("plan", 0, 0.5, 15000, 8000, 3000, 12000, 1)
+	costs.Record("implement", 2, 0.25, 45000, 22000, 5000, 40000, 3)
 
 	if err := costs.Flush(dir); err != nil {
 		t.Fatal(err)
@@ -45,6 +45,18 @@ func TestCosts_RoundTrip(t *testing.T) {
 	if loaded.TotalOutputTokens != 30000 {
 		t.Fatalf("TotalOutputTokens = %d, want 30000", loaded.TotalOutputTokens)
 	}
+	if loaded.TotalCacheCreationInputTokens != 8000 {
+		t.Fatalf("TotalCacheCreationInputTokens = %d, want 8000", loaded.TotalCacheCreationInputTokens)
+	}
+	if loaded.TotalCacheReadInputTokens != 52000 {
+		t.Fatalf("TotalCacheReadInputTokens = %d, want 52000", loaded.TotalCacheReadInputTokens)
+	}
+	if loaded.Phases[0].CacheCreationInputTokens != 3000 {
+		t.Fatalf("phase[0].CacheCreationInputTokens = %d", loaded.Phases[0].CacheCreationInputTokens)
+	}
+	if loaded.Phases[0].CacheReadInputTokens != 12000 {
+		t.Fatalf("phase[0].CacheReadInputTokens = %d", loaded.Phases[0].CacheReadInputTokens)
+	}
 }
 
 func TestCosts_NoFile(t *testing.T) {
@@ -64,7 +76,7 @@ func TestCosts_NoFile(t *testing.T) {
 func TestCosts_ZeroCostSubscriptionMode(t *testing.T) {
 	dir := t.TempDir()
 	costs := &CostData{}
-	costs.Record("plan", 0, 0, 15000, 8000, 1)
+	costs.Record("plan", 0, 0, 15000, 8000, 0, 0, 1)
 
 	if err := costs.Flush(dir); err != nil {
 		t.Fatal(err)
@@ -88,7 +100,7 @@ func TestCosts_ZeroCostSubscriptionMode(t *testing.T) {
 func TestCosts_JSONFormat(t *testing.T) {
 	dir := t.TempDir()
 	costs := &CostData{}
-	costs.Record("plan", 0, 0.5, 15000, 8000, 1)
+	costs.Record("plan", 0, 0.5, 15000, 8000, 3000, 12000, 1)
 
 	if err := costs.Flush(dir); err != nil {
 		t.Fatal(err)
