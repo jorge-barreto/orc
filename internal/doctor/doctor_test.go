@@ -94,19 +94,44 @@ func TestGatherPhaseConfig_Script(t *testing.T) {
 	}
 }
 
-func TestGatherPhaseConfig_WithOnFail(t *testing.T) {
+func TestGatherPhaseConfig_WithLoop(t *testing.T) {
 	phase := config.Phase{
 		Name: "test",
 		Type: "script",
 		Run:  "make test",
-		OnFail: &config.OnFail{
+		Loop: &config.Loop{
 			Goto: "implement",
+			Min:  1,
 			Max:  3,
 		},
 	}
 	result := gatherPhaseConfig(phase)
-	if !strings.Contains(result, "On-fail: goto implement (max 3)") {
-		t.Error("missing on-fail info")
+	if !strings.Contains(result, "Loop: goto implement (min 1, max 3)") {
+		t.Error("missing loop info")
+	}
+}
+
+func TestGatherPhaseConfig_WithLoopOnExhaust(t *testing.T) {
+	phase := config.Phase{
+		Name: "test",
+		Type: "script",
+		Run:  "make test",
+		Loop: &config.Loop{
+			Goto: "implement",
+			Min:  1,
+			Max:  3,
+			OnExhaust: &config.OnExhaust{
+				Goto: "plan",
+				Max:  2,
+			},
+		},
+	}
+	result := gatherPhaseConfig(phase)
+	if !strings.Contains(result, "Loop: goto implement (min 1, max 3)") {
+		t.Error("missing loop info")
+	}
+	if !strings.Contains(result, "on-exhaust: goto plan (max 2)") {
+		t.Error("missing on-exhaust info")
 	}
 }
 

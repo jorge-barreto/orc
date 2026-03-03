@@ -167,22 +167,54 @@ func Validate(cfg *Config, projectRoot string) error {
 			}
 		}
 
+		// Reject deprecated on-fail with migration hint
 		if p.OnFail != nil {
-			if p.OnFail.Goto == "" {
-				return fmt.Errorf("config: phase %q: on-fail.goto is required", p.Name)
+			return fmt.Errorf("config: phase %q: 'on-fail' has been replaced by 'loop'. "+
+				"Use loop: {goto: %q, max: %d} (note: loop.max is total iterations, not retries)",
+				p.Name, p.OnFail.Goto, p.OnFail.Max+1)
+		}
+
+		// Validate loop
+		if p.Loop != nil {
+			if p.Loop.Goto == "" {
+				return fmt.Errorf("config: phase %q: loop.goto is required", p.Name)
 			}
 			gotoIdx := -1
 			for j := 0; j < i; j++ {
-				if cfg.Phases[j].Name == p.OnFail.Goto {
+				if cfg.Phases[j].Name == p.Loop.Goto {
 					gotoIdx = j
 					break
 				}
 			}
 			if gotoIdx < 0 {
-				return fmt.Errorf("config: phase %q: on-fail.goto %q must reference an earlier phase", p.Name, p.OnFail.Goto)
+				return fmt.Errorf("config: phase %q: loop.goto %q must reference an earlier phase", p.Name, p.Loop.Goto)
 			}
-			if p.OnFail.Max <= 0 {
-				p.OnFail.Max = 2
+			if p.Loop.Min <= 0 {
+				p.Loop.Min = 1
+			}
+			if p.Loop.Max <= 0 {
+				return fmt.Errorf("config: phase %q: loop.max is required and must be > 0", p.Name)
+			}
+			if p.Loop.Max < p.Loop.Min {
+				return fmt.Errorf("config: phase %q: loop.max (%d) must be >= loop.min (%d)", p.Name, p.Loop.Max, p.Loop.Min)
+			}
+			if p.Loop.OnExhaust != nil {
+				if p.Loop.OnExhaust.Goto == "" {
+					return fmt.Errorf("config: phase %q: loop.on-exhaust.goto is required", p.Name)
+				}
+				exhaustIdx := -1
+				for j := 0; j < i; j++ {
+					if cfg.Phases[j].Name == p.Loop.OnExhaust.Goto {
+						exhaustIdx = j
+						break
+					}
+				}
+				if exhaustIdx < 0 {
+					return fmt.Errorf("config: phase %q: loop.on-exhaust.goto %q must reference an earlier phase", p.Name, p.Loop.OnExhaust.Goto)
+				}
+				if p.Loop.OnExhaust.Max <= 0 {
+					p.Loop.OnExhaust.Max = 1
+				}
 			}
 		}
 
@@ -190,8 +222,8 @@ func Validate(cfg *Config, projectRoot string) error {
 			if !seen[p.ParallelWith] && !phaseExists(cfg.Phases, p.ParallelWith) {
 				return fmt.Errorf("config: phase %q: parallel-with %q references unknown phase", p.Name, p.ParallelWith)
 			}
-			if p.OnFail != nil {
-				return fmt.Errorf("config: phase %q: parallel-with and on-fail cannot be combined", p.Name)
+			if p.Loop != nil {
+				return fmt.Errorf("config: phase %q: parallel-with and loop cannot be combined", p.Name)
 			}
 		}
 	}

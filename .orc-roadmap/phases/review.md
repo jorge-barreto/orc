@@ -92,7 +92,7 @@ For 3-5 roadmap items that make specific technical claims (e.g., "the stream par
 
 - For each item: could an implementer start work without asking clarifying questions?
 - Are descriptions unambiguous? Do they use precise, specific language?
-- Are terms used consistently throughout? ("phase" vs. "step", "loop" vs. "retry", "on-fail" vs. "loop field")
+- Are terms used consistently throughout? ("phase" vs. "step", "loop" vs. "retry")
 - Are there references to concepts not defined in the document?
 
 ### F. Consistency Review

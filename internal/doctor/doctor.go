@@ -122,8 +122,12 @@ func gatherPhaseConfig(phase config.Phase) string {
 	if phase.Condition != "" {
 		parts = append(parts, fmt.Sprintf("Condition: %s", phase.Condition))
 	}
-	if phase.OnFail != nil {
-		parts = append(parts, fmt.Sprintf("On-fail: goto %s (max %d)", phase.OnFail.Goto, phase.OnFail.Max))
+	if phase.Loop != nil {
+		s := fmt.Sprintf("Loop: goto %s (min %d, max %d)", phase.Loop.Goto, phase.Loop.Min, phase.Loop.Max)
+		if phase.Loop.OnExhaust != nil {
+			s += fmt.Sprintf(", on-exhaust: goto %s (max %d)", phase.Loop.OnExhaust.Goto, phase.Loop.OnExhaust.Max)
+		}
+		parts = append(parts, s)
 	}
 	return strings.Join(parts, "\n")
 }

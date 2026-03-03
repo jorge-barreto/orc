@@ -138,11 +138,11 @@ func TestWriteFallbackConfig(t *testing.T) {
 	if cfg.Phases[2].Name != "review" {
 		t.Fatalf("phase 2 = %q, want review", cfg.Phases[2].Name)
 	}
-	if cfg.Phases[2].OnFail == nil || cfg.Phases[2].OnFail.Goto != "implement" {
-		t.Fatal("review phase should have on-fail pointing to implement")
+	if cfg.Phases[2].Loop == nil || cfg.Phases[2].Loop.Goto != "implement" {
+		t.Fatal("review phase should have loop pointing to implement")
 	}
-	if cfg.Phases[2].OnFail.Max != 3 {
-		t.Fatalf("on-fail.max = %d, want 3", cfg.Phases[2].OnFail.Max)
+	if cfg.Phases[2].Loop.Max != 3 {
+		t.Fatalf("loop.max = %d, want 3", cfg.Phases[2].Loop.Max)
 	}
 
 	// Verify .gitignore

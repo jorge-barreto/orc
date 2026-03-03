@@ -141,8 +141,11 @@ func printConfigSummary(w io.Writer, cfg *config.Config, projectRoot string) {
 		if len(p.Outputs) > 0 {
 			fmt.Fprintf(w, "%soutputs: [%s]\n", indent, strings.Join(p.Outputs, ", "))
 		}
-		if p.OnFail != nil {
-			fmt.Fprintf(w, "%son-fail: goto %s (max %d)\n", indent, p.OnFail.Goto, p.OnFail.Max)
+		if p.Loop != nil {
+			fmt.Fprintf(w, "%sloop: goto %s (min %d, max %d)\n", indent, p.Loop.Goto, p.Loop.Min, p.Loop.Max)
+			if p.Loop.OnExhaust != nil {
+				fmt.Fprintf(w, "%son-exhaust: goto %s (max %d)\n", indent, p.Loop.OnExhaust.Goto, p.Loop.OnExhaust.Max)
+			}
 		}
 		if p.ParallelWith != "" {
 			fmt.Fprintf(w, "%sparallel-with: %s\n", indent, p.ParallelWith)

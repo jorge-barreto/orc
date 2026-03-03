@@ -56,7 +56,7 @@ func (s *State) Advance() {
 	s.PhaseIndex++
 }
 
-// SetPhase sets the phase index for retry/from/on-fail jumps.
+// SetPhase sets the phase index for retry/from/loop jumps.
 func (s *State) SetPhase(idx int) {
 	s.PhaseIndex = idx
 }

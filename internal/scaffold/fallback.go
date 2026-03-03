@@ -27,7 +27,7 @@ phases:
   - name: review
     type: gate
     description: Human reviews the implementation
-    on-fail:
+    loop:
       goto: implement
       max: 3
 `
@@ -62,9 +62,9 @@ Work in $PROJECT_ROOT.
 // writeFallbackConfig writes a minimal default workflow when AI generation fails.
 func writeFallbackConfig(targetDir string) error {
 	files := map[string]string{
-		".orc/config.yaml":          fallbackConfig,
-		".orc/phases/plan.md":       fallbackPlanPrompt,
-		".orc/phases/implement.md":  fallbackImplementPrompt,
+		".orc/config.yaml":         fallbackConfig,
+		".orc/phases/plan.md":      fallbackPlanPrompt,
+		".orc/phases/implement.md": fallbackImplementPrompt,
 	}
 
 	var written []string

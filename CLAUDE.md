@@ -46,11 +46,11 @@ internal/ux/               ANSI-colored terminal output, phase headers, status r
 
 ### Runner State Machine
 
-The runner loop handles: condition checks (skip phase if shell command exits non-zero), parallel execution (`parallel-with` runs two phases concurrently via goroutines + WaitGroup), on-fail backward jumps (loops back to an earlier phase with feedback written to `.orc/artifacts/feedback/`), and output validation (re-prompts agent once if declared outputs are missing).
+The runner loop handles: condition checks (skip phase if shell command exits non-zero), parallel execution (`parallel-with` runs two phases concurrently via goroutines + WaitGroup), loop backward jumps (convergent iteration with min/max and optional on-exhaust recovery, feedback written to `.orc/artifacts/feedback/`), and output validation (re-prompts agent once if declared outputs are missing).
 
 ### Config Validation Rules
 
-Validation (`internal/config/validate.go`) enforces: unique phase names, `on-fail.goto` must reference an earlier phase, `parallel-with` must reference an existing phase, agent phases need a `prompt` file that exists on disk, model must be `opus`/`sonnet`/`haiku`/empty, and ticket patterns are anchored for full-match semantics.
+Validation (`internal/config/validate.go`) enforces: unique phase names, `loop.goto` must reference an earlier phase, `parallel-with` must reference an existing phase, `parallel-with` and `loop` cannot be combined, agent phases need a `prompt` file that exists on disk, model must be `opus`/`sonnet`/`haiku`/empty, and ticket patterns are anchored for full-match semantics. The deprecated `on-fail` field is rejected with a migration hint.
 
 ## Conventions
 

@@ -26,6 +26,6 @@ phases:
     description: Check if review passed (outputs critique as feedback if not)
     run: test -f $ARTIFACTS_DIR/review-pass.txt || { cat $ARTIFACTS_DIR/review-critique.md 2>/dev/null; exit 1; }
     timeout: 1
-    on-fail:
+    loop:
       goto: revise
-      max: 3
+      max: 4

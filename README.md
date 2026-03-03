@@ -146,7 +146,7 @@ Workflows are defined in `.orc/config.yaml`.
 | `outputs` | list | — | Expected output filenames in artifacts dir |
 | `condition` | string | — | Shell command; phase is skipped if exit code is non-zero |
 | `parallel-with` | string | — | Name of another phase to run concurrently |
-| `on-fail` | object | — | Retry loop config: `goto` (phase name) and `max` (default 2) |
+| `loop` | object | — | Convergent loop: `goto` (phase name), `min` (default 1), `max` (required), optional `on-exhaust` |
 | `cwd` | string | — | Working directory for this phase (expanded with vars). Not supported on gate phases. |
 
 ### Phase types
@@ -191,7 +191,7 @@ phases:
     cwd: $WORKTREE
     outputs:
       - implementation.md
-    on-fail:
+    loop:
       goto: design
       max: 3
 
@@ -249,7 +249,7 @@ orc creates a `.orc/artifacts/` directory in the project root to store all run d
 .orc/artifacts/
 ├── state.json              # Current run state (phase_index, ticket, status)
 ├── timing.json             # Start/end timestamps for each phase
-├── loop-counts.json        # On-fail retry counters per phase
+├── loop-counts.json        # Loop iteration counters per phase
 ├── prompts/
 │   ├── phase-1.md          # Rendered prompt for phase 1
 │   ├── phase-2.md          # Rendered prompt for phase 2
@@ -259,22 +259,29 @@ orc creates a `.orc/artifacts/` directory in the project root to store all run d
 │   ├── phase-2.log         # Agent output for phase 2
 │   └── ...
 ├── feedback/
-│   └── from-implement.md   # Error output from failed phase (for on-fail loops)
+│   └── from-implement.md   # Output from failed or looped phase
 └── summary.md              # Example declared output artifact
 ```
 
-## On-Fail Retry Loops
+## Loops
 
-When a phase with `on-fail` fails, orc:
+The `loop` field is orc's core convergence construct, handling both simple retry and deliberate quality iteration.
 
-1. Writes the failure output to `.orc/artifacts/feedback/from-<phase>.md`
-2. Increments the loop counter for that phase
-3. Jumps back to the phase named in `on-fail.goto`
-4. Re-executes from there (the earlier phase can read the feedback file)
+```yaml
+loop:
+  goto: implement       # jump-back target (must be earlier phase)
+  min: 1                # minimum iterations even on success (default 1)
+  max: 3                # total iterations before exhaustion (required)
+  on-exhaust: plan      # outer recovery (optional, string or object)
+```
 
-If the loop counter exceeds `on-fail.max` (default: 2), the workflow stops and requires manual intervention. Loop counts are persisted to `.orc/artifacts/loop-counts.json` and reset when using `--retry` or `--from`.
+**Failure path:** When a phase with `loop` fails, orc writes the failure output to `.orc/artifacts/feedback/from-<phase>.md`, increments the loop counter, and jumps back to `loop.goto`. If the counter reaches `loop.max`, the loop is exhausted.
 
-The `on-fail.goto` target must reference an **earlier** phase in the config (no forward jumps).
+**Success path:** When a phase with `loop` succeeds but the iteration count is less than `loop.min`, orc forces another iteration (writing the output as feedback). Once iteration >= min, the loop breaks normally.
+
+**On-exhaust recovery:** When a loop exhausts, if `on-exhaust` is set, the loop counter resets and orc jumps to the on-exhaust target. This enables outer recovery (e.g., re-plan then re-implement). Accepts a string (`on-exhaust: plan`) or object (`on-exhaust: {goto: plan, max: 2}`).
+
+Loop counts are persisted to `.orc/artifacts/loop-counts.json` and reset when using `--retry` or `--from`. Note: `loop.max` means total iterations, not retries.
 
 ## Parallel Phases
 
@@ -293,7 +300,7 @@ Two phases can run concurrently using `parallel-with`:
 
 Both phases start at the same time. If either fails, the other is cancelled. After both complete, the runner advances past both phases.
 
-**Constraints**: `parallel-with` and `on-fail` cannot be combined on the same phase.
+**Constraints**: `parallel-with` and `loop` cannot be combined on the same phase.
 
 ## Environment Variables
 
