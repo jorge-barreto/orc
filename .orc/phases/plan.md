@@ -63,4 +63,5 @@ Copy the acceptance criteria from the roadmap item verbatim — these are the de
 - If the roadmap item references existing code behavior, verify it by reading the source. Don't trust the roadmap blindly.
 - Include every file that needs to change. Missing a file means the implement agent won't touch it.
 - The test strategy must be concrete: "Add TestFoo in internal/config/validate_test.go following the pattern of TestValidate_ParallelWithOnFail" — not "add appropriate tests."
+- If the change adds or modifies CLI commands, flags, config fields, or other user-visible behavior, consider whether documentation surfaces need updating — `README.md`, `internal/docs/content.go`, CLI help text in `cmd/orc/main.go`, or scaffold templates in `internal/scaffold/`. Include any affected doc files in the "Files to Modify" table.
 - If feedback exists from a previous attempt, the plan should address those specific issues. Don't rewrite the whole plan — amend it.
