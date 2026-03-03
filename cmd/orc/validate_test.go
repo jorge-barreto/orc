@@ -172,13 +172,13 @@ func TestPrintConfigSummary_WithVars(t *testing.T) {
 	}
 }
 
-func TestPrintConfigSummary_OnFail(t *testing.T) {
+func TestPrintConfigSummary_Loop(t *testing.T) {
 	root := t.TempDir()
 	cfg := &config.Config{
 		Name: "test",
 		Phases: []config.Phase{
 			{Name: "check", Type: "script", Run: "make test"},
-			{Name: "build", Type: "script", Run: "make build", OnFail: &config.OnFail{Goto: "check", Max: 3}},
+			{Name: "build", Type: "script", Run: "make build", Loop: &config.Loop{Goto: "check", Min: 1, Max: 3}},
 		},
 	}
 	if err := config.Validate(cfg, root); err != nil {
@@ -189,8 +189,8 @@ func TestPrintConfigSummary_OnFail(t *testing.T) {
 	printConfigSummary(&buf, cfg, root)
 	out := buf.String()
 
-	if !strings.Contains(out, "on-fail: goto check (max 3)") {
-		t.Errorf("output missing on-fail line\noutput:\n%s", out)
+	if !strings.Contains(out, "loop: goto check (min 1, max 3)") {
+		t.Errorf("output missing loop line\noutput:\n%s", out)
 	}
 }
 

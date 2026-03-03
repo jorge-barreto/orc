@@ -7,9 +7,36 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// OnFail is kept for YAML parsing so we can provide a migration error.
+// It is rejected at validation time — use Loop instead.
 type OnFail struct {
 	Goto string `yaml:"goto"`
 	Max  int    `yaml:"max"`
+}
+
+// OnExhaust defines outer recovery when a loop exhausts.
+// Accepts both string form (on-exhaust: plan) and object form (on-exhaust: {goto: plan, max: 2}).
+type OnExhaust struct {
+	Goto string `yaml:"goto"`
+	Max  int    `yaml:"max"`
+}
+
+// UnmarshalYAML allows on-exhaust to be a simple string (phase name) or an object.
+func (oe *OnExhaust) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		oe.Goto = value.Value
+		return nil // Max defaulted in validation
+	}
+	type plain OnExhaust
+	return value.Decode((*plain)(oe))
+}
+
+// Loop defines a backward jump for convergent iteration or simple retry.
+type Loop struct {
+	Goto      string     `yaml:"goto"`
+	Min       int        `yaml:"min"`
+	Max       int        `yaml:"max"`
+	OnExhaust *OnExhaust `yaml:"on-exhaust"`
 }
 
 type Phase struct {
@@ -27,6 +54,7 @@ type Phase struct {
 	Condition    string   `yaml:"condition"`
 	ParallelWith string   `yaml:"parallel-with"`
 	OnFail       *OnFail  `yaml:"on-fail"`
+	Loop         *Loop    `yaml:"loop"`
 	Cwd          string   `yaml:"cwd"`
 }
 

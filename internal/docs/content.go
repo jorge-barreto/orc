@@ -28,7 +28,7 @@ var topics = []Topic{
 	{
 		Name:    "runner",
 		Title:   "Execution Model",
-		Summary: "Conditions, parallel execution, on-fail loops, and resuming",
+		Summary: "Conditions, parallel execution, loops, and resuming",
 		Content: topicRunner,
 	},
 	{
@@ -131,7 +131,8 @@ Phase fields
   outputs          list      Expected output filenames in artifacts dir.
   condition        string    Shell command; phase skipped if exit code non-zero.
   parallel-with    string    Name of another phase to run concurrently.
-  on-fail          object    Retry loop: goto (phase name) and max (default 2).
+  loop             object    Convergent loop: goto (phase name), min (default 1),
+                             max (required), and optional on-exhaust for recovery.
   allow-tools      list      Additional tools to approve for this agent phase.
                              Merged with defaults. Only valid on agent phases.
   cwd              string    Working directory for this phase (expanded with vars).
@@ -150,9 +151,11 @@ Validation Rules
 ----------------
 
 - Phase names must be unique.
-- on-fail.goto must reference an earlier phase (no forward jumps).
+- loop.goto must reference an earlier phase (no forward jumps).
+- loop.max is required and means total iterations (not retries).
+- loop.on-exhaust.goto must reference an earlier phase.
 - parallel-with must reference an existing phase.
-- parallel-with and on-fail cannot be combined on the same phase.
+- parallel-with and loop cannot be combined on the same phase.
 - Agent phases require a prompt file that exists on disk.
 - Model must be opus, sonnet, haiku, or empty.
 - Output filenames must not contain path separators.
@@ -188,7 +191,7 @@ Example Config
       # inherits model: opus, cwd: $WORKTREE
       outputs:
         - summary.md
-      on-fail:
+      loop:
         goto: implement
         max: 3
 
@@ -197,6 +200,9 @@ Example Config
       description: Run tests
       run: make test
       # inherits cwd: $WORKTREE
+      loop:
+        goto: implement
+        max: 5
 
     - name: review
       type: gate
@@ -271,9 +277,9 @@ Example:
       - Bash
     outputs:
       - design.md
-    on-fail:
+    loop:
       goto: plan
-      max: 2
+      max: 3
 
 gate
 ----
@@ -383,25 +389,42 @@ Two phases can run concurrently using parallel-with:
 Both phases start at the same time. If either fails, the other is
 cancelled. After both complete, the runner advances past both phases.
 
-Constraints: parallel-with and on-fail cannot be combined on the same
+Constraints: parallel-with and loop cannot be combined on the same
 phase.
 
-On-Fail Retry Loops
--------------------
+Loops
+-----
 
-When a phase with on-fail fails:
+The loop field is orc's core convergence construct. It handles both
+simple error retry and deliberate quality iteration.
 
-  1. The failure output is written to .orc/artifacts/<ticket>/feedback/from-<phase>.md.
-  2. The loop counter for that phase is incremented.
-  3. The runner jumps back to the phase named in on-fail.goto.
-  4. Execution resumes from there. Feedback is automatically injected
-     into agent prompts — no manual file reading required.
+  loop:
+    goto: implement       # jump-back target (must be earlier phase)
+    min: 1                # minimum iterations even on success (default 1)
+    max: 3                # total iterations before exhaustion (required)
+    on-exhaust: plan      # outer recovery (optional, string or object)
 
-If the loop counter exceeds on-fail.max (default: 2), the workflow stops.
-Loop counts are persisted to .orc/artifacts/<ticket>/loop-counts.json and reset when
-using --retry or --from.
+Failure path: When a phase with loop fails, the failure output is
+written to .orc/artifacts/<ticket>/feedback/from-<phase>.md, the loop
+counter increments, and the runner jumps back to loop.goto. If the
+counter reaches loop.max, the loop is exhausted.
 
-The on-fail.goto target must reference an earlier phase (no forward jumps).
+Success path: When a phase with loop succeeds but the iteration count
+is less than loop.min, the runner forces another iteration (writing
+the output as feedback). Once iteration >= min, the loop breaks and
+the runner advances normally.
+
+On-exhaust recovery: When a loop exhausts, if on-exhaust is set, the
+runner resets the loop counter and jumps to the on-exhaust target.
+This allows an outer recovery strategy (e.g., re-plan then re-implement).
+on-exhaust accepts a string (phase name, fires once) or an object
+({goto: plan, max: 2} for multiple recovery attempts).
+
+Loop counts are persisted to .orc/artifacts/<ticket>/loop-counts.json
+and reset when using --retry or --from.
+
+Note: loop.max means total iterations, not retries. A phase with
+max: 3 runs at most 3 times before exhaustion.
 
 Output Validation
 -----------------
@@ -423,7 +446,7 @@ Exit Codes
 orc run returns structured exit codes for scripting and CI/CD:
 
   0    Success. Workflow completed, all phases passed.
-  1    Retryable failure. An agent phase failed, an on-fail loop exceeded
+  1    Retryable failure. An agent phase failed, a loop exceeded
        its max, or a timeout was hit. A fresh orc run might succeed.
   2    Human intervention needed. A gate was denied, or a phase produced
        an unrecoverable error. Don't retry automatically.
@@ -497,7 +520,7 @@ Directory Structure
   .orc/artifacts/<ticket>/
   ├── state.json              Current run state
   ├── timing.json             Start/end timestamps per phase
-  ├── loop-counts.json        On-fail retry counters per phase
+  ├── loop-counts.json        Loop iteration counters per phase
   ├── prompts/
   │   ├── phase-1.md          Rendered prompt for phase 1
   │   ├── phase-2.md          Rendered prompt for phase 2
@@ -507,7 +530,7 @@ Directory Structure
   │   ├── phase-2.log         Agent output for phase 2
   │   └── ...
   └── feedback/
-      └── from-<phase>.md     Error output from failed phase (on-fail loops)
+      └── from-<phase>.md     Output from failed or looped phase
 
 state.json
 ----------
@@ -525,8 +548,8 @@ and performance analysis.
 loop-counts.json
 ----------------
 
-Tracks how many times each phase has looped via on-fail. Reset when using
---retry or --from flags.
+Tracks loop iteration counts per phase. Reset when using --retry or
+--from flags.
 
 prompts/
 --------
@@ -544,10 +567,10 @@ agent response.
 feedback/
 ---------
 
-When a phase with on-fail fails, its output is written to
-feedback/from-<phase-name>.md. Feedback is automatically appended to
-agent prompts on subsequent runs, so agents receive error context
-without needing to manually read feedback files.
+When a phase with a loop fails (or succeeds but min is not yet met),
+its output is written to feedback/from-<phase-name>.md. Feedback is
+automatically appended to agent prompts on subsequent runs, so agents
+receive error context without needing to manually read feedback files.
 
 Declared Outputs
 ----------------
@@ -561,9 +584,9 @@ const topicQualityLoops = `Adversarial Quality Loops
 ========================
 
 orc's core differentiator is deterministic, auditable, quality-assured code
-delivery through adversarial review loops. The on-fail mechanism provides
-the loop structure. The prompts provide the teeth. This doc covers how to
-write review prompts that actually catch real issues.
+delivery through adversarial review loops. The loop construct provides
+the iteration structure. The prompts provide the teeth. This doc covers how
+to write review prompts that actually catch real issues.
 
 Anatomy of an Adversarial Loop
 ------------------------------
@@ -591,13 +614,13 @@ Example config:
     run: >
       test -f $ARTIFACTS_DIR/review-pass.txt ||
       { cat $ARTIFACTS_DIR/review-findings.md 2>/dev/null; exit 1; }
-    on-fail:
+    loop:
       goto: implement
-      max: 2
+      max: 3
 
 The checker writes a findings file every time. It only writes the pass
 signal file (review-pass.txt) when zero blocking issues remain. The
-decision gate's on-fail loop sends the doer back with feedback injected
+decision gate's loop sends the doer back with feedback injected
 automatically.
 
 The Asymmetry Principle
@@ -718,9 +741,9 @@ aggressive checker can hold work hostage indefinitely.
 
 Two mechanisms work together:
 
-  1. max retries (config)    Hard limit on loop iterations. Set this
-                             based on domain: 2 for plan review,
-                             2-3 for code review, up to 10 for
+  1. loop.max (config)       Hard limit on total iterations. Set this
+                             based on domain: 3 for plan review,
+                             3-4 for code review, up to 11 for
                              test-fix loops.
 
   2. Convergence rule        On iteration 3+, the checker may pass if

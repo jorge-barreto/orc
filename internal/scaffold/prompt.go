@@ -52,9 +52,9 @@ phases:
     type: script
     description: Run tests
     run: go test ./... -count=1
-    on-fail:
+    loop:
       goto: implement
-      max: 3
+      max: 4
 
   - name: lint
     type: script
@@ -96,9 +96,9 @@ phases:
     type: script
     description: Run tests
     run: npm test
-    on-fail:
+    loop:
       goto: implement
-      max: 3
+      max: 4
 
   - name: lint
     type: script
@@ -140,9 +140,9 @@ phases:
     type: script
     description: Run tests
     run: pytest
-    on-fail:
+    loop:
       goto: implement
-      max: 3
+      max: 4
 
   - name: review
     type: gate
@@ -163,7 +163,7 @@ Based on the project context above, generate a complete orc workflow. Produce:
    - **plan** (agent) — Analyze the ticket and produce a plan. Output: plan.md.
    - **review-plan** (gate) — Human reviews the plan.
    - **implement** (agent) — Implement the changes following the plan.
-   - **test** (script) — Run the project's test suite. Detect the correct test command from the project files (e.g. ` + "`go test ./...`" + ` for Go, ` + "`npm test`" + ` for Node, ` + "`pytest`" + ` for Python, ` + "`make test`" + ` if a Makefile exists). Add on-fail with goto: implement, max: 3.
+   - **test** (script) — Run the project's test suite. Detect the correct test command from the project files (e.g. ` + "`go test ./...`" + ` for Go, ` + "`npm test`" + ` for Node, ` + "`pytest`" + ` for Python, ` + "`make test`" + ` if a Makefile exists). Add loop with goto: implement, max: 4.
    - If the project has a linter, add a **lint** (script) phase with ` + "`parallel-with: test`" + `.
    - **review** (gate) — Final human review.
 

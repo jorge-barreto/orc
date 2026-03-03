@@ -114,7 +114,7 @@ func TestRun_AllPhasesSucceed(t *testing.T) {
 	}
 }
 
-func TestRun_FailNoOnFail(t *testing.T) {
+func TestRun_FailNoLoop(t *testing.T) {
 	cfg := &config.Config{
 		Name: "test",
 		Phases: []config.Phase{
@@ -144,32 +144,24 @@ func TestRun_FailNoOnFail(t *testing.T) {
 	}
 }
 
-func TestRun_OnFailLoopsBack(t *testing.T) {
+func TestRun_LoopBasicConvergence(t *testing.T) {
 	cfg := &config.Config{
 		Name: "test",
 		Phases: []config.Phase{
 			{Name: "a", Type: "script", Run: "echo"},
 			{Name: "b", Type: "script", Run: "echo"},
-			{Name: "c", Type: "script", Run: "echo", OnFail: &config.OnFail{Goto: "a", Max: 2}},
+			{Name: "c", Type: "script", Run: "echo", Loop: &config.Loop{Goto: "a", Min: 1, Max: 3}},
 		},
 	}
-	mock := newMock()
 
 	// c fails on first call, then succeeds
-	failCount := 0
+	cCount := 0
 	mu := sync.Mutex{}
-	mock.results["c"] = nil // will be handled by custom logic below
-
-	// Override dispatch to track c's behavior
-	customMock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
-		mock.mu.Lock()
-		mock.calls = append(mock.calls, phase.Name)
-		mock.mu.Unlock()
-
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
 		if phase.Name == "c" {
 			mu.Lock()
-			failCount++
-			n := failCount
+			cCount++
+			n := cCount
 			mu.Unlock()
 			if n == 1 {
 				return &dispatch.Result{ExitCode: 1, Output: "c failed"}, nil
@@ -178,7 +170,7 @@ func TestRun_OnFailLoopsBack(t *testing.T) {
 		return &dispatch.Result{ExitCode: 0}, nil
 	}}
 
-	r := newTestRunner(t, cfg, customMock)
+	r := newTestRunner(t, cfg, mock)
 
 	err := r.Run(context.Background())
 	if err != nil {
@@ -188,7 +180,7 @@ func TestRun_OnFailLoopsBack(t *testing.T) {
 		t.Fatalf("status = %q", r.State.Status)
 	}
 
-	// Verify feedback file was written
+	// Verify feedback file was written on failure
 	fbPath := filepath.Join(r.Env.ArtifactsDir, "feedback", "from-c.md")
 	data, err := os.ReadFile(fbPath)
 	if err != nil {
@@ -199,12 +191,12 @@ func TestRun_OnFailLoopsBack(t *testing.T) {
 	}
 }
 
-func TestRun_OnFailExceedsMax(t *testing.T) {
+func TestRun_LoopMaxExceeded(t *testing.T) {
 	cfg := &config.Config{
 		Name: "test",
 		Phases: []config.Phase{
 			{Name: "a", Type: "script", Run: "echo"},
-			{Name: "b", Type: "script", Run: "echo", OnFail: &config.OnFail{Goto: "a", Max: 2}},
+			{Name: "b", Type: "script", Run: "echo", Loop: &config.Loop{Goto: "a", Min: 1, Max: 3}},
 		},
 	}
 	// b always fails
@@ -217,27 +209,27 @@ func TestRun_OnFailExceedsMax(t *testing.T) {
 	r := newTestRunner(t, cfg, alwaysFail)
 
 	err := r.Run(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "exceeded max retries") {
-		t.Fatalf("expected max retries error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "failed after 3 iterations") {
+		t.Fatalf("expected loop exhaustion error, got %v", err)
 	}
 	assertExitCode(t, err, ExitRetryable)
 }
 
-func TestRun_OnFailLoopCountPersisted(t *testing.T) {
+func TestRun_LoopCounterPersisted(t *testing.T) {
 	cfg := &config.Config{
 		Name: "test",
 		Phases: []config.Phase{
 			{Name: "a", Type: "script", Run: "echo"},
-			{Name: "b", Type: "script", Run: "echo", OnFail: &config.OnFail{Goto: "a", Max: 3}},
+			{Name: "b", Type: "script", Run: "echo", Loop: &config.Loop{Goto: "a", Min: 1, Max: 5}},
 		},
 	}
-	failCount := 0
+	bCount := 0
 	mu := sync.Mutex{}
 	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
 		if phase.Name == "b" {
 			mu.Lock()
-			failCount++
-			n := failCount
+			bCount++
+			n := bCount
 			mu.Unlock()
 			if n == 1 {
 				return &dispatch.Result{ExitCode: 1, Output: "fail"}, nil
@@ -256,8 +248,199 @@ func TestRun_OnFailLoopCountPersisted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if counts["b"] != 1 {
-		t.Fatalf("loop count for b = %d, want 1", counts["b"])
+	// 1 fail iteration + 1 pass iteration = 2 total
+	if counts["b"] != 2 {
+		t.Fatalf("loop count for b = %d, want 2", counts["b"])
+	}
+}
+
+func TestRun_LoopMinForcesIteration(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo", Loop: &config.Loop{Goto: "a", Min: 3, Max: 5}},
+		},
+	}
+	bCount := 0
+	mu := sync.Mutex{}
+	// b always succeeds
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		if phase.Name == "b" {
+			mu.Lock()
+			bCount++
+			mu.Unlock()
+		}
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.State.Status != state.StatusCompleted {
+		t.Fatalf("status = %q", r.State.Status)
+	}
+	// b should be called 3 times (min=3 forced iterations)
+	mu.Lock()
+	n := bCount
+	mu.Unlock()
+	if n != 3 {
+		t.Fatalf("b called %d times, want 3 (min forced)", n)
+	}
+}
+
+func TestRun_LoopOnExhaust(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo", Loop: &config.Loop{
+				Goto: "a", Min: 1, Max: 2,
+				OnExhaust: &config.OnExhaust{Goto: "a", Max: 2},
+			}},
+		},
+	}
+	bCount := 0
+	mu := sync.Mutex{}
+	// b fails twice (exhausts loop), then succeeds on recovery
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		if phase.Name == "b" {
+			mu.Lock()
+			bCount++
+			n := bCount
+			mu.Unlock()
+			if n <= 2 {
+				return &dispatch.Result{ExitCode: 1, Output: "fail"}, nil
+			}
+		}
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.State.Status != state.StatusCompleted {
+		t.Fatalf("status = %q", r.State.Status)
+	}
+
+	counts, err := state.LoadLoopCounts(r.Env.ArtifactsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// on-exhaust counter should be 1
+	if counts["b:exhaust"] != 1 {
+		t.Fatalf("exhaust count for b = %d, want 1", counts["b:exhaust"])
+	}
+}
+
+func TestRun_LoopOnExhaustExhausted(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo", Loop: &config.Loop{
+				Goto: "a", Min: 1, Max: 1,
+				OnExhaust: &config.OnExhaust{Goto: "a", Max: 1},
+			}},
+		},
+	}
+	// b always fails
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		if phase.Name == "b" {
+			return &dispatch.Result{ExitCode: 1, Output: "fail"}, nil
+		}
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "recovery exhausted") {
+		t.Fatalf("expected recovery exhausted error, got %v", err)
+	}
+	assertExitCode(t, err, ExitRetryable)
+}
+
+func TestRun_LoopExhaustFeedbackHeader(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo", Loop: &config.Loop{
+				Goto: "a", Min: 1, Max: 1,
+				OnExhaust: &config.OnExhaust{Goto: "a", Max: 2},
+			}},
+		},
+	}
+	bCount := 0
+	mu := sync.Mutex{}
+	// b fails once (exhausts loop at max=1), succeeds on recovery
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		if phase.Name == "b" {
+			mu.Lock()
+			bCount++
+			n := bCount
+			mu.Unlock()
+			if n == 1 {
+				return &dispatch.Result{ExitCode: 1, Output: "original failure"}, nil
+			}
+		}
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check feedback has convergence-failed header
+	fbPath := filepath.Join(r.Env.ArtifactsDir, "feedback", "from-b.md")
+	data, err := os.ReadFile(fbPath)
+	if err != nil {
+		t.Fatalf("feedback file not written: %v", err)
+	}
+	if !strings.Contains(string(data), "Convergence failed") {
+		t.Fatalf("expected convergence-failed header, got: %q", string(data))
+	}
+	if !strings.Contains(string(data), "original failure") {
+		t.Fatalf("expected original output in feedback, got: %q", string(data))
+	}
+}
+
+func TestRun_LoopFeedbackOnPass(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo", Loop: &config.Loop{Goto: "a", Min: 2, Max: 5}},
+		},
+	}
+	// b always succeeds with output
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		if phase.Name == "b" {
+			return &dispatch.Result{ExitCode: 0, Output: "b output"}, nil
+		}
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Feedback should be written on the forced loop-back (iteration 1 < min 2)
+	fbPath := filepath.Join(r.Env.ArtifactsDir, "feedback", "from-b.md")
+	data, err := os.ReadFile(fbPath)
+	if err != nil {
+		t.Fatalf("feedback file not written on success loop-back: %v", err)
+	}
+	if !strings.Contains(string(data), "b output") {
+		t.Fatalf("feedback = %q", string(data))
 	}
 }
 
@@ -640,9 +823,9 @@ func TestDryRunPrint_VarsAreSorted(t *testing.T) {
 	mock := newMock()
 	r := newTestRunner(t, cfg, mock)
 	r.Env.CustomVars = map[string]string{
-		"ZEBRA":    "z",
-		"ALPHA":    "a",
-		"MIDDLE":   "m",
+		"ZEBRA":  "z",
+		"ALPHA":  "a",
+		"MIDDLE": "m",
 	}
 
 	// Capture stdout
@@ -957,17 +1140,17 @@ func TestRun_NoCostLimitSet(t *testing.T) {
 	}
 }
 
-func TestRun_RunCostLimitWithRetryLoop(t *testing.T) {
+func TestRun_LoopCostLimitInteraction(t *testing.T) {
 	cfg := &config.Config{
 		Name:    "test",
 		MaxCost: 3.0,
 		Phases: []config.Phase{
 			{Name: "a", Type: "script", Run: "echo"},
-			{Name: "b", Type: "agent", Prompt: "unused.md", Model: "sonnet", OnFail: &config.OnFail{Goto: "a", Max: 3}},
+			{Name: "b", Type: "agent", Prompt: "unused.md", Model: "sonnet", Loop: &config.Loop{Goto: "a", Min: 1, Max: 5}},
 			{Name: "c", Type: "script", Run: "echo"},
 		},
 	}
-	// b always fails with CostUSD=2.0
+	// b always fails with CostUSD=2.0 — cost limit should stop the loop
 	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
 		if phase.Name == "b" {
 			return &dispatch.Result{ExitCode: 1, Output: "fail", CostUSD: 2.0, InputTokens: 100, OutputTokens: 50, Turns: 1}, nil
@@ -1037,4 +1220,3 @@ func TestRun_ParallelPhaseCostLimitExceeded(t *testing.T) {
 		t.Fatalf("status = %q, want failed", r.State.Status)
 	}
 }
-

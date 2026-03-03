@@ -168,46 +168,119 @@ func TestValidate_OutputsNoPathSeparators(t *testing.T) {
 	}
 }
 
-func TestValidate_OnFailGotoRequired(t *testing.T) {
+func TestValidate_OnFailRejectedWithHint(t *testing.T) {
 	cfg := minimalConfig(
 		scriptPhase("a"),
-		Phase{Name: "b", Type: "script", Run: "echo", OnFail: &OnFail{Goto: ""}},
+		Phase{Name: "b", Type: "script", Run: "echo", OnFail: &OnFail{Goto: "a", Max: 2}},
 	)
-	if err := Validate(cfg, t.TempDir()); err == nil || !strings.Contains(err.Error(), "on-fail.goto is required") {
+	err := Validate(cfg, t.TempDir())
+	if err == nil {
+		t.Fatal("expected on-fail rejection error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "replaced by 'loop'") {
+		t.Fatalf("expected migration hint, got: %v", err)
+	}
+	if !strings.Contains(msg, "max: 3") {
+		t.Fatalf("expected max: 3 (on-fail.max+1) in hint, got: %v", err)
+	}
+}
+
+func TestValidate_LoopGotoRequired(t *testing.T) {
+	cfg := minimalConfig(
+		scriptPhase("a"),
+		Phase{Name: "b", Type: "script", Run: "echo", Loop: &Loop{Goto: "", Max: 3}},
+	)
+	if err := Validate(cfg, t.TempDir()); err == nil || !strings.Contains(err.Error(), "loop.goto is required") {
 		t.Fatalf("got %v", err)
 	}
 }
 
-func TestValidate_OnFailGotoMustBeEarlier(t *testing.T) {
+func TestValidate_LoopGotoMustBeEarlier(t *testing.T) {
 	cfg := minimalConfig(
 		scriptPhase("a"),
-		Phase{Name: "b", Type: "script", Run: "echo", OnFail: &OnFail{Goto: "c"}},
+		Phase{Name: "b", Type: "script", Run: "echo", Loop: &Loop{Goto: "c", Max: 3}},
 	)
 	if err := Validate(cfg, t.TempDir()); err == nil || !strings.Contains(err.Error(), "must reference an earlier phase") {
 		t.Fatalf("got %v", err)
 	}
 }
 
-func TestValidate_OnFailGotoEarlierOK(t *testing.T) {
+func TestValidate_LoopGotoEarlierOK(t *testing.T) {
 	cfg := minimalConfig(
 		scriptPhase("a"),
-		Phase{Name: "b", Type: "script", Run: "echo", OnFail: &OnFail{Goto: "a"}},
+		Phase{Name: "b", Type: "script", Run: "echo", Loop: &Loop{Goto: "a", Max: 3}},
 	)
 	if err := Validate(cfg, t.TempDir()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestValidate_OnFailMaxDefault(t *testing.T) {
+func TestValidate_LoopMaxRequired(t *testing.T) {
 	cfg := minimalConfig(
 		scriptPhase("a"),
-		Phase{Name: "b", Type: "script", Run: "echo", OnFail: &OnFail{Goto: "a", Max: 0}},
+		Phase{Name: "b", Type: "script", Run: "echo", Loop: &Loop{Goto: "a", Max: 0}},
+	)
+	if err := Validate(cfg, t.TempDir()); err == nil || !strings.Contains(err.Error(), "loop.max is required") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestValidate_LoopMaxLessThanMin(t *testing.T) {
+	cfg := minimalConfig(
+		scriptPhase("a"),
+		Phase{Name: "b", Type: "script", Run: "echo", Loop: &Loop{Goto: "a", Min: 5, Max: 3}},
+	)
+	if err := Validate(cfg, t.TempDir()); err == nil || !strings.Contains(err.Error(), "loop.max (3) must be >= loop.min (5)") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestValidate_LoopMinDefault(t *testing.T) {
+	cfg := minimalConfig(
+		scriptPhase("a"),
+		Phase{Name: "b", Type: "script", Run: "echo", Loop: &Loop{Goto: "a", Max: 3}},
 	)
 	if err := Validate(cfg, t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Phases[1].OnFail.Max != 2 {
-		t.Fatalf("Max = %d, want 2", cfg.Phases[1].OnFail.Max)
+	if cfg.Phases[1].Loop.Min != 1 {
+		t.Fatalf("Min = %d, want 1", cfg.Phases[1].Loop.Min)
+	}
+}
+
+func TestValidate_LoopMultipleAllowed(t *testing.T) {
+	cfg := minimalConfig(
+		scriptPhase("a"),
+		Phase{Name: "b", Type: "script", Run: "echo", Loop: &Loop{Goto: "a", Max: 3}},
+		scriptPhase("c"),
+		Phase{Name: "d", Type: "script", Run: "echo", Loop: &Loop{Goto: "c", Max: 2}},
+	)
+	if err := Validate(cfg, t.TempDir()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_OnExhaustGotoMustBeEarlier(t *testing.T) {
+	cfg := minimalConfig(
+		scriptPhase("a"),
+		Phase{Name: "b", Type: "script", Run: "echo", Loop: &Loop{Goto: "a", Max: 3, OnExhaust: &OnExhaust{Goto: "nonexistent"}}},
+	)
+	if err := Validate(cfg, t.TempDir()); err == nil || !strings.Contains(err.Error(), "on-exhaust.goto") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestValidate_OnExhaustMaxDefault(t *testing.T) {
+	cfg := minimalConfig(
+		scriptPhase("a"),
+		Phase{Name: "b", Type: "script", Run: "echo", Loop: &Loop{Goto: "a", Max: 3, OnExhaust: &OnExhaust{Goto: "a"}}},
+	)
+	if err := Validate(cfg, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Phases[1].Loop.OnExhaust.Max != 1 {
+		t.Fatalf("OnExhaust.Max = %d, want 1", cfg.Phases[1].Loop.OnExhaust.Max)
 	}
 }
 
@@ -218,13 +291,13 @@ func TestValidate_ParallelWithUnknown(t *testing.T) {
 	}
 }
 
-func TestValidate_ParallelWithOnFail(t *testing.T) {
+func TestValidate_ParallelWithLoop(t *testing.T) {
 	cfg := minimalConfig(
 		scriptPhase("a"),
-		Phase{Name: "b", Type: "script", Run: "echo", ParallelWith: "a", OnFail: &OnFail{Goto: "a"}},
+		Phase{Name: "b", Type: "script", Run: "echo", ParallelWith: "a", Loop: &Loop{Goto: "a", Max: 3}},
 	)
 	if err := Validate(cfg, t.TempDir()); err == nil || !strings.Contains(err.Error(), "cannot be combined") {
-		t.Fatalf("expected parallel+on-fail error, got %v", err)
+		t.Fatalf("expected parallel+loop error, got %v", err)
 	}
 }
 
@@ -249,9 +322,9 @@ func TestValidate_FullConfig(t *testing.T) {
 			{Name: "review", Type: "gate"},
 			{Name: "implement", Type: "agent", Prompt: ".orc/prompts/impl.md", Model: "sonnet", Timeout: 45,
 				Outputs: []string{"result.md"},
-				OnFail:  &OnFail{Goto: "design", Max: 3}},
+				Loop:    &Loop{Goto: "design", Max: 3}},
 			{Name: "test", Type: "script", Run: "make test", Condition: "test -f Makefile",
-				OnFail: &OnFail{Goto: "implement"}},
+				Loop: &Loop{Goto: "implement", Max: 2}},
 		},
 	}
 
@@ -275,8 +348,75 @@ func TestValidate_FullConfig(t *testing.T) {
 	if cfg.Phases[3].Model != "sonnet" {
 		t.Fatalf("implement model = %q", cfg.Phases[3].Model)
 	}
-	if cfg.Phases[4].OnFail.Max != 2 {
-		t.Fatalf("test on-fail max = %d", cfg.Phases[4].OnFail.Max)
+	if cfg.Phases[3].Loop.Min != 1 {
+		t.Fatalf("implement loop.min = %d, want 1", cfg.Phases[3].Loop.Min)
+	}
+	if cfg.Phases[4].Loop.Min != 1 {
+		t.Fatalf("test loop.min = %d, want 1", cfg.Phases[4].Loop.Min)
+	}
+}
+
+// OnExhaust YAML parsing tests
+
+func TestValidate_OnExhaustStringForm(t *testing.T) {
+	yamlStr := `
+name: test
+phases:
+  - name: a
+    type: script
+    run: echo
+  - name: b
+    type: script
+    run: echo
+    loop:
+      goto: a
+      max: 3
+      on-exhaust: a
+`
+	var cfg Config
+	if err := yaml.Unmarshal([]byte(yamlStr), &cfg); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if err := Validate(&cfg, t.TempDir()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Phases[1].Loop.OnExhaust.Goto != "a" {
+		t.Fatalf("OnExhaust.Goto = %q, want a", cfg.Phases[1].Loop.OnExhaust.Goto)
+	}
+	if cfg.Phases[1].Loop.OnExhaust.Max != 1 {
+		t.Fatalf("OnExhaust.Max = %d, want 1 (default)", cfg.Phases[1].Loop.OnExhaust.Max)
+	}
+}
+
+func TestValidate_OnExhaustObjectForm(t *testing.T) {
+	yamlStr := `
+name: test
+phases:
+  - name: a
+    type: script
+    run: echo
+  - name: b
+    type: script
+    run: echo
+    loop:
+      goto: a
+      max: 3
+      on-exhaust:
+        goto: a
+        max: 2
+`
+	var cfg Config
+	if err := yaml.Unmarshal([]byte(yamlStr), &cfg); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if err := Validate(&cfg, t.TempDir()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Phases[1].Loop.OnExhaust.Goto != "a" {
+		t.Fatalf("OnExhaust.Goto = %q, want a", cfg.Phases[1].Loop.OnExhaust.Goto)
+	}
+	if cfg.Phases[1].Loop.OnExhaust.Max != 2 {
+		t.Fatalf("OnExhaust.Max = %d, want 2", cfg.Phases[1].Loop.OnExhaust.Max)
 	}
 }
 
@@ -337,8 +477,8 @@ func TestValidateTicket_UnanchoredFullMatch(t *testing.T) {
 
 func TestValidate_VarsBuiltinOverride(t *testing.T) {
 	cfg := &Config{
-		Name: "test",
-		Vars: OrderedVars{{Key: "TICKET", Value: "bad"}},
+		Name:   "test",
+		Vars:   OrderedVars{{Key: "TICKET", Value: "bad"}},
 		Phases: []Phase{scriptPhase("a")},
 	}
 	err := Validate(cfg, t.TempDir())
@@ -349,8 +489,8 @@ func TestValidate_VarsBuiltinOverride(t *testing.T) {
 
 func TestValidate_VarsEmptyName(t *testing.T) {
 	cfg := &Config{
-		Name: "test",
-		Vars: OrderedVars{{Key: "", Value: "val"}},
+		Name:   "test",
+		Vars:   OrderedVars{{Key: "", Value: "val"}},
 		Phases: []Phase{scriptPhase("a")},
 	}
 	err := Validate(cfg, t.TempDir())
@@ -361,8 +501,8 @@ func TestValidate_VarsEmptyName(t *testing.T) {
 
 func TestValidate_VarsDuplicate(t *testing.T) {
 	cfg := &Config{
-		Name: "test",
-		Vars: OrderedVars{{Key: "FOO", Value: "1"}, {Key: "FOO", Value: "2"}},
+		Name:   "test",
+		Vars:   OrderedVars{{Key: "FOO", Value: "1"}, {Key: "FOO", Value: "2"}},
 		Phases: []Phase{scriptPhase("a")},
 	}
 	err := Validate(cfg, t.TempDir())
@@ -373,8 +513,8 @@ func TestValidate_VarsDuplicate(t *testing.T) {
 
 func TestValidate_VarsCustomAccepted(t *testing.T) {
 	cfg := &Config{
-		Name: "test",
-		Vars: OrderedVars{{Key: "MY_DIR", Value: "/tmp/test"}},
+		Name:   "test",
+		Vars:   OrderedVars{{Key: "MY_DIR", Value: "/tmp/test"}},
 		Phases: []Phase{scriptPhase("a")},
 	}
 	if err := Validate(cfg, t.TempDir()); err != nil {
@@ -447,8 +587,8 @@ func TestUnmarshalYAML_RejectsNonMapping(t *testing.T) {
 
 func TestValidate_VarsInvalidName_Hyphen(t *testing.T) {
 	cfg := &Config{
-		Name: "test",
-		Vars: OrderedVars{{Key: "my-var", Value: "val"}},
+		Name:   "test",
+		Vars:   OrderedVars{{Key: "my-var", Value: "val"}},
 		Phases: []Phase{scriptPhase("a")},
 	}
 	err := Validate(cfg, t.TempDir())
@@ -459,8 +599,8 @@ func TestValidate_VarsInvalidName_Hyphen(t *testing.T) {
 
 func TestValidate_VarsInvalidName_StartsWithDigit(t *testing.T) {
 	cfg := &Config{
-		Name: "test",
-		Vars: OrderedVars{{Key: "1FOO", Value: "val"}},
+		Name:   "test",
+		Vars:   OrderedVars{{Key: "1FOO", Value: "val"}},
 		Phases: []Phase{scriptPhase("a")},
 	}
 	err := Validate(cfg, t.TempDir())
@@ -471,8 +611,8 @@ func TestValidate_VarsInvalidName_StartsWithDigit(t *testing.T) {
 
 func TestValidate_VarsInvalidName_Spaces(t *testing.T) {
 	cfg := &Config{
-		Name: "test",
-		Vars: OrderedVars{{Key: "MY VAR", Value: "val"}},
+		Name:   "test",
+		Vars:   OrderedVars{{Key: "MY VAR", Value: "val"}},
 		Phases: []Phase{scriptPhase("a")},
 	}
 	err := Validate(cfg, t.TempDir())
@@ -483,8 +623,8 @@ func TestValidate_VarsInvalidName_Spaces(t *testing.T) {
 
 func TestValidate_VarsInvalidName_Equals(t *testing.T) {
 	cfg := &Config{
-		Name: "test",
-		Vars: OrderedVars{{Key: "FOO=BAR", Value: "val"}},
+		Name:   "test",
+		Vars:   OrderedVars{{Key: "FOO=BAR", Value: "val"}},
 		Phases: []Phase{scriptPhase("a")},
 	}
 	err := Validate(cfg, t.TempDir())
@@ -495,8 +635,8 @@ func TestValidate_VarsInvalidName_Equals(t *testing.T) {
 
 func TestValidate_VarsValidName_Underscore(t *testing.T) {
 	cfg := &Config{
-		Name: "test",
-		Vars: OrderedVars{{Key: "_MY_VAR_2", Value: "val"}},
+		Name:   "test",
+		Vars:   OrderedVars{{Key: "_MY_VAR_2", Value: "val"}},
 		Phases: []Phase{scriptPhase("a")},
 	}
 	if err := Validate(cfg, t.TempDir()); err != nil {
@@ -508,8 +648,8 @@ func TestValidate_VarsValidName_Underscore(t *testing.T) {
 
 func TestValidate_VarsBuiltinOverride_PhaseIndex(t *testing.T) {
 	cfg := &Config{
-		Name: "test",
-		Vars: OrderedVars{{Key: "PHASE_INDEX", Value: "0"}},
+		Name:   "test",
+		Vars:   OrderedVars{{Key: "PHASE_INDEX", Value: "0"}},
 		Phases: []Phase{scriptPhase("a")},
 	}
 	err := Validate(cfg, t.TempDir())
@@ -836,8 +976,8 @@ func TestValidate_PhaseMaxCostOnGate(t *testing.T) {
 
 func TestValidate_VarsBuiltinOverride_PhaseCount(t *testing.T) {
 	cfg := &Config{
-		Name: "test",
-		Vars: OrderedVars{{Key: "PHASE_COUNT", Value: "5"}},
+		Name:   "test",
+		Vars:   OrderedVars{{Key: "PHASE_COUNT", Value: "5"}},
 		Phases: []Phase{scriptPhase("a")},
 	}
 	err := Validate(cfg, t.TempDir())

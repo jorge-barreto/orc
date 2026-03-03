@@ -66,11 +66,13 @@ func RenderStatus(cfg *config.Config, st *state.State, artifactsDir string) {
 				cacheStr = formatCache(ce.CacheReadInputTokens, ce.CacheCreationInputTokens)
 			}
 
-			// Loop count — show on check phases that triggered loops
+			// Loop count
 			var loopStr string
 			if loopCounts != nil {
-				if count, ok := loopCounts[te.Phase]; ok && count > 0 {
-					loopStr = fmt.Sprintf("%d", count)
+				count, _ := loopCounts[te.Phase]
+				exhaust, _ := loopCounts[te.Phase+":exhaust"]
+				if total := count + exhaust; total > 0 {
+					loopStr = fmt.Sprintf("%d", total)
 				}
 			}
 

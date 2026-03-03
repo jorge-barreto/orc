@@ -37,9 +37,9 @@ phases:
     description: Check if plan review passed
     run: test -f $ARTIFACTS_DIR/plan-approved.txt || { cat $ARTIFACTS_DIR/plan-review.md 2>/dev/null; exit 1; }
     timeout: 1
-    on-fail:
+    loop:
       goto: plan
-      max: 2
+      max: 3
 
   - name: implement
     type: agent
@@ -52,9 +52,9 @@ phases:
     description: Run the test suite
     run: cd $PROJECT_ROOT && make test
     timeout: 5
-    on-fail:
+    loop:
       goto: implement
-      max: 10
+      max: 11
 
   - name: review
     type: agent
@@ -69,9 +69,9 @@ phases:
     description: Check if review passed
     run: test -f $ARTIFACTS_DIR/review-pass.txt || { cat $ARTIFACTS_DIR/review-findings.md 2>/dev/null; exit 1; }
     timeout: 1
-    on-fail:
+    loop:
       goto: implement
-      max: 2
+      max: 3
 
   - name: commit
     type: script

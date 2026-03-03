@@ -56,10 +56,16 @@ func ResumeHint(ticket string) {
 	fmt.Printf("\n%sResume:%s orc run %s\n", Yellow, Reset, ticket)
 }
 
-// LoopBack prints a loop-back message for on-fail retries.
-func LoopBack(fromPhase, toPhase string, attempt, max int) {
-	fmt.Printf("%s[%s]%s  %s↺ Phase %q failed. Looping back to %q (attempt %d/%d)%s\n",
-		Dim, timestamp(), Reset, Yellow, fromPhase, toPhase, attempt, max, Reset)
+// LoopBack prints a loop-back message for loop iterations.
+func LoopBack(fromPhase, toPhase string, iteration, max int) {
+	fmt.Printf("%s[%s]%s  %s↻ %q iteration %d/%d — looping back to %q%s\n",
+		Dim, timestamp(), Reset, Yellow, fromPhase, iteration, max, toPhase, Reset)
+}
+
+// LoopExhausted prints a message when a loop has exhausted its max iterations.
+func LoopExhausted(phaseName string, iteration int) {
+	fmt.Printf("%s[%s]%s  %s✗ %q: loop exhausted after %d iterations%s\n",
+		Dim, timestamp(), Reset, Red, phaseName, iteration, Reset)
 }
 
 // PhaseSkip prints a phase skip message (condition not met).
