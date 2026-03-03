@@ -701,6 +701,36 @@ orc init --list-recipes           # show available recipes
 
 ---
 
+### R-037: `orc init` accepts a prompt argument
+
+`orc init` currently uses a fixed system prompt to analyze the project and generate a workflow. Allow users to pass a natural-language description as a positional argument to guide the AI generation toward a specific workflow shape.
+
+**Usage:**
+```bash
+orc init "this is a documentation drafting project. it should be a draft->critique loop"
+orc init "microservice with integration tests. heavy on bash scripts, no gates"
+orc init "monorepo with 3 packages. each needs its own test phase"
+```
+
+**Implementation approach:**
+- Accept an optional positional argument after `init`
+- Append the user's description to the existing AI generation prompt (in `initPromptSuffix` or as a new section)
+- The user prompt is additive — it supplements the project context, not replaces it
+- If `--recipe` is also passed, the user prompt is ignored (recipes are deterministic)
+- Falls back to current behavior when no argument is given
+
+**Acceptance criteria:**
+- `orc init "description"` passes the description to the AI and influences the generated config
+- The description appears in the prompt sent to the agent (verifiable via tests or dry-run)
+- No argument = current behavior unchanged
+- `--recipe` takes precedence over a prompt argument
+
+**Priority:** P2
+**Effort:** Small
+**Dependencies:** None
+
+---
+
 ### R-013: `orc test` — single-phase execution
 
 Run a single phase in isolation for testing prompts and scripts without running the entire workflow. Essential for prompt debugging.

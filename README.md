@@ -14,7 +14,7 @@ You define your workflow as a series of **phases** in a YAML config file. Each p
 
 - **Three phase types**: `script` (shell commands), `agent` (Claude AI via `claude -p`), `gate` (human y/n approval)
 - **Variable substitution**: `$TICKET`, `$ARTIFACTS_DIR`, `$WORK_DIR`, `$PROJECT_ROOT` expanded in prompts and commands
-- **On-fail retry loops**: Failed phases can loop back to an earlier phase with feedback, up to a configurable max
+- **Convergent loops**: Phases can loop back with `loop` for retry-on-failure and min-iteration enforcement, with optional `on-exhaust` recovery
 - **Parallel execution**: Run two phases concurrently with `parallel-with`
 - **Conditional phases**: Skip phases based on a shell command exit code
 - **Custom variables**: Define project-specific variables under `vars:` that reference built-ins and each other
@@ -117,7 +117,7 @@ orc docs variables     # template variables and custom vars
 orc docs phases        # phase type details
 ```
 
-Topics: `quickstart`, `config`, `phases`, `variables`, `runner`, `artifacts`.
+Topics: `quickstart`, `config`, `phases`, `variables`, `runner`, `artifacts`, `quality-loops`.
 
 ## Configuration Reference
 

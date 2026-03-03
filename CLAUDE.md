@@ -15,7 +15,7 @@ make test           # go test ./... -count=1
 make clean          # rm -f orc
 
 # Run a single test
-go test ./internal/config/ -run TestValidate_ParallelWithOnFail -count=1
+go test ./internal/config/ -run TestValidate_ParallelWithLoop -count=1
 
 # Run tests for one package
 go test ./internal/runner/ -count=1
