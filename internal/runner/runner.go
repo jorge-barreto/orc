@@ -1,7 +1,9 @@
 package runner
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -195,74 +197,6 @@ func (r *Runner) Run(ctx context.Context) error {
 
 			// Handle loop
 			if phase.Loop != nil {
-				iteration := loopCounts[phase.Name] + 1
-				loopCounts[phase.Name] = iteration
-
-				if iteration >= phase.Loop.Max {
-					// Loop exhausted
-					if phase.Loop.OnExhaust != nil {
-						exhaustKey := phase.Name + ":exhaust"
-						exhaustCount := loopCounts[exhaustKey] + 1
-						if exhaustCount > phase.Loop.OnExhaust.Max {
-							if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
-								fmt.Fprintf(os.Stderr, "warning: failed to save loop counts: %v\n", err)
-							}
-							fmt.Printf("\n  Phase %q: loop exhausted after %d iterations, recovery exhausted after %d attempts. Manual intervention needed.\n",
-								phase.Name, iteration, phase.Loop.OnExhaust.Max)
-							r.printRunSummary(i)
-							return r.failAndHint(state.StatusFailed, ExitRetryable,
-								fmt.Errorf("phase %q: loop exhausted (%d iterations) and recovery exhausted (%d attempts)", phase.Name, iteration, phase.Loop.OnExhaust.Max))
-						}
-						loopCounts[exhaustKey] = exhaustCount
-						delete(loopCounts, phase.Name) // reset loop counter
-						if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
-							return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("saving loop counts: %w", err))
-						}
-
-						// Write convergence-failed feedback
-						output := ""
-						if result != nil {
-							output = result.Output
-						}
-						if output == "" {
-							output = errMsg
-						}
-						header := fmt.Sprintf("Convergence failed after %d iterations (min: %d, max: %d). Last iteration output follows:\n\n",
-							iteration, phase.Loop.Min, phase.Loop.Max)
-						if err := state.WriteFeedback(r.Env.ArtifactsDir, phase.Name, header+output); err != nil {
-							return err
-						}
-
-						gotoIdx := r.Config.PhaseIndex(phase.Loop.OnExhaust.Goto)
-						if gotoIdx < 0 {
-							return r.failAndHint(state.StatusFailed, ExitConfigError,
-								fmt.Errorf("phase %q: loop.on-exhaust.goto %q not found", phase.Name, phase.Loop.OnExhaust.Goto))
-						}
-						ux.LoopExhausted(phase.Name, iteration)
-						ux.LoopBack(phase.Name, phase.Loop.OnExhaust.Goto, exhaustCount, phase.Loop.OnExhaust.Max)
-
-						r.State.SetPhase(gotoIdx)
-						if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
-							return fmt.Errorf("saving state after loop exhaustion: %w", err)
-						}
-						continue
-					}
-
-					// No on-exhaust: hard fail
-					if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
-						fmt.Fprintf(os.Stderr, "warning: failed to save loop counts: %v\n", err)
-					}
-					fmt.Printf("\n  Phase %q failed after %d iterations. Manual intervention needed.\n",
-						phase.Name, iteration)
-					r.printRunSummary(i)
-					return r.failAndHint(state.StatusFailed, ExitRetryable,
-						fmt.Errorf("phase %q: failed after %d iterations", phase.Name, iteration))
-				}
-
-				// Not exhausted — loop back
-				if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
-					return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("saving loop counts: %w", err))
-				}
 				output := ""
 				if result != nil {
 					output = result.Output
@@ -270,22 +204,13 @@ func (r *Runner) Run(ctx context.Context) error {
 				if output == "" {
 					output = errMsg
 				}
-				if err := state.WriteFeedback(r.Env.ArtifactsDir, phase.Name, output); err != nil {
-					return err
+				shouldContinue, loopErr := r.handleLoopFailure(i, phase, loopCounts, output)
+				if loopErr != nil {
+					return loopErr
 				}
-
-				gotoIdx := r.Config.PhaseIndex(phase.Loop.Goto)
-				if gotoIdx < 0 {
-					return r.failAndHint(state.StatusFailed, ExitConfigError,
-						fmt.Errorf("phase %q: loop.goto %q not found", phase.Name, phase.Loop.Goto))
+				if shouldContinue {
+					continue
 				}
-				ux.LoopBack(phase.Name, phase.Loop.Goto, iteration, phase.Loop.Max)
-
-				r.State.SetPhase(gotoIdx)
-				if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
-					return fmt.Errorf("saving state after loop-back: %w", err)
-				}
-				continue
 			}
 
 			// No loop: stop
@@ -322,6 +247,27 @@ func (r *Runner) Run(ctx context.Context) error {
 				r.printRunSummary(i)
 				return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("phase %q: %s", phase.Name, errMsg))
 			}
+		}
+
+		// Run loop.check if present (after phase success, before loop min enforcement)
+		if phase.Loop != nil && phase.Loop.Check != "" {
+			checkCode, checkOutput := runLoopCheck(ctx, phase.Loop.Check, phase, r.Env)
+			if checkCode != 0 {
+				// Check failed — treat as loop failure
+				r.Timing.AddEnd(phase.Name)
+				checkMsg := fmt.Sprintf("loop.check failed (exit %d)", checkCode)
+				appendPhaseLog(r.Env.ArtifactsDir, i, fmt.Sprintf("\n[orc] %s: %s\n%s", phase.Name, checkMsg, checkOutput))
+				ux.PhaseFail(i, phase.Name, checkMsg)
+
+				shouldContinue, loopErr := r.handleLoopFailure(i, phase, loopCounts, checkOutput)
+				if loopErr != nil {
+					return loopErr
+				}
+				if shouldContinue {
+					continue
+				}
+			}
+			// check passed — fall through to min enforcement below
 		}
 
 		// Handle loop on success — enforce min iterations
@@ -386,6 +332,110 @@ func (r *Runner) Run(ctx context.Context) error {
 	return nil
 }
 
+// handleLoopFailure processes a loop iteration failure (from phase failure or check failure).
+// output is the content to write as feedback. Returns true if the main loop should continue.
+func (r *Runner) handleLoopFailure(i int, phase config.Phase, loopCounts map[string]int, output string) (bool, error) {
+	iteration := loopCounts[phase.Name] + 1
+	loopCounts[phase.Name] = iteration
+
+	if iteration >= phase.Loop.Max {
+		// Loop exhausted
+		if phase.Loop.OnExhaust != nil {
+			exhaustKey := phase.Name + ":exhaust"
+			exhaustCount := loopCounts[exhaustKey] + 1
+			if exhaustCount > phase.Loop.OnExhaust.Max {
+				if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to save loop counts: %v\n", err)
+				}
+				fmt.Printf("\n  Phase %q: loop exhausted after %d iterations, recovery exhausted after %d attempts. Manual intervention needed.\n",
+					phase.Name, iteration, phase.Loop.OnExhaust.Max)
+				r.printRunSummary(i)
+				return false, r.failAndHint(state.StatusFailed, ExitRetryable,
+					fmt.Errorf("phase %q: loop exhausted (%d iterations) and recovery exhausted (%d attempts)", phase.Name, iteration, phase.Loop.OnExhaust.Max))
+			}
+			loopCounts[exhaustKey] = exhaustCount
+			delete(loopCounts, phase.Name) // reset loop counter
+			if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
+				return false, r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("saving loop counts: %w", err))
+			}
+
+			// Write convergence-failed feedback
+			header := fmt.Sprintf("Convergence failed after %d iterations (min: %d, max: %d). Last iteration output follows:\n\n",
+				iteration, phase.Loop.Min, phase.Loop.Max)
+			if err := state.WriteFeedback(r.Env.ArtifactsDir, phase.Name, header+output); err != nil {
+				return false, err
+			}
+
+			gotoIdx := r.Config.PhaseIndex(phase.Loop.OnExhaust.Goto)
+			if gotoIdx < 0 {
+				return false, r.failAndHint(state.StatusFailed, ExitConfigError,
+					fmt.Errorf("phase %q: loop.on-exhaust.goto %q not found", phase.Name, phase.Loop.OnExhaust.Goto))
+			}
+			ux.LoopExhausted(phase.Name, iteration)
+			ux.LoopBack(phase.Name, phase.Loop.OnExhaust.Goto, exhaustCount, phase.Loop.OnExhaust.Max)
+
+			r.State.SetPhase(gotoIdx)
+			if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
+				return false, fmt.Errorf("saving state after loop exhaustion: %w", err)
+			}
+			return true, nil
+		}
+
+		// No on-exhaust: hard fail
+		if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to save loop counts: %v\n", err)
+		}
+		fmt.Printf("\n  Phase %q failed after %d iterations. Manual intervention needed.\n",
+			phase.Name, iteration)
+		r.printRunSummary(i)
+		return false, r.failAndHint(state.StatusFailed, ExitRetryable,
+			fmt.Errorf("phase %q: failed after %d iterations", phase.Name, iteration))
+	}
+
+	// Not exhausted — loop back
+	if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
+		return false, r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("saving loop counts: %w", err))
+	}
+	if err := state.WriteFeedback(r.Env.ArtifactsDir, phase.Name, output); err != nil {
+		return false, err
+	}
+
+	gotoIdx := r.Config.PhaseIndex(phase.Loop.Goto)
+	if gotoIdx < 0 {
+		return false, r.failAndHint(state.StatusFailed, ExitConfigError,
+			fmt.Errorf("phase %q: loop.goto %q not found", phase.Name, phase.Loop.Goto))
+	}
+	ux.LoopBack(phase.Name, phase.Loop.Goto, iteration, phase.Loop.Max)
+
+	r.State.SetPhase(gotoIdx)
+	if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
+		return false, fmt.Errorf("saving state after loop-back: %w", err)
+	}
+	return true, nil
+}
+
+// runLoopCheck executes the loop.check command and returns the exit code and captured output.
+func runLoopCheck(ctx context.Context, check string, phase config.Phase, env *dispatch.Environment) (int, string) {
+	expanded := dispatch.ExpandVars(check, env.Vars())
+	cmd := exec.CommandContext(ctx, "bash", "-c", expanded)
+	cmd.Dir = dispatch.PhaseWorkDir(phase, env)
+	cmd.Env = dispatch.BuildEnv(env)
+
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+
+	err := cmd.Run()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return exitErr.ExitCode(), buf.String()
+		}
+		return 1, buf.String()
+	}
+	return 0, buf.String()
+}
+
 // DryRunPrint prints the phase plan without executing.
 func (r *Runner) DryRunPrint() {
 	total := len(r.Config.Phases)
@@ -437,6 +487,10 @@ func (r *Runner) DryRunPrint() {
 		}
 		if p.Loop != nil {
 			fmt.Printf("     loop: goto %s (min %d, max %d)\n", p.Loop.Goto, p.Loop.Min, p.Loop.Max)
+			if p.Loop.Check != "" {
+				expanded := dispatch.ExpandVars(p.Loop.Check, r.Env.Vars())
+				fmt.Printf("     loop.check: %s\n", expanded)
+			}
 			if p.Loop.OnExhaust != nil {
 				fmt.Printf("     on-exhaust: goto %s (max %d)\n", p.Loop.OnExhaust.Goto, p.Loop.OnExhaust.Max)
 			}

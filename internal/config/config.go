@@ -36,6 +36,7 @@ type Loop struct {
 	Goto      string     `yaml:"goto"`
 	Min       int        `yaml:"min"`
 	Max       int        `yaml:"max"`
+	Check     string     `yaml:"check"`
 	OnExhaust *OnExhaust `yaml:"on-exhaust"`
 }
 

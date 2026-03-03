@@ -106,7 +106,7 @@ func printConfigSummary(w io.Writer, cfg *config.Config, projectRoot string) {
 
 	if len(cfg.Vars) > 0 {
 		builtins := map[string]string{
-			"TICKET":       "<ticket>",
+			"TICKET":        "<ticket>",
 			"ARTIFACTS_DIR": "<artifacts>",
 			"WORK_DIR":      projectRoot,
 			"PROJECT_ROOT":  projectRoot,
@@ -143,6 +143,9 @@ func printConfigSummary(w io.Writer, cfg *config.Config, projectRoot string) {
 		}
 		if p.Loop != nil {
 			fmt.Fprintf(w, "%sloop: goto %s (min %d, max %d)\n", indent, p.Loop.Goto, p.Loop.Min, p.Loop.Max)
+			if p.Loop.Check != "" {
+				fmt.Fprintf(w, "%sloop.check: %s\n", indent, p.Loop.Check)
+			}
 			if p.Loop.OnExhaust != nil {
 				fmt.Fprintf(w, "%son-exhaust: goto %s (max %d)\n", indent, p.Loop.OnExhaust.Goto, p.Loop.OnExhaust.Max)
 			}
