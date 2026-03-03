@@ -61,6 +61,7 @@ Validation (`internal/config/validate.go`) enforces: unique phase names, `on-fai
 - Variable substitution uses `os.Expand()` with a custom map + env fallback (`internal/dispatch/expand.go`)
 - Errors are wrapped with `%w` for error chains
 - The binary refuses to run if `CLAUDECODE` env var is set (prevents nesting inside Claude Code)
+- Go uses tabs for indentation (never spaces). A PostToolUse hook runs `gofmt -w` automatically after edits, but write idiomatic Go formatting from the start.
 
 ## Beads: Work Tracking
 
