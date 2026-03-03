@@ -132,7 +132,9 @@ Phase fields
   condition        string    Shell command; phase skipped if exit code non-zero.
   parallel-with    string    Name of another phase to run concurrently.
   loop             object    Convergent loop: goto (phase name), min (default 1),
-                             max (required), and optional on-exhaust for recovery.
+                             max (required), optional check (shell command — if exit
+                             non-zero, treated as failure), and optional on-exhaust
+                             for recovery.
   allow-tools      list      Additional tools to approve for this agent phase.
                              Merged with defaults. Only valid on agent phases.
   cwd              string    Working directory for this phase (expanded with vars).
@@ -402,6 +404,7 @@ simple error retry and deliberate quality iteration.
     goto: implement       # jump-back target (must be earlier phase)
     min: 1                # minimum iterations even on success (default 1)
     max: 3                # total iterations before exhaustion (required)
+    check: test -f ...    # quality gate command (optional)
     on-exhaust: plan      # outer recovery (optional, string or object)
 
 Failure path: When a phase with loop fails, the failure output is
@@ -413,6 +416,13 @@ Success path: When a phase with loop succeeds but the iteration count
 is less than loop.min, the runner forces another iteration (writing
 the output as feedback). Once iteration >= min, the loop breaks and
 the runner advances normally.
+
+Check path: When a phase with loop.check succeeds (exit 0), the check
+command runs with full variable expansion ($ARTIFACTS_DIR, custom vars,
+etc.). If the check exits non-zero, orc treats it as a loop failure —
+writing the check output to feedback and looping back. If the check
+exits 0, the normal success path applies. This eliminates the need for
+a separate script phase solely to evaluate loop pass/fail.
 
 On-exhaust recovery: When a loop exhausts, if on-exhaust is set, the
 runner resets the loop counter and jumps to the on-exhaust target.
@@ -622,6 +632,25 @@ The checker writes a findings file every time. It only writes the pass
 signal file (review-pass.txt) when zero blocking issues remain. The
 decision gate's loop sends the doer back with feedback injected
 automatically.
+
+With loop.check, the decision gate can be inlined:
+
+  - name: implement
+    type: agent
+    prompt: .orc/phases/implement.md
+
+  - name: review
+    type: agent
+    prompt: .orc/phases/review.md
+    outputs:
+      - review-findings.md
+    loop:
+      goto: implement
+      max: 3
+      check: test -f $ARTIFACTS_DIR/review-pass.txt
+
+This replaces the 3-phase pattern (doer + checker + script gate) with
+a 2-phase pattern (doer + checker-with-check).
 
 The Asymmetry Principle
 -----------------------

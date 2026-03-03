@@ -194,6 +194,28 @@ func TestPrintConfigSummary_Loop(t *testing.T) {
 	}
 }
 
+func TestPrintConfigSummary_LoopCheck(t *testing.T) {
+	root := t.TempDir()
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "check", Type: "script", Run: "make test"},
+			{Name: "build", Type: "script", Run: "make build", Loop: &config.Loop{Goto: "check", Min: 1, Max: 3, Check: "test -f review-pass.txt"}},
+		},
+	}
+	if err := config.Validate(cfg, root); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+
+	var buf bytes.Buffer
+	printConfigSummary(&buf, cfg, root)
+	out := buf.String()
+
+	if !strings.Contains(out, "loop.check: test -f review-pass.txt") {
+		t.Errorf("output missing loop.check line\noutput:\n%s", out)
+	}
+}
+
 func TestPrintConfigSummary_ParallelWith(t *testing.T) {
 	root := t.TempDir()
 	cfg := &config.Config{

@@ -1220,3 +1220,229 @@ func TestRun_ParallelPhaseCostLimitExceeded(t *testing.T) {
 		t.Fatalf("status = %q, want failed", r.State.Status)
 	}
 }
+
+// --- loop.check tests ---
+
+func TestRun_LoopCheckFailTriggersLoopBack(t *testing.T) {
+	tmpDir := t.TempDir()
+	markerPath := filepath.Join(tmpDir, "check-marker")
+
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "agent", Prompt: "unused.md", Model: "sonnet", Loop: &config.Loop{
+				Goto: "a", Min: 1, Max: 3,
+				Check: "test -f " + markerPath,
+			}},
+		},
+	}
+
+	aCount := 0
+	mu := sync.Mutex{}
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		if phase.Name == "a" {
+			mu.Lock()
+			aCount++
+			n := aCount
+			mu.Unlock()
+			if n == 2 {
+				os.WriteFile(markerPath, []byte("pass"), 0644)
+			}
+		}
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.State.Status != state.StatusCompleted {
+		t.Fatalf("status = %q", r.State.Status)
+	}
+
+	fbPath := filepath.Join(r.Env.ArtifactsDir, "feedback", "from-b.md")
+	if _, err := os.Stat(fbPath); err != nil {
+		t.Fatalf("feedback file not written: %v", err)
+	}
+}
+
+func TestRun_LoopCheckPassAdvances(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo", Loop: &config.Loop{
+				Goto: "a", Min: 1, Max: 3,
+				Check: "true",
+			}},
+			{Name: "c", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.State.Status != state.StatusCompleted {
+		t.Fatalf("status = %q", r.State.Status)
+	}
+	calls := mock.callNames()
+	if len(calls) != 3 || calls[0] != "a" || calls[1] != "b" || calls[2] != "c" {
+		t.Fatalf("calls = %v, want [a b c]", calls)
+	}
+}
+
+func TestRun_LoopCheckVarExpansion(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo", Loop: &config.Loop{
+				Goto: "a", Min: 1, Max: 3,
+				Check: "test -d $ARTIFACTS_DIR",
+			}},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.State.Status != state.StatusCompleted {
+		t.Fatalf("status = %q", r.State.Status)
+	}
+}
+
+func TestRun_LoopCheckMaxExhausted(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo", Loop: &config.Loop{
+				Goto: "a", Min: 1, Max: 3,
+				Check: "false",
+			}},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "failed after 3 iterations") {
+		t.Fatalf("expected loop exhaustion error, got %v", err)
+	}
+	assertExitCode(t, err, ExitRetryable)
+}
+
+func TestRun_LoopCheckFeedbackWritten(t *testing.T) {
+	tmpDir := t.TempDir()
+	markerPath := filepath.Join(tmpDir, "check-marker")
+
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo", Loop: &config.Loop{
+				Goto: "a", Min: 1, Max: 3,
+				Check: "echo 'check output' && test -f " + markerPath,
+			}},
+		},
+	}
+
+	bCount := 0
+	mu := sync.Mutex{}
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		if phase.Name == "b" {
+			mu.Lock()
+			bCount++
+			n := bCount
+			mu.Unlock()
+			if n == 2 {
+				os.WriteFile(markerPath, []byte("pass"), 0644)
+			}
+		}
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fbPath := filepath.Join(r.Env.ArtifactsDir, "feedback", "from-b.md")
+	data, err := os.ReadFile(fbPath)
+	if err != nil {
+		t.Fatalf("feedback file not written: %v", err)
+	}
+	if !strings.Contains(string(data), "check output") {
+		t.Fatalf("feedback = %q, want to contain 'check output'", string(data))
+	}
+}
+
+func TestRun_LoopCheckWithOnExhaust(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo", Loop: &config.Loop{
+				Goto:      "a",
+				Min:       1,
+				Max:       2,
+				Check:     "false",
+				OnExhaust: &config.OnExhaust{Goto: "a", Max: 2},
+			}},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "recovery exhausted") {
+		t.Fatalf("expected recovery exhausted error, got %v", err)
+	}
+	assertExitCode(t, err, ExitRetryable)
+
+	counts, err := state.LoadLoopCounts(r.Env.ArtifactsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts["b:exhaust"] < 1 {
+		t.Fatalf("expected exhaust counter >= 1, got %d", counts["b:exhaust"])
+	}
+}
+
+func TestRun_LoopCheckOmittedPreservesBehavior(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo", Loop: &config.Loop{
+				Goto: "a", Min: 1, Max: 3,
+			}},
+			{Name: "c", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.State.Status != state.StatusCompleted {
+		t.Fatalf("status = %q", r.State.Status)
+	}
+	calls := mock.callNames()
+	if len(calls) != 3 || calls[0] != "a" || calls[1] != "b" || calls[2] != "c" {
+		t.Fatalf("calls = %v, want [a b c]", calls)
+	}
+}

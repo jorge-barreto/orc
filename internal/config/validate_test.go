@@ -974,6 +974,43 @@ func TestValidate_PhaseMaxCostOnGate(t *testing.T) {
 	}
 }
 
+func TestValidate_LoopCheckAccepted(t *testing.T) {
+	cfg := minimalConfig(
+		scriptPhase("a"),
+		Phase{Name: "b", Type: "script", Run: "echo", Loop: &Loop{Goto: "a", Max: 3, Check: "test -f review-pass.txt"}},
+	)
+	if err := Validate(cfg, t.TempDir()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_LoopCheckYAMLParsing(t *testing.T) {
+	yamlStr := `
+name: test
+phases:
+  - name: a
+    type: script
+    run: echo
+  - name: b
+    type: script
+    run: echo
+    loop:
+      goto: a
+      max: 3
+      check: test -f review-pass.txt
+`
+	var cfg Config
+	if err := yaml.Unmarshal([]byte(yamlStr), &cfg); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if err := Validate(&cfg, t.TempDir()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Phases[1].Loop.Check != "test -f review-pass.txt" {
+		t.Fatalf("Loop.Check = %q, want %q", cfg.Phases[1].Loop.Check, "test -f review-pass.txt")
+	}
+}
+
 func TestValidate_VarsBuiltinOverride_PhaseCount(t *testing.T) {
 	cfg := &Config{
 		Name:   "test",

@@ -146,7 +146,7 @@ Workflows are defined in `.orc/config.yaml`.
 | `outputs` | list | — | Expected output filenames in artifacts dir |
 | `condition` | string | — | Shell command; phase is skipped if exit code is non-zero |
 | `parallel-with` | string | — | Name of another phase to run concurrently |
-| `loop` | object | — | Convergent loop: `goto` (phase name), `min` (default 1), `max` (required), optional `on-exhaust` |
+| `loop` | object | — | Convergent loop: `goto` (phase name), `min` (default 1), `max` (required), optional `check` (shell command for pass/fail), optional `on-exhaust` |
 | `cwd` | string | — | Working directory for this phase (expanded with vars). Not supported on gate phases. |
 
 ### Phase types
@@ -194,6 +194,7 @@ phases:
     loop:
       goto: design
       max: 3
+      check: test -f $ARTIFACTS_DIR/review-pass.txt
 
   - name: test
     type: script
@@ -272,12 +273,15 @@ loop:
   goto: implement       # jump-back target (must be earlier phase)
   min: 1                # minimum iterations even on success (default 1)
   max: 3                # total iterations before exhaustion (required)
+  check: test -f $ARTIFACTS_DIR/review-pass.txt  # quality gate (optional)
   on-exhaust: plan      # outer recovery (optional, string or object)
 ```
 
 **Failure path:** When a phase with `loop` fails, orc writes the failure output to `.orc/artifacts/feedback/from-<phase>.md`, increments the loop counter, and jumps back to `loop.goto`. If the counter reaches `loop.max`, the loop is exhausted.
 
 **Success path:** When a phase with `loop` succeeds but the iteration count is less than `loop.min`, orc forces another iteration (writing the output as feedback). Once iteration >= min, the loop breaks normally.
+
+**Check path:** When a phase with `loop.check` succeeds (exit 0), the check command runs. If the check exits non-zero, orc treats it as a loop failure — writing the check output to feedback and looping back. If the check exits 0, the normal success path applies (min enforcement, then advance). Variables (`$ARTIFACTS_DIR`, etc.) are expanded in the check command. This eliminates the need for a separate `*-check` script phase.
 
 **On-exhaust recovery:** When a loop exhausts, if `on-exhaust` is set, the loop counter resets and orc jumps to the on-exhaust target. This enables outer recovery (e.g., re-plan then re-implement). Accepts a string (`on-exhaust: plan`) or object (`on-exhaust: {goto: plan, max: 2}`).
 
