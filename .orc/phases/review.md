@@ -66,6 +66,11 @@ Run `git diff HEAD` to see what was changed. For each changed file:
 - Did the implementer add features, refactoring, or "improvements" not in the plan?
 - Is there dead code, unused variables, or unnecessary comments?
 
+### F. Documentation
+- Does the change add or modify CLI commands, flags, config fields, or user-visible behavior?
+- If so, were the relevant doc surfaces updated — `README.md`, `internal/docs/content.go`, CLI help text in `cmd/orc/main.go`, or scaffold templates in `internal/scaffold/`?
+- Missing doc updates for externally visible changes are blocking.
+
 ## Step 4: Run Tests
 
 ```bash
@@ -149,6 +154,7 @@ Err on the side of blocking. If you're uncertain whether something is blocking o
 - **Race conditions** in concurrent code — blocking.
 - **Nil pointer dereferences** or index-out-of-range risks — blocking.
 - **Convention violations that affect correctness** (missing error wrapping that breaks error chains used by callers) — blocking.
+- **Missing documentation updates** for externally visible changes (new/changed CLI commands, flags, config fields, user-facing behavior) — blocking.
 
 ## What is NOT Blocking (classify as suggestion only)
 

@@ -48,6 +48,7 @@ Do NOT skip this step. Do NOT trust the plan's descriptions without checking the
 - Is the test strategy concrete (specific test names, specific test files, specific patterns to follow)?
 - Are there missing steps that an implementer would have to figure out on their own?
 - Are there hidden dependencies between implementation steps that aren't called out?
+- If the roadmap item introduces user-visible behavior changes, does the "Files to Modify" table include relevant doc files (`README.md`, `internal/docs/content.go`, `cmd/orc/main.go`, `internal/scaffold/`)?
 
 ### B. Correctness
 - Does the implementation approach actually achieve the acceptance criteria?
@@ -114,6 +115,7 @@ Do NOT write plan-approved.txt. The plan agent will revise based on your finding
 Err on the side of blocking. If you're uncertain whether something is blocking or a suggestion, **classify it as blocking.** The plan agent can address it, and you can downgrade it on the next pass if the fix reveals it was minor. The cost of a false negative (missing a real issue) is much higher than a false positive (flagging something that turns out to be minor).
 
 - **Missing files** in the "Files to Modify" table — always blocking.
+- **Missing doc files** in the "Files to Modify" table when the change introduces user-visible behavior — always blocking.
 - **Inaccurate technical claims** (wrong function names, wrong file paths, wrong behavior descriptions) — always blocking. Verify by reading the source.
 - **Missing acceptance criteria coverage** — always blocking.
 - **Vague test strategy** ("add appropriate tests") — always blocking. Must name specific test functions and files.
