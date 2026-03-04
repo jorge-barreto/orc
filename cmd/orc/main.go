@@ -7,11 +7,12 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/jorge-barreto/orc/internal/config"
 	"github.com/jorge-barreto/orc/internal/dispatch"
-	"github.com/jorge-barreto/orc/internal/doctor"
 	"github.com/jorge-barreto/orc/internal/docs"
+	"github.com/jorge-barreto/orc/internal/doctor"
 	"github.com/jorge-barreto/orc/internal/runner"
 	"github.com/jorge-barreto/orc/internal/scaffold"
 	"github.com/jorge-barreto/orc/internal/state"
@@ -222,6 +223,16 @@ func cancelCmd() *cli.Command {
 				return fmt.Errorf("removing artifacts: %w", err)
 			}
 
+			// Rotate audit dir so it's preserved but distinguishable from future runs
+			auditDir := state.AuditDir(projectRoot, ticket)
+			if _, err := os.Stat(auditDir); err == nil {
+				ts := time.Now().Format("060102-150405")
+				rotated := filepath.Join(state.AuditBaseDir(projectRoot), fmt.Sprintf("%s-%s", ticket, ts))
+				if err := os.Rename(auditDir, rotated); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to rotate audit dir: %v\n", err)
+				}
+			}
+
 			fmt.Printf("%s✓ Cancelled ticket %s — artifacts removed%s\n", ux.Green, ticket, ux.Reset)
 			return nil
 		},
@@ -250,7 +261,8 @@ func statusCmd() *cli.Command {
 			// No argument: show all tickets
 			if ticket == "" {
 				baseDir := filepath.Join(projectRoot, ".orc", "artifacts")
-				tickets, err := state.ListTickets(baseDir)
+				baseAuditDir := state.AuditBaseDir(projectRoot)
+				tickets, err := state.ListTickets(baseDir, baseAuditDir)
 				if err != nil {
 					return fmt.Errorf("listing tickets: %w", err)
 				}
@@ -269,7 +281,8 @@ func statusCmd() *cli.Command {
 				return fmt.Errorf("loading state: %w", err)
 			}
 
-			ux.RenderStatus(cfg, st, artifactsDir)
+			auditDir := state.AuditDir(projectRoot, ticket)
+			ux.RenderStatus(cfg, st, artifactsDir, auditDir)
 			return nil
 		},
 	}

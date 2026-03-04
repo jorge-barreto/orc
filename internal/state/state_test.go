@@ -63,7 +63,7 @@ func TestSetPhase(t *testing.T) {
 
 func TestListTickets_Empty(t *testing.T) {
 	dir := t.TempDir()
-	tickets, err := ListTickets(dir)
+	tickets, err := ListTickets(dir, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestListTickets_Empty(t *testing.T) {
 }
 
 func TestListTickets_NoDir(t *testing.T) {
-	tickets, err := ListTickets(filepath.Join(t.TempDir(), "nonexistent"))
+	tickets, err := ListTickets(filepath.Join(t.TempDir(), "nonexistent"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestListTickets_MultipleTickets(t *testing.T) {
 		st.Save(ad)
 	}
 
-	tickets, err := ListTickets(dir)
+	tickets, err := ListTickets(dir, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestListTickets_SkipDirWithoutState(t *testing.T) {
 
 	os.MkdirAll(filepath.Join(dir, "empty-dir"), 0755)
 
-	tickets, err := ListTickets(dir)
+	tickets, err := ListTickets(dir, "")
 	if err != nil {
 		t.Fatal(err)
 	}

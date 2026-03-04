@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/jorge-barreto/orc/internal/config"
@@ -13,18 +14,22 @@ import (
 	"github.com/jorge-barreto/orc/internal/ux"
 )
 
-const maxLogLines = 200
+const (
+	maxLogLines      = 200
+	maxOtherLogLines = 100
+	maxIterLogLines  = 150
+)
 
 const diagPrompt = `You are diagnosing a failed orc workflow phase. Analyze the context below and provide a concise diagnosis.
 
 ## Failed Phase Config
 %s
 
-## Phase Log Output (last %d lines)
+## Failed Phase Log Output (last %d lines)
 %s
-%s%s%s
+%s%s%s%s%s
 Instructions:
-1. Identify what went wrong from the log output.
+1. Identify what went wrong from the log output. Cross-reference with other phase logs and previous iterations if available.
 2. Classify this as a WORKFLOW problem (config, phase ordering, missing outputs) or a CODE problem (the task the agent was working on).
 3. Suggest specific fixes.
 4. Recommend the next command to run:
@@ -45,16 +50,19 @@ func Run(ctx context.Context, projectRoot, artifactsDir string, cfg *config.Conf
 		return fmt.Errorf("phase index %d out of range (config has %d phases)", st.PhaseIndex, len(cfg.Phases))
 	}
 
+	auditDir := state.AuditDir(projectRoot, st.Ticket)
 	phase := cfg.Phases[st.PhaseIndex]
 
 	phaseConfig := gatherPhaseConfig(phase)
 	log := gatherLog(artifactsDir, st.PhaseIndex)
 	prompt := gatherPrompt(artifactsDir, st.PhaseIndex, phase)
 	feedback := gatherFeedback(artifactsDir)
-	timing := gatherTiming(artifactsDir, phase.Name)
+	timing := gatherTimingWithFallback(auditDir, artifactsDir, phase.Name)
 	loops := gatherLoopCounts(artifactsDir)
+	otherLogs := gatherAllLogs(artifactsDir, cfg.Phases, st.PhaseIndex)
+	iterLogs := gatherIterationLogs(auditDir, st.PhaseIndex)
 
-	diagText := buildPrompt(phaseConfig, log, prompt, feedback, timing, loops)
+	diagText := buildPrompt(phaseConfig, log, prompt, feedback, timing, loops, otherLogs, iterLogs)
 
 	model := cfg.Model
 	if model == "" {
@@ -74,8 +82,8 @@ func Run(ctx context.Context, projectRoot, artifactsDir string, cfg *config.Conf
 	return nil
 }
 
-func buildPrompt(phaseConfig, log, prompt, feedback, timing, loops string) string {
-	var promptSection, feedbackSection, timingSection string
+func buildPrompt(phaseConfig, log, prompt, feedback, timing, loops, otherLogs, iterLogs string) string {
+	var promptSection, feedbackSection, timingSection, otherLogsSection, iterLogsSection string
 	if prompt != "" {
 		promptSection = fmt.Sprintf("\n## Agent Prompt\n%s\n", prompt)
 	}
@@ -93,8 +101,14 @@ func buildPrompt(phaseConfig, log, prompt, feedback, timing, loops string) strin
 	if len(extras) > 0 {
 		timingSection = fmt.Sprintf("\n## Execution Context\n%s\n", strings.Join(extras, "\n"))
 	}
+	if otherLogs != "" {
+		otherLogsSection = fmt.Sprintf("\n## Other Phase Logs\n%s\n", otherLogs)
+	}
+	if iterLogs != "" {
+		iterLogsSection = fmt.Sprintf("\n## Previous Iterations of Failed Phase\n%s\n", iterLogs)
+	}
 
-	return fmt.Sprintf(diagPrompt, phaseConfig, maxLogLines, log, promptSection, feedbackSection, timingSection)
+	return fmt.Sprintf(diagPrompt, phaseConfig, maxLogLines, log, promptSection, feedbackSection, timingSection, otherLogsSection, iterLogsSection)
 }
 
 func gatherPhaseConfig(phase config.Phase) string {
@@ -178,8 +192,17 @@ func gatherFeedback(artifactsDir string) string {
 	return strings.Join(parts, "\n")
 }
 
-func gatherTiming(artifactsDir, phaseName string) string {
-	timing, err := state.LoadTiming(artifactsDir)
+// gatherTimingWithFallback tries the audit dir first, falls back to artifacts dir.
+func gatherTimingWithFallback(auditDir, artifactsDir, phaseName string) string {
+	result := gatherTiming(auditDir, phaseName)
+	if result == "" {
+		result = gatherTiming(artifactsDir, phaseName)
+	}
+	return result
+}
+
+func gatherTiming(dir, phaseName string) string {
+	timing, err := state.LoadTiming(dir)
 	if err != nil {
 		return ""
 	}
@@ -212,6 +235,67 @@ func gatherLoopCounts(artifactsDir string) string {
 		parts = append(parts, fmt.Sprintf("%s=%d", k, v))
 	}
 	return strings.Join(parts, ", ")
+}
+
+// gatherAllLogs reads log files from all phases except the failed one.
+// Each phase's log is truncated to maxOtherLogLines lines.
+func gatherAllLogs(artifactsDir string, phases []config.Phase, failedIdx int) string {
+	var parts []string
+	for i, p := range phases {
+		if i == failedIdx {
+			continue
+		}
+		path := state.LogPath(artifactsDir, i)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		content := strings.TrimSpace(string(data))
+		if content == "" {
+			continue
+		}
+		content = truncateLines(content, maxOtherLogLines)
+		parts = append(parts, fmt.Sprintf("### Phase %d: %s\n%s", i+1, p.Name, content))
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+// gatherIterationLogs reads archived iteration logs from the audit dir.
+// Returns formatted content from all previous iterations of the given phase.
+func gatherIterationLogs(auditDir string, phaseIdx int) string {
+	logsDir := filepath.Join(auditDir, "logs")
+	pattern := fmt.Sprintf("phase-%d.iter-*.log", phaseIdx+1)
+	matches, err := filepath.Glob(filepath.Join(logsDir, pattern))
+	if err != nil || len(matches) == 0 {
+		return ""
+	}
+	sort.Strings(matches)
+
+	var parts []string
+	for _, m := range matches {
+		data, err := os.ReadFile(m)
+		if err != nil {
+			continue
+		}
+		content := strings.TrimSpace(string(data))
+		if content == "" {
+			continue
+		}
+		content = truncateLines(content, maxIterLogLines)
+		name := filepath.Base(m)
+		parts = append(parts, fmt.Sprintf("### %s\n%s", name, content))
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+// truncateLines returns the last maxLines lines of content, with a truncation notice if needed.
+func truncateLines(content string, maxLines int) string {
+	lines := strings.Split(content, "\n")
+	if len(lines) <= maxLines {
+		return content
+	}
+	lines = lines[len(lines)-maxLines:]
+	return fmt.Sprintf("... (truncated to last %d lines)\n%s", maxLines, strings.Join(lines, "\n"))
 }
 
 func filteredEnv() []string {

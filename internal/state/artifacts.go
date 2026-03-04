@@ -138,3 +138,23 @@ func LogPath(artifactsDir string, idx int) string {
 func StreamLogPath(artifactsDir string, idx int) string {
 	return filepath.Join(artifactsDir, "logs", fmt.Sprintf("phase-%d.stream.jsonl", idx+1))
 }
+
+// AuditBaseDir returns the base audit directory for the project.
+func AuditBaseDir(projectRoot string) string {
+	return filepath.Join(projectRoot, ".orc", "audit")
+}
+
+// AuditDir returns the audit directory for a specific ticket.
+func AuditDir(projectRoot, ticket string) string {
+	return filepath.Join(projectRoot, ".orc", "audit", ticket)
+}
+
+// AuditLogPath returns the path for an archived iteration log in the audit dir.
+func AuditLogPath(auditDir string, phaseIdx, iteration int) string {
+	return filepath.Join(auditDir, "logs", fmt.Sprintf("phase-%d.iter-%d.log", phaseIdx+1, iteration))
+}
+
+// AuditPromptPath returns the path for an archived iteration prompt in the audit dir.
+func AuditPromptPath(auditDir string, phaseIdx, iteration int) string {
+	return filepath.Join(auditDir, "prompts", fmt.Sprintf("phase-%d.iter-%d.md", phaseIdx+1, iteration))
+}

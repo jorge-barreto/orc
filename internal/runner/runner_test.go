@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -881,7 +882,7 @@ func TestRun_CostsTrackedForAgentPhases(t *testing.T) {
 	}
 
 	// Verify costs.json was created
-	costs, err := state.LoadCosts(r.Env.ArtifactsDir)
+	costs, err := state.LoadCosts(state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -925,7 +926,7 @@ func TestRun_CostsTrackedZeroCost(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	costs, err := state.LoadCosts(r.Env.ArtifactsDir)
+	costs, err := state.LoadCosts(state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -953,7 +954,7 @@ func TestRun_NoCostsForScriptPhases(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	costs, err := state.LoadCosts(r.Env.ArtifactsDir)
+	costs, err := state.LoadCosts(state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1507,5 +1508,123 @@ func TestRun_LoopCheckOmittedPreservesBehavior(t *testing.T) {
 	calls := mock.callNames()
 	if len(calls) != 3 || calls[0] != "a" || calls[1] != "b" || calls[2] != "c" {
 		t.Fatalf("calls = %v, want [a b c]", calls)
+	}
+}
+
+// callbackDispatcher allows per-call custom behavior in tests.
+type callbackDispatcher struct {
+	fn func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error)
+}
+
+func (d *callbackDispatcher) Dispatch(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+	return d.fn(ctx, phase, env)
+}
+
+func TestRun_LoopArchivesLogs(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo", Loop: &config.Loop{Goto: "a", Min: 1, Max: 3}},
+		},
+	}
+	callCount := 0
+	mock := &callbackDispatcher{
+		fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+			callCount++
+			// Write something to the log so we can verify archiving
+			logPath := state.LogPath(env.ArtifactsDir, env.PhaseIndex)
+			os.MkdirAll(filepath.Dir(logPath), 0755)
+			os.WriteFile(logPath, []byte(fmt.Sprintf("log from call %d phase %s", callCount, phase.Name)), 0644)
+
+			if phase.Name == "b" && callCount <= 2 {
+				return &dispatch.Result{ExitCode: 1, Output: "fail"}, nil
+			}
+			return &dispatch.Result{ExitCode: 0}, nil
+		},
+	}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify audit dir has archived iteration logs for phase b (index 1)
+	auditDir := state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket)
+	iter1Log := state.AuditLogPath(auditDir, 1, 1)
+	if _, err := os.Stat(iter1Log); os.IsNotExist(err) {
+		t.Fatalf("expected archived log at %s", iter1Log)
+	}
+	data, err := os.ReadFile(iter1Log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "phase b") {
+		t.Fatalf("archived log should contain phase b content, got %q", string(data))
+	}
+}
+
+func TestRun_NoArchiveOnFirstDispatch(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	auditDir := state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket)
+	matches, _ := filepath.Glob(filepath.Join(auditDir, "logs", "*.iter-*.log"))
+	if len(matches) != 0 {
+		t.Fatalf("expected no iteration archives, got %v", matches)
+	}
+}
+
+func TestRun_CostsWrittenToAuditDir(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet"},
+		},
+	}
+	mock := newMock()
+	mock.results["a"] = &dispatch.Result{
+		ExitCode:     0,
+		CostUSD:      1.23,
+		InputTokens:  5000,
+		OutputTokens: 2000,
+		Turns:        1,
+	}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Costs should be in audit dir
+	auditDir := state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket)
+	costs, err := state.LoadCosts(auditDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if costs.TotalCostUSD != 1.23 {
+		t.Fatalf("total cost = %f, want 1.23", costs.TotalCostUSD)
+	}
+
+	// Costs should NOT be in artifacts dir
+	artCosts, err := state.LoadCosts(r.Env.ArtifactsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(artCosts.Phases) != 0 {
+		t.Fatalf("expected no costs in artifacts dir, got %d entries", len(artCosts.Phases))
 	}
 }
