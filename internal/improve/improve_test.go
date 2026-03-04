@@ -306,6 +306,22 @@ func TestReadAuditSummary_WithData(t *testing.T) {
 	timingJSON := `{"entries":[{"phase":"plan","start":"2026-01-01T00:00:00Z","end":"2026-01-01T00:02:15Z","duration":"2m 15s"}]}`
 	os.WriteFile(filepath.Join(auditDir, "timing.json"), []byte(timingJSON), 0644)
 
+	// Add phase logs, feedback, state, and artifacts
+	os.MkdirAll(filepath.Join(auditDir, "logs"), 0755)
+	os.WriteFile(filepath.Join(auditDir, "logs", "phase-1.iter-1.log"), []byte("plan output content"), 0644)
+
+	os.MkdirAll(filepath.Join(auditDir, "feedback"), 0755)
+	os.WriteFile(filepath.Join(auditDir, "feedback", "phase-3.iter-2.from-review.md"), []byte("review feedback content"), 0644)
+
+	artifactsDir := filepath.Join(dir, ".orc", "artifacts", "TEST-1")
+	os.MkdirAll(filepath.Join(artifactsDir, "logs"), 0755)
+	os.WriteFile(filepath.Join(artifactsDir, "logs", "phase-1.log"), []byte("final plan log"), 0644)
+
+	os.MkdirAll(filepath.Join(artifactsDir, "feedback"), 0755)
+	os.WriteFile(filepath.Join(artifactsDir, "feedback", "from-review.md"), []byte("current feedback"), 0644)
+
+	os.WriteFile(filepath.Join(artifactsDir, "state.json"), []byte(`{"phase_index": 3, "ticket": "TEST-1", "status": "completed"}`), 0644)
+
 	result := readAuditSummary(dir)
 	if !strings.Contains(result, "TEST-1") {
 		t.Errorf("result should contain ticket name, got: %s", result)
@@ -315,6 +331,121 @@ func TestReadAuditSummary_WithData(t *testing.T) {
 	}
 	if !strings.Contains(result, "2m 15s") {
 		t.Errorf("result should contain timing, got: %s", result)
+	}
+	if !strings.Contains(result, "plan output content") {
+		t.Errorf("result should contain archived log, got: %s", result)
+	}
+	if !strings.Contains(result, "review feedback content") {
+		t.Errorf("result should contain archived feedback, got: %s", result)
+	}
+	if !strings.Contains(result, "final plan log") {
+		t.Errorf("result should contain artifacts log, got: %s", result)
+	}
+	if !strings.Contains(result, "Run status: completed") {
+		t.Errorf("result should contain run status, got: %s", result)
+	}
+}
+
+func TestGatherPhaseLogs(t *testing.T) {
+	dir := t.TempDir()
+	auditDir := filepath.Join(dir, "audit", "TEST-1")
+	artifactsDir := filepath.Join(dir, "artifacts", "TEST-1")
+
+	os.MkdirAll(filepath.Join(auditDir, "logs"), 0755)
+	os.WriteFile(filepath.Join(auditDir, "logs", "phase-1.iter-1.log"), []byte("iteration 1 log content"), 0644)
+	os.WriteFile(filepath.Join(auditDir, "logs", "phase-2.iter-1.log"), []byte("phase 2 iter 1"), 0644)
+
+	os.MkdirAll(filepath.Join(artifactsDir, "logs"), 0755)
+	os.WriteFile(filepath.Join(artifactsDir, "logs", "phase-1.log"), []byte("final phase 1 log"), 0644)
+	os.WriteFile(filepath.Join(artifactsDir, "logs", "phase-2.log"), []byte("final phase 2 log"), 0644)
+
+	result := gatherPhaseLogs(auditDir, artifactsDir)
+	for _, want := range []string{
+		"iteration 1 log content",
+		"phase 2 iter 1",
+		"final phase 1 log",
+		"final phase 2 log",
+		"#### Log:",
+		"```",
+	} {
+		if !strings.Contains(result, want) {
+			t.Errorf("result missing %q, got: %s", want, result)
+		}
+	}
+}
+
+func TestGatherPhaseLogs_Empty(t *testing.T) {
+	result := gatherPhaseLogs("/nonexistent/audit", "/nonexistent/artifacts")
+	if result != "" {
+		t.Fatalf("expected empty string, got: %q", result)
+	}
+}
+
+func TestGatherFeedback(t *testing.T) {
+	dir := t.TempDir()
+	auditDir := filepath.Join(dir, "audit", "TEST-1")
+	artifactsDir := filepath.Join(dir, "artifacts", "TEST-1")
+
+	os.MkdirAll(filepath.Join(auditDir, "feedback"), 0755)
+	os.WriteFile(filepath.Join(auditDir, "feedback", "phase-3.iter-2.from-review-plan.md"), []byte("# Review feedback\nFix the bug"), 0644)
+
+	os.MkdirAll(filepath.Join(artifactsDir, "feedback"), 0755)
+	os.WriteFile(filepath.Join(artifactsDir, "feedback", "from-review.md"), []byte("# Current feedback\nNot done yet"), 0644)
+
+	result := gatherFeedback(auditDir, artifactsDir)
+	for _, want := range []string{
+		"Review feedback",
+		"Current feedback",
+		"#### Feedback:",
+	} {
+		if !strings.Contains(result, want) {
+			t.Errorf("result missing %q, got: %s", want, result)
+		}
+	}
+}
+
+func TestGatherFeedback_Empty(t *testing.T) {
+	result := gatherFeedback("/nonexistent/audit", "/nonexistent/artifacts")
+	if result != "" {
+		t.Fatalf("expected empty string, got: %q", result)
+	}
+}
+
+func TestGatherRunStatus_Failed(t *testing.T) {
+	dir := t.TempDir()
+	artifactsDir := filepath.Join(dir, "artifacts", "TEST-1")
+	os.MkdirAll(artifactsDir, 0755)
+	os.WriteFile(filepath.Join(artifactsDir, "state.json"), []byte(`{"phase_index": 4, "ticket": "TEST-1", "status": "failed"}`), 0644)
+
+	result := gatherRunStatus(artifactsDir)
+	if !strings.Contains(result, "Run status: failed") {
+		t.Errorf("result should contain 'Run status: failed', got: %q", result)
+	}
+	if !strings.Contains(result, "phase 5") {
+		t.Errorf("result should contain 'phase 5' (1-indexed), got: %q", result)
+	}
+}
+
+func TestGatherRunStatus_Completed(t *testing.T) {
+	dir := t.TempDir()
+	artifactsDir := filepath.Join(dir, "artifacts", "TEST-1")
+	os.MkdirAll(artifactsDir, 0755)
+	os.WriteFile(filepath.Join(artifactsDir, "state.json"), []byte(`{"phase_index": 3, "ticket": "TEST-1", "status": "completed"}`), 0644)
+
+	result := gatherRunStatus(artifactsDir)
+	if result != "- Run status: completed" {
+		t.Errorf("expected '- Run status: completed', got: %q", result)
+	}
+	if strings.Contains(result, "phase") {
+		t.Errorf("completed status should not contain 'phase', got: %q", result)
+	}
+}
+
+func TestGatherRunStatus_NoState(t *testing.T) {
+	dir := t.TempDir()
+	result := gatherRunStatus(dir)
+	if result != "" {
+		t.Fatalf("expected empty string, got: %q", result)
 	}
 }
 

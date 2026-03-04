@@ -2,11 +2,13 @@ package improve
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 
@@ -94,8 +96,23 @@ func readAuditSummary(projectRoot string) string {
 			lines = append(lines, fmt.Sprintf("- Loop iterations: %s", strings.Join(loopParts, ", ")))
 		}
 
-		if len(lines) > 0 {
-			parts = append(parts, fmt.Sprintf("### Ticket: %s\n%s", ticket, strings.Join(lines, "\n")))
+		runStatus := gatherRunStatus(artifactsDir)
+		if runStatus != "" {
+			lines = append(lines, runStatus)
+		}
+
+		phaseLogs := gatherPhaseLogs(auditDir, artifactsDir)
+		feedback := gatherFeedback(auditDir, artifactsDir)
+
+		if len(lines) > 0 || phaseLogs != "" || feedback != "" {
+			section := fmt.Sprintf("### Ticket: %s\n%s", ticket, strings.Join(lines, "\n"))
+			if phaseLogs != "" {
+				section += "\n\n" + phaseLogs
+			}
+			if feedback != "" {
+				section += "\n\n" + feedback
+			}
+			parts = append(parts, section)
 		}
 	}
 
@@ -104,6 +121,73 @@ func readAuditSummary(projectRoot string) string {
 	}
 	return "The following data is from previous workflow runs. Use it to inform your suggestions.\n\n" +
 		strings.Join(parts, "\n\n")
+}
+
+func gatherPhaseLogs(auditDir, artifactsDir string) string {
+	// Archived iteration logs from previous loop iterations
+	auditMatches, _ := filepath.Glob(filepath.Join(auditDir, "logs", "phase-*.iter-*.log"))
+	// Final iteration logs in current artifacts dir
+	artifactMatches, _ := filepath.Glob(filepath.Join(artifactsDir, "logs", "phase-*.log"))
+
+	all := append(auditMatches, artifactMatches...)
+	sort.Strings(all)
+
+	var entries []string
+	for _, path := range all {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		content := strings.TrimSpace(string(data))
+		if content == "" {
+			continue
+		}
+		entries = append(entries, fmt.Sprintf("#### Log: %s\n```\n%s\n```", filepath.Base(path), content))
+	}
+	return strings.Join(entries, "\n\n")
+}
+
+func gatherFeedback(auditDir, artifactsDir string) string {
+	auditMatches, _ := filepath.Glob(filepath.Join(auditDir, "feedback", "*.md"))
+	artifactMatches, _ := filepath.Glob(filepath.Join(artifactsDir, "feedback", "*.md"))
+
+	all := append(auditMatches, artifactMatches...)
+	sort.Strings(all)
+
+	var entries []string
+	for _, path := range all {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		content := strings.TrimSpace(string(data))
+		if content == "" {
+			continue
+		}
+		entries = append(entries, fmt.Sprintf("#### Feedback: %s\n%s", filepath.Base(path), content))
+	}
+	return strings.Join(entries, "\n\n")
+}
+
+func gatherRunStatus(artifactsDir string) string {
+	data, err := os.ReadFile(filepath.Join(artifactsDir, "state.json"))
+	if err != nil {
+		return ""
+	}
+	var s struct {
+		PhaseIndex int    `json:"phase_index"`
+		Status     string `json:"status"`
+	}
+	if err := json.Unmarshal(data, &s); err != nil {
+		return ""
+	}
+	if s.Status == "" {
+		return ""
+	}
+	if s.Status == "failed" {
+		return fmt.Sprintf("- Run status: failed (at phase %d)", s.PhaseIndex+1)
+	}
+	return fmt.Sprintf("- Run status: %s", s.Status)
 }
 
 // OneShot reads the current config, sends it to Claude with the user's instruction,
