@@ -166,9 +166,26 @@ func printSuccess(source string, written []string) {
 // runClaude is the function used to invoke claude. Tests can override this.
 var runClaude = runClaudeCaptureDefault
 
-// runClaudeCaptureDefault invokes claude -p with the given prompt and returns stdout.
+// runClaudeCaptureDefault writes the prompt to a temp file and invokes claude -p
+// with a short instruction to read it. This avoids ARG_MAX limits when the prompt
+// (schema + examples + project context) exceeds the OS command-line size limit.
 func runClaudeCaptureDefault(ctx context.Context, prompt string) (string, error) {
-	cmd := exec.CommandContext(ctx, "claude", "-p", prompt, "--model", "opus", "--effort", "high")
+	f, err := os.CreateTemp("", "orc-init-prompt-*.md")
+	if err != nil {
+		return "", fmt.Errorf("creating prompt file: %w", err)
+	}
+	promptFile := f.Name()
+	defer os.Remove(promptFile)
+
+	if _, err := f.WriteString(prompt); err != nil {
+		f.Close()
+		return "", fmt.Errorf("writing prompt file: %w", err)
+	}
+	f.Close()
+
+	cmd := exec.CommandContext(ctx, "claude", "-p",
+		"Read the file at "+promptFile+" and follow its instructions exactly.",
+		"--model", "opus", "--effort", "high")
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = os.Stderr
