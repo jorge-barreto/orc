@@ -54,7 +54,11 @@ func SaveLoopCounts(artifactsDir string, counts map[string]int) error {
 
 // WriteFeedback writes error output from a failing phase to the feedback directory.
 func WriteFeedback(artifactsDir, fromPhase, content string) error {
-	path := filepath.Join(artifactsDir, "feedback", fmt.Sprintf("from-%s.md", fromPhase))
+	feedbackDir := filepath.Join(artifactsDir, "feedback")
+	if err := os.MkdirAll(feedbackDir, 0755); err != nil {
+		return fmt.Errorf("creating feedback dir: %w", err)
+	}
+	path := filepath.Join(feedbackDir, fmt.Sprintf("from-%s.md", fromPhase))
 	return writeFileAtomic(path, []byte(content), 0644)
 }
 

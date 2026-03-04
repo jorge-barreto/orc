@@ -319,7 +319,7 @@ func (r *Runner) Run(ctx context.Context) error {
 					output = result.Output
 				}
 				if err := state.WriteFeedback(r.Env.ArtifactsDir, phase.Name, output); err != nil {
-					return err
+					return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("writing feedback: %w", err))
 				}
 
 				r.Timing.AddEnd(phase.Name)
@@ -327,7 +327,7 @@ func (r *Runner) Run(ctx context.Context) error {
 
 				r.State.SetPhase(gotoIdx)
 				if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
-					return fmt.Errorf("saving state after loop iteration: %w", err)
+					return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("saving state after loop iteration: %w", err))
 				}
 				continue
 			}
@@ -425,7 +425,7 @@ func (r *Runner) handleLoopFailure(i int, phase config.Phase, loopCounts map[str
 			header := fmt.Sprintf("Convergence failed after %d iterations (min: %d, max: %d). Last iteration output follows:\n\n",
 				iteration, phase.Loop.Min, phase.Loop.Max)
 			if err := state.WriteFeedback(r.Env.ArtifactsDir, phase.Name, header+output); err != nil {
-				return false, err
+				return false, r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("writing feedback: %w", err))
 			}
 
 			ux.LoopExhausted(phase.Name, iteration)
@@ -433,7 +433,7 @@ func (r *Runner) handleLoopFailure(i int, phase config.Phase, loopCounts map[str
 
 			r.State.SetPhase(gotoIdx)
 			if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
-				return false, fmt.Errorf("saving state after loop exhaustion: %w", err)
+				return false, r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("saving state after loop exhaustion: %w", err))
 			}
 			return true, nil
 		}
@@ -463,14 +463,14 @@ func (r *Runner) handleLoopFailure(i int, phase config.Phase, loopCounts map[str
 		return false, r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("saving loop counts: %w", err))
 	}
 	if err := state.WriteFeedback(r.Env.ArtifactsDir, phase.Name, output); err != nil {
-		return false, err
+		return false, r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("writing feedback: %w", err))
 	}
 
 	ux.LoopBack(phase.Name, phase.Loop.Goto, iteration, phase.Loop.Max)
 
 	r.State.SetPhase(gotoIdx)
 	if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
-		return false, fmt.Errorf("saving state after loop-back: %w", err)
+		return false, r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("saving state after loop-back: %w", err))
 	}
 	return true, nil
 }
