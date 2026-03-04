@@ -78,8 +78,8 @@ CLI Flags
   orc run <ticket>              Run the workflow
   orc run <ticket> --auto       Skip human gate phases
   orc run <ticket> --dry-run    Preview phase plan
-  orc run <ticket> --retry N    Retry from phase N (1-indexed)
-  orc run <ticket> --from N     Start from phase N (1-indexed)
+  orc run <ticket> --retry <phase>    Retry from phase (number or name)
+  orc run <ticket> --from <phase>     Start from phase (number or name)
   orc cancel <ticket>           Cancel run and remove all artifacts
   orc cancel <ticket> --force   Cancel even if a run appears active
   orc status <ticket>           Show workflow status for a ticket
@@ -90,7 +90,8 @@ CLI Flags
   orc improve "..."             Apply a specific change to the workflow
   orc improve                   Interactive AI-assisted workflow refinement
 
---retry and --from are mutually exclusive. Both reset loop counts.
+--retry and --from accept a 1-indexed phase number or a phase name.
+They are mutually exclusive. Both reset loop counts.
 `
 
 const topicConfig = `Configuration Reference
@@ -500,8 +501,9 @@ orc automatically resumes from the last completed phase. State is saved
 to .orc/artifacts/<ticket>/state.json after every phase. To manually control the
 resume point:
 
-  orc run TICKET --retry 3    Retry from phase 3 (re-runs phase 3)
-  orc run TICKET --from 2     Start from phase 2 (skips phase 1)
+  orc run TICKET --retry 3           Retry from phase 3 (re-runs phase 3)
+  orc run TICKET --from 2            Start from phase 2 (skips phase 1)
+  orc run TICKET --from implement    Start from the "implement" phase
 
 Both flags reset loop counts.
 

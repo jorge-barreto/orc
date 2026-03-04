@@ -87,8 +87,9 @@ Runs the workflow for the given ticket identifier.
 orc run PROJ-123
 orc run PROJ-123 --auto        # unattended — skip gates, no steering
 orc run PROJ-123 --dry-run     # preview without executing
-orc run PROJ-123 --retry 3     # retry from phase 3
-orc run PROJ-123 --from 2      # start from phase 2
+orc run PROJ-123 --retry 3           # retry from phase 3
+orc run PROJ-123 --from implement    # start from the "implement" phase
+orc run PROJ-123 --from 2            # still works with numbers
 orc run PROJ-123 --verbose     # save raw stream-json output
 ```
 
@@ -96,8 +97,8 @@ orc run PROJ-123 --verbose     # save raw stream-json output
 |------|-------------|
 | `--auto` | Unattended mode — skip all gates, no interactive steering |
 | `--dry-run` | Print the phase plan without executing |
-| `--retry N` | Retry from phase N (1-indexed), resets loop counts |
-| `--from N` | Start from phase N (1-indexed), resets loop counts |
+| `--retry <phase>` | Retry from phase (number or name), resets loop counts |
+| `--from <phase>` | Start from phase (number or name), resets loop counts |
 | `--verbose`, `-v` | Save raw stream-json output to `.stream.jsonl` files in the logs directory |
 
 `--retry` and `--from` are mutually exclusive.

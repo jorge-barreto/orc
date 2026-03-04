@@ -36,8 +36,8 @@ Instructions:
 2. Classify this as a WORKFLOW problem (config, phase ordering, missing outputs) or a CODE problem (the task the agent was working on).
 3. Suggest specific fixes.
 4. Recommend the next command to run:
-   - orc run --retry N <ticket>  (re-run just the failed phase)
-   - orc run --from N <ticket>   (re-run from phase N onward)
+   - orc run --retry <phase> <ticket>  (re-run just the failed phase; use number or name)
+   - orc run --from <phase> <ticket>   (re-run from a phase onward; use number or name)
    - Fix the underlying issue first, then retry
 
 Be direct and concise. Focus on actionable advice.`

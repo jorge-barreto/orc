@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -49,11 +51,11 @@ func runCmd() *cli.Command {
 		Name:      "run",
 		Usage:     "Run the workflow for a ticket",
 		ArgsUsage: "<ticket>",
-		UsageText: "orc run PROJ-123\n   orc run PROJ-123 --auto --verbose\n   orc run PROJ-123 --retry 3",
+		UsageText: "orc run PROJ-123\n   orc run PROJ-123 --auto --verbose\n   orc run PROJ-123 --retry implement",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{Name: "auto", Usage: "Unattended mode — skip gates, no interactive steering"},
-			&cli.IntFlag{Name: "retry", Usage: "Retry from phase N (1-indexed)"},
-			&cli.IntFlag{Name: "from", Usage: "Start from phase N (1-indexed)"},
+			&cli.StringFlag{Name: "retry", Usage: "Retry from phase number or name"},
+			&cli.StringFlag{Name: "from", Usage: "Start from phase number or name"},
 			&cli.BoolFlag{Name: "dry-run", Usage: "Print phase plan without executing"},
 			&cli.BoolFlag{Name: "verbose", Aliases: []string{"v"}, Usage: "Save raw stream-json output to .stream.jsonl files"},
 		},
@@ -116,26 +118,28 @@ func runCmd() *cli.Command {
 			st.Status = state.StatusRunning
 
 			// Handle --retry and --from (mutually exclusive)
-			retry := cmd.Int("retry")
-			from := cmd.Int("from")
-			if retry > 0 && from > 0 {
+			retryVal := cmd.String("retry")
+			fromVal := cmd.String("from")
+			if retryVal != "" && fromVal != "" {
 				return cfgErr(fmt.Errorf("--retry and --from are mutually exclusive"))
 			}
-			if retry > 0 {
-				if int(retry) > len(cfg.Phases) {
-					return cfgErr(fmt.Errorf("--retry %d exceeds phase count (%d)", retry, len(cfg.Phases)))
+			if retryVal != "" {
+				idx, err := resolvePhaseRef(retryVal, cfg.Phases)
+				if err != nil {
+					return cfgErr(fmt.Errorf("--retry: %w", err))
 				}
-				st.SetPhase(int(retry) - 1)
+				st.SetPhase(idx)
 			}
-			if from > 0 {
-				if int(from) > len(cfg.Phases) {
-					return cfgErr(fmt.Errorf("--from %d exceeds phase count (%d)", from, len(cfg.Phases)))
+			if fromVal != "" {
+				idx, err := resolvePhaseRef(fromVal, cfg.Phases)
+				if err != nil {
+					return cfgErr(fmt.Errorf("--from: %w", err))
 				}
-				st.SetPhase(int(from) - 1)
+				st.SetPhase(idx)
 			}
 
 			// Reset loop counts when resuming from a specific phase
-			if retry > 0 || from > 0 {
+			if retryVal != "" || fromVal != "" {
 				if err := state.EnsureDir(artifactsDir); err != nil {
 					return cfgErr(err)
 				}
@@ -410,4 +414,33 @@ func findProjectRoot() (string, error) {
 		}
 		dir = parent
 	}
+}
+
+// resolvePhaseRef resolves a --from/--retry value to a 0-based phase index.
+// It accepts a 1-indexed number (e.g., "3") or a phase name (e.g., "implement").
+// Numbers take precedence over names — a phase literally named "3" would be
+// resolved as numeric index 3, not as a name lookup.
+// Returns the 0-based index, or an error if the value is invalid.
+func resolvePhaseRef(value string, phases []config.Phase) (int, error) {
+	// Try as a number first (numbers take precedence over names)
+	if n, err := strconv.Atoi(value); err == nil {
+		if n < 1 || n > len(phases) {
+			return 0, fmt.Errorf("%d is out of range (1-%d)", n, len(phases))
+		}
+		return n - 1, nil
+	}
+
+	// Try as a phase name
+	for i, p := range phases {
+		if p.Name == value {
+			return i, nil
+		}
+	}
+
+	// Unknown name — list available phases
+	names := make([]string, len(phases))
+	for i, p := range phases {
+		names[i] = p.Name
+	}
+	return 0, fmt.Errorf("unknown phase %q — available phases: %s", value, strings.Join(names, ", "))
 }
