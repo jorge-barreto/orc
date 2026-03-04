@@ -31,15 +31,10 @@ phases:
     timeout: 10
     outputs:
       - plan-review.md
-
-  - name: plan-check
-    type: script
-    description: Check if plan review passed
-    run: test -f $ARTIFACTS_DIR/plan-approved.txt || { cat $ARTIFACTS_DIR/plan-review.md 2>/dev/null; exit 1; }
-    timeout: 1
     loop:
       goto: plan
       max: 3
+      check: test -f $ARTIFACTS_DIR/plan-approved.txt
 
   - name: implement
     type: agent
@@ -54,7 +49,10 @@ phases:
     timeout: 5
     loop:
       goto: implement
-      max: 11
+      max: 5
+      on-exhaust:
+        goto: plan
+        max: 2
 
   - name: review
     type: agent
@@ -63,15 +61,13 @@ phases:
     timeout: 15
     outputs:
       - review-findings.md
-
-  - name: review-check
-    type: script
-    description: Check if review passed
-    run: test -f $ARTIFACTS_DIR/review-pass.txt || { cat $ARTIFACTS_DIR/review-findings.md 2>/dev/null; exit 1; }
-    timeout: 1
     loop:
       goto: implement
       max: 3
+      check: test -f $ARTIFACTS_DIR/review-pass.txt
+      on-exhaust:
+        goto: plan
+        max: 2
 
   - name: commit
     type: script
