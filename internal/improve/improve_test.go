@@ -101,6 +101,9 @@ func TestBuildInteractiveContext(t *testing.T) {
 		map[string]string{".orc/phases/plan.md": "prompt"},
 		"",
 	)
+	if !strings.Contains(result, "You are orc") {
+		t.Error("context missing orc identity")
+	}
 	if !strings.Contains(result, "orc Config Schema Reference") {
 		t.Error("context missing schema reference")
 	}
@@ -113,8 +116,8 @@ func TestBuildInteractiveContext(t *testing.T) {
 	if strings.Contains(result, "Output Format") {
 		t.Error("interactive context should not contain 'Output Format'")
 	}
-	if strings.Contains(result, "Previous Run Data") {
-		t.Error("context should not contain 'Previous Run Data' when no audit data provided")
+	if !strings.Contains(result, "No run data yet") {
+		t.Error("context should contain no-data fallback when no audit data provided")
 	}
 }
 
@@ -124,11 +127,14 @@ func TestBuildInteractiveContext_WithAudit(t *testing.T) {
 		map[string]string{},
 		"Phase timing: plan (2m 15s)",
 	)
-	if !strings.Contains(result, "Previous Run Data") {
-		t.Error("context should contain 'Previous Run Data'")
+	if !strings.Contains(result, "My Run History") {
+		t.Error("context should contain 'My Run History'")
 	}
 	if !strings.Contains(result, "Phase timing: plan (2m 15s)") {
 		t.Error("context should contain audit timing data")
+	}
+	if !strings.Contains(result, "lead the conversation") {
+		t.Error("context should contain proactive analysis directive")
 	}
 }
 

@@ -44,9 +44,9 @@ type streamState struct {
 	hadText  bool
 }
 
-// processStream reads stream-json lines from stdout, routes text to display+log,
+// ProcessStream reads stream-json lines from stdout, routes text to display+log,
 // tracks tool use for inline display, and extracts the final result.
-func processStream(ctx context.Context, stdout io.Reader, display io.Writer, logFile io.Writer, rawLog io.Writer) (*StreamResult, error) {
+func ProcessStream(ctx context.Context, stdout io.Reader, display io.Writer, logFile io.Writer, rawLog io.Writer) (*StreamResult, error) {
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
 
@@ -126,9 +126,9 @@ type contentBlock struct {
 
 // nestedEvent is the inner event from stream_event messages.
 type nestedEvent struct {
-	Type         string         `json:"type"`
-	ContentBlock *contentBlock  `json:"content_block"`
-	Delta        *deltaBlock    `json:"delta"`
+	Type         string        `json:"type"`
+	ContentBlock *contentBlock `json:"content_block"`
+	Delta        *deltaBlock   `json:"delta"`
 }
 
 // deltaBlock holds the delta in content_block_delta events.

@@ -92,7 +92,7 @@ func runAgentTurn(ctx context.Context, phase config.Phase, env *Environment, pro
 		return nil, fmt.Errorf("starting claude: %w", err)
 	}
 
-	streamResult, streamErr := processStream(ctx, stdout, os.Stdout, logFile, rawLog)
+	streamResult, streamErr := ProcessStream(ctx, stdout, os.Stdout, logFile, rawLog)
 
 	code, waitErr := exitCode(cmd.Wait())
 	if waitErr != nil {

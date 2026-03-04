@@ -1,7 +1,6 @@
 package improve
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io/fs"
@@ -117,8 +116,7 @@ func OneShot(ctx context.Context, projectRoot, instruction string) error {
 	auditSummary := readAuditSummary(projectRoot)
 	prompt := buildOneShotPrompt(configYAML, phaseFiles, auditSummary, instruction)
 
-	fmt.Printf("  %sReading current config...%s\n", ux.Dim, ux.Reset)
-	fmt.Printf("  %sApplying change...%s\n", ux.Dim, ux.Reset)
+	fmt.Printf("  %sReading current config...%s\n\n", ux.Dim, ux.Reset)
 
 	output, err := runClaudeCapture(ctx, prompt)
 	if err != nil {
@@ -134,15 +132,32 @@ func OneShot(ctx context.Context, projectRoot, instruction string) error {
 }
 
 func runClaudeCapture(ctx context.Context, prompt string) (string, error) {
-	cmd := exec.CommandContext(ctx, "claude", "-p", prompt, "--model", "sonnet")
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = os.Stderr
+	cmd := exec.CommandContext(ctx, "claude", "-p", prompt,
+		"--model", "sonnet",
+		"--output-format", "stream-json",
+	)
 	cmd.Env = dispatch.FilteredEnv()
-	if err := cmd.Run(); err != nil {
+	cmd.Stderr = os.Stderr
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", fmt.Errorf("stdout pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("starting claude: %w", err)
+	}
+
+	result, streamErr := dispatch.ProcessStream(ctx, stdout, os.Stderr, nil, nil)
+
+	if err := cmd.Wait(); err != nil && streamErr == nil {
 		return "", fmt.Errorf("claude: %w", err)
 	}
-	return stdout.String(), nil
+	if streamErr != nil {
+		return "", streamErr
+	}
+
+	return result.Text, nil
 }
 
 func writeChanges(projectRoot string, blocks []fileblocks.FileBlock) error {
