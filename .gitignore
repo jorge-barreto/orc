@@ -1,4 +1,5 @@
 /orc
 .orc/artifacts/
+.orc/audit/
 .claude/
 reviews/

@@ -113,6 +113,20 @@ func BuildEnv(env *Environment) []string {
 	return result
 }
 
+// FilteredEnv returns os.Environ() with CLAUDECODE entries stripped.
+// Used by scaffold, doctor, and improve when invoking claude directly (not via the runner).
+func FilteredEnv() []string {
+	var env []string
+	for _, e := range os.Environ() {
+		key := strings.SplitN(e, "=", 2)[0]
+		if strings.HasPrefix(key, "CLAUDECODE") {
+			continue
+		}
+		env = append(env, e)
+	}
+	return env
+}
+
 // Dispatcher is the interface for dispatching phases. Tests can substitute a mock.
 type Dispatcher interface {
 	Dispatch(ctx context.Context, phase config.Phase, env *Environment) (*Result, error)

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/jorge-barreto/orc/internal/config"
+	"github.com/jorge-barreto/orc/internal/dispatch"
 	"github.com/jorge-barreto/orc/internal/state"
 	"github.com/jorge-barreto/orc/internal/ux"
 )
@@ -298,22 +299,10 @@ func truncateLines(content string, maxLines int) string {
 	return fmt.Sprintf("... (truncated to last %d lines)\n%s", maxLines, strings.Join(lines, "\n"))
 }
 
-func filteredEnv() []string {
-	var env []string
-	for _, e := range os.Environ() {
-		key := strings.SplitN(e, "=", 2)[0]
-		if strings.HasPrefix(key, "CLAUDECODE") {
-			continue
-		}
-		env = append(env, e)
-	}
-	return env
-}
-
 func runClaude(ctx context.Context, prompt, model string) error {
 	cmd := exec.CommandContext(ctx, "claude", "-p", prompt, "--model", model, "--effort", "high")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = filteredEnv()
+	cmd.Env = dispatch.FilteredEnv()
 	return cmd.Run()
 }

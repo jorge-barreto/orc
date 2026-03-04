@@ -119,6 +119,19 @@ orc docs phases        # phase type details
 
 Topics: `quickstart`, `config`, `phases`, `variables`, `runner`, `artifacts`, `quality-loops`.
 
+### `orc improve [instruction]`
+
+AI-assisted workflow refinement. Two modes:
+
+```bash
+orc improve "add a lint phase parallel with tests"    # one-shot
+orc improve                                            # interactive
+```
+
+**One-shot mode**: Reads your current config and prompt files, sends them to Claude with your instruction, validates the output, and writes changed files.
+
+**Interactive mode**: Launches Claude in interactive mode with your workflow context pre-loaded for a conversational editing experience.
+
 ## Configuration Reference
 
 Workflows are defined in `.orc/config.yaml`.

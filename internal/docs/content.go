@@ -87,6 +87,8 @@ CLI Flags
   orc init                      Initialize .orc/ directory (AI-powered)
   orc docs                      List documentation topics
   orc docs <topic>              Show a documentation topic
+  orc improve "..."             Apply a specific change to the workflow
+  orc improve                   Interactive AI-assisted workflow refinement
 
 --retry and --from are mutually exclusive. Both reset loop counts.
 `

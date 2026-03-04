@@ -13,6 +13,7 @@ import (
 	"github.com/jorge-barreto/orc/internal/dispatch"
 	"github.com/jorge-barreto/orc/internal/docs"
 	"github.com/jorge-barreto/orc/internal/doctor"
+	"github.com/jorge-barreto/orc/internal/improve"
 	"github.com/jorge-barreto/orc/internal/runner"
 	"github.com/jorge-barreto/orc/internal/scaffold"
 	"github.com/jorge-barreto/orc/internal/state"
@@ -33,6 +34,7 @@ func main() {
 			statusCmd(),
 			doctorCmd(),
 			docsCmd(),
+			improveCmd(),
 		},
 	}
 
@@ -359,6 +361,25 @@ func docsCmd() *cli.Command {
 			}
 			fmt.Print(t.Content)
 			return nil
+		},
+	}
+}
+
+func improveCmd() *cli.Command {
+	return &cli.Command{
+		Name:      "improve",
+		Usage:     "Refine workflow config with AI assistance",
+		ArgsUsage: "[instruction]",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			projectRoot, err := findProjectRoot()
+			if err != nil {
+				return err
+			}
+			instruction := cmd.Args().First()
+			if instruction == "" {
+				return improve.Interactive(projectRoot)
+			}
+			return improve.OneShot(ctx, projectRoot, instruction)
 		},
 	}
 }
