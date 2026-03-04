@@ -22,7 +22,7 @@ const initPromptMiddle = `
 
 ### Example 1: Go backend service
 
-` + "```" + `yaml file=.orc/config.yaml
+` + "````" + `yaml file=.orc/config.yaml
 name: my-go-service
 ticket-pattern: '[A-Z]+-\d+'
 
@@ -65,11 +65,11 @@ phases:
   - name: review
     type: gate
     description: Final human review before merging
-` + "```" + `
+` + "````" + `
 
 ### Example 2: Node.js / TypeScript project
 
-` + "```" + `yaml file=.orc/config.yaml
+` + "````" + `yaml file=.orc/config.yaml
 name: my-ts-app
 ticket-pattern: '[A-Z]+-\d+'
 
@@ -109,11 +109,11 @@ phases:
   - name: review
     type: gate
     description: Final review
-` + "```" + `
+` + "````" + `
 
 ### Example 3: Python project
 
-` + "```" + `yaml file=.orc/config.yaml
+` + "````" + `yaml file=.orc/config.yaml
 name: my-python-project
 ticket-pattern: '[A-Z]+-\d+'
 
@@ -147,7 +147,7 @@ phases:
   - name: review
     type: gate
     description: Final review
-` + "```" + `
+` + "````" + `
 
 ## Project Context
 
@@ -182,13 +182,13 @@ Based on the project context above, generate a complete orc workflow. Produce:
 Produce ONLY fenced code blocks with ` + "`file=`" + ` annotations. No explanation or text outside the code blocks.
 Each block specifies its path relative to the project root:
 
-` + "```" + `yaml file=.orc/config.yaml
+` + "````" + `yaml file=.orc/config.yaml
 <config content>
-` + "```" + `
+` + "````" + `
 
-` + "```" + `markdown file=.orc/phases/plan.md
+` + "````" + `markdown file=.orc/phases/plan.md
 <prompt content>
-` + "```" + `
+` + "````" + `
 
 All file paths MUST start with ` + "`.orc/`" + `.
 `
