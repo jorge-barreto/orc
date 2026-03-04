@@ -73,6 +73,7 @@ type TicketSummary struct {
 	ArtifactsDir string
 	State        *State
 	Costs        *CostData
+	Timing       *Timing
 }
 
 // ListTickets reads all ticket subdirectories under baseArtifactsDir,
@@ -108,7 +109,7 @@ func ListTickets(baseArtifactsDir, baseAuditDir string) ([]TicketSummary, error)
 			st.Ticket = e.Name()
 		}
 
-		// Try audit dir first for costs, fall back to artifacts dir
+		// Try audit dir first for costs/timing, fall back to artifacts dir
 		auditDir := filepath.Join(baseAuditDir, e.Name())
 		costs, err := LoadCosts(auditDir)
 		if err != nil {
@@ -118,11 +119,17 @@ func ListTickets(baseArtifactsDir, baseAuditDir string) ([]TicketSummary, error)
 			}
 		}
 
+		timing, err := LoadTiming(auditDir)
+		if err != nil {
+			timing, _ = LoadTiming(ad)
+		}
+
 		tickets = append(tickets, TicketSummary{
 			Ticket:       st.Ticket,
 			ArtifactsDir: ad,
 			State:        st,
 			Costs:        costs,
+			Timing:       timing,
 		})
 	}
 	return tickets, nil

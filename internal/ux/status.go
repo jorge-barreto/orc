@@ -46,6 +46,11 @@ func RenderStatus(cfg *config.Config, st *state.State, artifactsDir, auditDir st
 		fmt.Printf("%sState:%s   %d/%d (%s) — %s\n",
 			Bold, Reset, st.PhaseIndex+1, len(cfg.Phases), phase.Name, st.Status)
 	}
+	if timing != nil {
+		if elapsed := timing.TotalElapsed(); elapsed > 0 {
+			fmt.Printf("%sElapsed:%s %s\n", Bold, Reset, state.FormatDuration(elapsed))
+		}
+	}
 
 	// Completed phases — show full execution trace from timing entries
 	hasCompleted := timing != nil && len(timing.Entries) > 0
@@ -91,10 +96,15 @@ func RenderStatus(cfg *config.Config, st *state.State, artifactsDir, auditDir st
 				Dim, i+1, Reset, te.Phase, dur, costStr, tokenStr, cacheStr, runStr)
 		}
 
-		// Total cost line
+		// Totals line
+		totalElapsed := state.FormatDuration(timing.TotalElapsed())
+		totalCost := ""
 		if costs != nil && costs.TotalCostUSD > 0 {
-			fmt.Printf("  %s%-4s%-20s%8s%s%10s%s\n",
-				"", "", "", "", Bold, fmt.Sprintf("$%.2f", costs.TotalCostUSD), Reset)
+			totalCost = fmt.Sprintf("$%.2f", costs.TotalCostUSD)
+		}
+		if totalElapsed != "0m 00s" || totalCost != "" {
+			fmt.Printf("  %s%-4s%-20s%8s%10s%s\n",
+				"", "", "", Bold+totalElapsed+Reset, Bold+totalCost+Reset, "")
 		}
 	} else if st.PhaseIndex > 0 {
 		// Fallback: no timing data, just list completed phase names
@@ -153,7 +163,7 @@ func RenderStatusAll(cfg *config.Config, tickets []state.TicketSummary) {
 		return
 	}
 
-	fmt.Printf("%s%-14s%-14s%-17s%s%s\n", Bold, "TICKET", "STATUS", "PHASE", "COST", Reset)
+	fmt.Printf("%s%-14s%-14s%-17s%-10s%s%s\n", Bold, "TICKET", "STATUS", "PHASE", "COST", "TIME", Reset)
 
 	for _, t := range tickets {
 		statusColor := Dim
@@ -178,10 +188,17 @@ func RenderStatusAll(cfg *config.Config, tickets []state.TicketSummary) {
 
 		cost := fmt.Sprintf("$%.2f", t.Costs.TotalCostUSD)
 
-		fmt.Printf("%-14s%s%-14s%s%-17s%s\n",
+		var elapsed string
+		if t.Timing != nil {
+			if d := t.Timing.TotalElapsed(); d > 0 {
+				elapsed = state.FormatDuration(d)
+			}
+		}
+
+		fmt.Printf("%-14s%s%-14s%s%-17s%-10s%s\n",
 			t.Ticket,
 			statusColor, t.State.Status, Reset,
-			phase, cost)
+			phase, cost, elapsed)
 	}
 	fmt.Println()
 }
