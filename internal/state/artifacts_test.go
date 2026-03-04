@@ -242,6 +242,52 @@ func TestReadDeclaredOutputs_SkipsEmptyContent(t *testing.T) {
 	}
 }
 
+func TestClearFeedback(t *testing.T) {
+	dir := t.TempDir()
+	if err := EnsureDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFeedback(dir, "build", "build failed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFeedback(dir, "test", "tests failed"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ClearFeedback(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := ReadAllFeedback(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != "" {
+		t.Fatalf("expected empty feedback after clear, got %q", result)
+	}
+}
+
+func TestClearFeedback_NoDir(t *testing.T) {
+	dir := t.TempDir()
+	// Don't call EnsureDir — feedback/ does not exist
+	if err := ClearFeedback(dir); err != nil {
+		t.Fatalf("ClearFeedback on non-existent dir should return nil, got %v", err)
+	}
+}
+
+func TestAuditFeedbackPath(t *testing.T) {
+	got := AuditFeedbackPath("/audit", 0, 1, "review")
+	want := filepath.Join("/audit", "feedback", "phase-1.iter-1.from-review.md")
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	got = AuditFeedbackPath("/audit", 2, 3, "plan")
+	want = filepath.Join("/audit", "feedback", "phase-3.iter-3.from-plan.md")
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
 func TestPromptPath(t *testing.T) {
 	got := PromptPath("/art", 0)
 	want := filepath.Join("/art", "prompts", "phase-1.md")

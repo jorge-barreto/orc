@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -320,6 +321,8 @@ func (r *Runner) Run(ctx context.Context) error {
 				continue
 			}
 			// iteration >= min AND pass: break out of loop, advance normally
+			// Archive and clear feedback so downstream phases don't see stale loop feedback
+			archiveAndClearFeedback(r.Env.ArtifactsDir, r.auditDir, i, r.dispatchCount[i])
 		}
 
 		duration := time.Since(start)
@@ -682,6 +685,29 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 func archivePhaseFiles(artifactsDir, auditDir string, phaseIdx, iteration int) {
 	copyFile(state.LogPath(artifactsDir, phaseIdx), state.AuditLogPath(auditDir, phaseIdx, iteration))
 	copyFile(state.PromptPath(artifactsDir, phaseIdx), state.AuditPromptPath(auditDir, phaseIdx, iteration))
+}
+
+// archiveAndClearFeedback copies all feedback files to the audit directory, then
+// removes them so downstream phases don't see stale loop feedback.
+// Reads the directory once to avoid redundant syscalls.
+// Errors are silently ignored — archiving should not break the run.
+func archiveAndClearFeedback(artifactsDir, auditDir string, phaseIdx, iteration int) {
+	feedbackDir := filepath.Join(artifactsDir, "feedback")
+	entries, err := os.ReadDir(feedbackDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		fromPhase := strings.TrimSuffix(strings.TrimPrefix(name, "from-"), ".md")
+		src := filepath.Join(feedbackDir, name)
+		dst := state.AuditFeedbackPath(auditDir, phaseIdx, iteration, fromPhase)
+		copyFile(src, dst)
+		os.Remove(src)
+	}
 }
 
 // copyFile copies src to dst, creating parent directories as needed.

@@ -95,6 +95,28 @@ func ReadAllFeedback(artifactsDir string) (string, error) {
 	return strings.Join(parts, "\n\n"), nil
 }
 
+// ClearFeedback removes all files from the feedback directory.
+// Returns nil if the directory does not exist.
+func ClearFeedback(artifactsDir string) error {
+	feedbackDir := filepath.Join(artifactsDir, "feedback")
+	entries, err := os.ReadDir(feedbackDir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if err := os.Remove(filepath.Join(feedbackDir, e.Name())); err != nil {
+			return fmt.Errorf("removing feedback file %s: %w", e.Name(), err)
+		}
+	}
+	return nil
+}
+
 // CheckOutputs returns a list of expected output files that are missing from artifacts.
 func CheckOutputs(artifactsDir string, outputs []string) []string {
 	var missing []string
@@ -157,4 +179,9 @@ func AuditLogPath(auditDir string, phaseIdx, iteration int) string {
 // AuditPromptPath returns the path for an archived iteration prompt in the audit dir.
 func AuditPromptPath(auditDir string, phaseIdx, iteration int) string {
 	return filepath.Join(auditDir, "prompts", fmt.Sprintf("phase-%d.iter-%d.md", phaseIdx+1, iteration))
+}
+
+// AuditFeedbackPath returns the path for an archived feedback file in the audit dir.
+func AuditFeedbackPath(auditDir string, phaseIdx, iteration int, fromPhase string) string {
+	return filepath.Join(auditDir, "feedback", fmt.Sprintf("phase-%d.iter-%d.from-%s.md", phaseIdx+1, iteration, fromPhase))
 }
