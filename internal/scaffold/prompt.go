@@ -4,8 +4,12 @@ import "github.com/jorge-barreto/orc/internal/docs"
 
 // buildInitPrompt constructs the full prompt for AI-powered init.
 // The projectContext string is the rendered output of contextgather.Render().
-func buildInitPrompt(projectContext string) string {
-	return initPromptPrefix + docs.SchemaReference() + initPromptMiddle + projectContext + initPromptSuffix
+func buildInitPrompt(projectContext, userPrompt string) string {
+	prompt := initPromptPrefix + docs.SchemaReference() + initPromptMiddle + projectContext + initPromptSuffix
+	if userPrompt != "" {
+		prompt += "\n\n## User Description\n\nThe user has described what they want:\n\n    " + userPrompt + "\n\nTailor the generated workflow to match this description. The user's description supplements the project context above — use both to produce the best workflow.\n"
+	}
+	return prompt
 }
 
 const initPromptPrefix = `You are generating an orc workflow configuration for a software project. orc is a deterministic agent orchestrator CLI that runs AI workflows as a state machine.

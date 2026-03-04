@@ -28,10 +28,31 @@ func stubClaude(t *testing.T) {
 	}
 }
 
+func stubClaudeCapture(t *testing.T) *string {
+	t.Helper()
+	var captured string
+	orig := runClaude
+	t.Cleanup(func() { runClaude = orig })
+	runClaude = func(_ context.Context, prompt string) (string, error) {
+		captured = prompt
+		return "```yaml file=.orc/config.yaml\n" +
+			"name: test-project\n" +
+			"phases:\n" +
+			"  - name: plan\n" +
+			"    type: agent\n" +
+			"    prompt: .orc/phases/plan.md\n" +
+			"```\n\n" +
+			"```markdown file=.orc/phases/plan.md\n" +
+			"You are a planning assistant.\n" +
+			"```\n", nil
+	}
+	return &captured
+}
+
 func TestInit_CreatesDirectoryStructure(t *testing.T) {
 	stubClaude(t)
 	dir := t.TempDir()
-	if err := Init(context.Background(), dir); err != nil {
+	if err := Init(context.Background(), dir, ""); err != nil {
 		t.Fatalf("Init failed: %v", err)
 	}
 
@@ -64,7 +85,7 @@ func TestInit_CreatesDirectoryStructure(t *testing.T) {
 func TestInit_GeneratedConfigIsValid(t *testing.T) {
 	stubClaude(t)
 	dir := t.TempDir()
-	if err := Init(context.Background(), dir); err != nil {
+	if err := Init(context.Background(), dir, ""); err != nil {
 		t.Fatalf("Init failed: %v", err)
 	}
 
@@ -86,7 +107,7 @@ func TestInit_FailsIfDirExists(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := Init(context.Background(), dir)
+	err := Init(context.Background(), dir, "")
 	if err == nil {
 		t.Fatal("expected error when .orc already exists")
 	}
@@ -101,7 +122,7 @@ func TestInit_FallbackWhenClaudeUnavailable(t *testing.T) {
 	// Clear PATH so claude binary cannot be found — should fall back to default template.
 	t.Setenv("PATH", "")
 
-	err := Init(context.Background(), dir)
+	err := Init(context.Background(), dir, "")
 	if err != nil {
 		t.Fatalf("Init should succeed via fallback, got: %v", err)
 	}
@@ -114,6 +135,35 @@ func TestInit_FallbackWhenClaudeUnavailable(t *testing.T) {
 	}
 	if len(cfg.Phases) != 3 {
 		t.Fatalf("expected 3 phases, got %d", len(cfg.Phases))
+	}
+}
+
+func TestInit_UserPromptPassedToClaude(t *testing.T) {
+	captured := stubClaudeCapture(t)
+	dir := t.TempDir()
+
+	if err := Init(context.Background(), dir, "documentation drafting with critique loop"); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	if !strings.Contains(*captured, "documentation drafting with critique loop") {
+		t.Fatal("user prompt not found in the prompt sent to claude")
+	}
+	if !strings.Contains(*captured, "User Description") {
+		t.Fatal("expected 'User Description' section header in prompt")
+	}
+}
+
+func TestInit_NoUserPromptNoSection(t *testing.T) {
+	captured := stubClaudeCapture(t)
+	dir := t.TempDir()
+
+	if err := Init(context.Background(), dir, ""); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	if strings.Contains(*captured, "User Description") {
+		t.Fatal("'User Description' section should not appear when no user prompt is given")
 	}
 }
 

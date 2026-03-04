@@ -17,18 +17,18 @@ import (
 )
 
 // Init creates a new .orc/ directory with AI-generated workflow config and prompt files.
-func Init(ctx context.Context, targetDir string) error {
+func Init(ctx context.Context, targetDir, userPrompt string) error {
 	orcDir := filepath.Join(targetDir, ".orc")
 	if _, err := os.Stat(orcDir); err == nil {
 		return fmt.Errorf(".orc directory already exists in %s", targetDir)
 	}
 
-	return initWithAI(ctx, targetDir)
+	return initWithAI(ctx, targetDir, userPrompt)
 }
 
 // initWithAI gathers project context, calls claude with retries, and writes AI-generated files.
 // Falls back to a default template if all attempts fail.
-func initWithAI(ctx context.Context, targetDir string) error {
+func initWithAI(ctx context.Context, targetDir, userPrompt string) error {
 	fmt.Printf("\n  %sAnalyzing project...%s\n", ux.Dim, ux.Reset)
 
 	pc, err := contextgather.Gather(targetDir)
@@ -36,7 +36,7 @@ func initWithAI(ctx context.Context, targetDir string) error {
 		return fmt.Errorf("gathering context: %w", err)
 	}
 
-	prompt := buildInitPrompt(pc.Render())
+	prompt := buildInitPrompt(pc.Render(), userPrompt)
 
 	const maxAttempts = 3
 	var blocks []fileblocks.FileBlock

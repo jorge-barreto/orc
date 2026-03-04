@@ -56,7 +56,8 @@ make install  # installs to $GOPATH/bin
 ```bash
 # 1. Initialize a new project
 cd your-project
-orc init
+orc init                                         # auto-detect
+orc init "data pipeline with validation loop"    # or guide with a description
 
 # 2. Edit .orc/config.yaml to define your workflow
 
@@ -74,8 +75,11 @@ orc run EXAMPLE-1
 Analyzes your project and generates a tailored workflow config using AI. Falls back to a default template if AI generation fails.
 
 ```bash
-orc init
+orc init                                    # auto-detect project and generate workflow
+orc init "microservice with integration tests"  # guide generation with a description
 ```
+
+Optionally pass a natural-language description to guide the generated workflow toward a specific shape. The description supplements the auto-detected project context.
 
 Creates `.orc/config.yaml` and one or more `.orc/phases/*.md` prompt templates named after your workflow phases (e.g., `plan.md`, `implement.md`). Also creates `.orc/.gitignore` to exclude the artifacts directory.
 
