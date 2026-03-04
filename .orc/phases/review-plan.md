@@ -48,19 +48,25 @@ Do NOT skip this step. Do NOT trust the plan's descriptions without checking the
 - Is the test strategy concrete (specific test names, specific test files, specific patterns to follow)?
 - Are there missing steps that an implementer would have to figure out on their own?
 - Are there hidden dependencies between implementation steps that aren't called out?
-- If the roadmap item introduces user-visible behavior changes, does the "Files to Modify" table include relevant doc files (`README.md`, `internal/docs/content.go`, `cmd/orc/main.go`, `internal/scaffold/`)?
 
-### B. Correctness
+### B. Documentation Completeness
+- Does the plan include a "Documentation" section that addresses all four surfaces (`cmd/orc/main.go`, `internal/docs/content.go`, `README.md`, `internal/scaffold/`)?
+- If the plan's Documentation section is missing entirely, that is a **blocking issue**.
+- For each surface marked "No change", verify the justification is correct by reading the file. If the file describes behavior that the change modifies, the plan is wrong — it MUST include an update.
+- For each surface marked as needing changes, verify the described changes are in the "Files to Modify" table.
+- Check for consistency: if the plan updates one doc surface (e.g., README), verify it also updates other surfaces that describe the same feature (e.g., `orc docs`). Inconsistent docs across surfaces are blocking.
+
+### C. Correctness
 - Does the implementation approach actually achieve the acceptance criteria?
 - Are there architectural issues (wrong package for new code, breaking existing interfaces, missing validation)?
 - Does the plan follow orc's conventions (error wrapping, atomic writes, test patterns)?
 - Do the implementation steps assume behavior or interfaces that don't exist in the source?
 
-### C. Scope
+### D. Scope
 - Does the plan include work NOT in the roadmap item? (Over-engineering)
 - Is the plan missing work that IS in the roadmap item? (Under-scoping)
 
-### D. Feasibility
+### E. Feasibility
 - Can each implementation step be executed as described? Are there steps that are vague enough that the implementer would have to make design decisions?
 - Does the test strategy test the right things? Are the proposed test cases actually meaningful?
 
@@ -115,7 +121,9 @@ Do NOT write plan-approved.txt. The plan agent will revise based on your finding
 Err on the side of blocking. If you're uncertain whether something is blocking or a suggestion, **classify it as blocking.** The plan agent can address it, and you can downgrade it on the next pass if the fix reveals it was minor. The cost of a false negative (missing a real issue) is much higher than a false positive (flagging something that turns out to be minor).
 
 - **Missing files** in the "Files to Modify" table — always blocking.
-- **Missing doc files** in the "Files to Modify" table when the change introduces user-visible behavior — always blocking.
+- **Missing or incomplete Documentation section** — always blocking. The plan must explicitly address all four doc surfaces.
+- **Missing doc file updates** in the "Files to Modify" table when the doc surface describes behavior affected by the change — always blocking.
+- **Inconsistent doc updates** across surfaces (e.g., README updated but `orc docs` not, when both describe the same feature) — always blocking.
 - **Inaccurate technical claims** (wrong function names, wrong file paths, wrong behavior descriptions) — always blocking. Verify by reading the source.
 - **Missing acceptance criteria coverage** — always blocking.
 - **Vague test strategy** ("add appropriate tests") — always blocking. Must name specific test functions and files.

@@ -21,14 +21,24 @@ Follow the plan's "Implementation Steps" section in order. For each step:
 2. Make the changes described.
 3. Use the Edit tool for targeted changes — don't rewrite entire files unless the plan calls for a new file.
 
-## Step 3: Test
+## Step 3: Update Documentation
+
+If the plan's "Documentation" section lists any doc surfaces that need updating, implement those changes now. For each doc file listed in the "Files to Modify" table that is a documentation surface (`README.md`, `internal/docs/content.go`, `cmd/orc/main.go` help text, `internal/scaffold/`):
+
+1. Read the file to understand the existing format and conventions.
+2. Make the changes described in the plan's Documentation section.
+3. Ensure consistency across all doc surfaces — the same feature should be described the same way in `orc --help`, `orc docs`, and the README.
+
+If the Documentation section says "No change" for all surfaces, skip this step.
+
+## Step 4: Test
 
 1. Run `make build` to verify compilation.
 2. Run the specific test commands from the plan's "Test Strategy" section.
 3. Run `make test` to verify no regressions.
 4. If any test fails, fix it before finishing. Do NOT leave failing tests.
 
-## Step 4: Verify Acceptance Criteria
+## Step 5: Verify Acceptance Criteria
 
 Go through each acceptance criterion in the plan. For each one, verify it's met — either by reading the code you wrote or by running a command. If any criterion isn't met, go back and implement it.
 
