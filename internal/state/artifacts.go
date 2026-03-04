@@ -185,3 +185,10 @@ func AuditPromptPath(auditDir string, phaseIdx, iteration int) string {
 func AuditFeedbackPath(auditDir string, phaseIdx, iteration int, fromPhase string) string {
 	return filepath.Join(auditDir, "feedback", fmt.Sprintf("phase-%d.iter-%d.from-%s.md", phaseIdx+1, iteration, fromPhase))
 }
+
+// AuditOutputPath returns the path for an archived phase output file in the audit dir.
+// filename is the original relative output path; filepath.Base flattens any subdirectory prefix.
+func AuditOutputPath(auditDir string, phaseIdx, iteration int, filename string) string {
+	base := filepath.Base(filename)
+	return filepath.Join(auditDir, "outputs", fmt.Sprintf("phase-%d.iter-%d.%s", phaseIdx+1, iteration, base))
+}

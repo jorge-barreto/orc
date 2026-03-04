@@ -121,7 +121,7 @@ func readAuditSummary(projectRoot string) string {
 			lines = append(lines, fmt.Sprintf("- Loop iterations: %s", strings.Join(loopParts, ", ")))
 		}
 
-		runStatus := gatherRunStatus(artifactsDir)
+		runStatus := gatherRunStatus(auditDir, artifactsDir)
 		if runStatus != "" {
 			lines = append(lines, runStatus)
 		}
@@ -194,10 +194,13 @@ func gatherFeedback(auditDir, artifactsDir string) string {
 	return strings.Join(entries, "\n\n")
 }
 
-func gatherRunStatus(artifactsDir string) string {
-	data, err := os.ReadFile(filepath.Join(artifactsDir, "state.json"))
+func gatherRunStatus(auditDir, artifactsDir string) string {
+	data, err := os.ReadFile(filepath.Join(auditDir, "state.json"))
 	if err != nil {
-		return ""
+		data, err = os.ReadFile(filepath.Join(artifactsDir, "state.json"))
+		if err != nil {
+			return ""
+		}
 	}
 	var s struct {
 		PhaseIndex int    `json:"phase_index"`

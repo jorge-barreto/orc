@@ -458,7 +458,7 @@ func TestGatherRunStatus_Failed(t *testing.T) {
 	os.MkdirAll(artifactsDir, 0755)
 	os.WriteFile(filepath.Join(artifactsDir, "state.json"), []byte(`{"phase_index": 4, "ticket": "TEST-1", "status": "failed"}`), 0644)
 
-	result := gatherRunStatus(artifactsDir)
+	result := gatherRunStatus(filepath.Join(dir, "nonexistent"), artifactsDir)
 	if !strings.Contains(result, "Run status: failed") {
 		t.Errorf("result should contain 'Run status: failed', got: %q", result)
 	}
@@ -473,7 +473,7 @@ func TestGatherRunStatus_Completed(t *testing.T) {
 	os.MkdirAll(artifactsDir, 0755)
 	os.WriteFile(filepath.Join(artifactsDir, "state.json"), []byte(`{"phase_index": 3, "ticket": "TEST-1", "status": "completed"}`), 0644)
 
-	result := gatherRunStatus(artifactsDir)
+	result := gatherRunStatus(filepath.Join(dir, "nonexistent"), artifactsDir)
 	if result != "- Run status: completed" {
 		t.Errorf("expected '- Run status: completed', got: %q", result)
 	}
@@ -484,7 +484,7 @@ func TestGatherRunStatus_Completed(t *testing.T) {
 
 func TestGatherRunStatus_NoState(t *testing.T) {
 	dir := t.TempDir()
-	result := gatherRunStatus(dir)
+	result := gatherRunStatus(filepath.Join(dir, "nonexistent"), dir)
 	if result != "" {
 		t.Fatalf("expected empty string, got: %q", result)
 	}

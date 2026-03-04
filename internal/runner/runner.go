@@ -50,6 +50,11 @@ func (r *Runner) failAndHint(status string, exitCode int, err error) error {
 	if saveErr := r.State.Save(r.Env.ArtifactsDir); saveErr != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to save state: %v\n", saveErr)
 	}
+	if r.auditDir != "" {
+		if saveErr := r.State.Save(r.auditDir); saveErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to save audit state: %v\n", saveErr)
+		}
+	}
 	if r.Timing != nil {
 		if flushErr := r.Timing.Flush(r.auditDir); flushErr != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to flush timing: %v\n", flushErr)
@@ -162,7 +167,7 @@ func (r *Runner) Run(ctx context.Context) error {
 
 		// Archive logs/prompts before re-dispatch (iteration > 0)
 		if r.dispatchCount[i] > 0 {
-			archivePhaseFiles(r.Env.ArtifactsDir, r.auditDir, i, r.dispatchCount[i])
+			archivePhaseFiles(r.Env.ArtifactsDir, r.auditDir, i, r.dispatchCount[i], phase.Outputs)
 		}
 		r.dispatchCount[i]++
 
@@ -351,6 +356,9 @@ func (r *Runner) Run(ctx context.Context) error {
 	r.State.Status = state.StatusCompleted
 	if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
 		return fmt.Errorf("saving final state: %w", err)
+	}
+	if saveErr := r.State.Save(r.auditDir); saveErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to save audit state: %v\n", saveErr)
 	}
 	if err := r.Timing.Flush(r.auditDir); err != nil {
 		return fmt.Errorf("flushing timing: %w", err)
@@ -652,9 +660,12 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 // archivePhaseFiles copies the current log and prompt files to the audit directory
 // before they get overwritten by the next dispatch. iteration is the 1-indexed
 // count of prior dispatches (e.g., 1 means this is the first archive).
-func archivePhaseFiles(artifactsDir, auditDir string, phaseIdx, iteration int) {
+func archivePhaseFiles(artifactsDir, auditDir string, phaseIdx, iteration int, outputs []string) {
 	copyFile(state.LogPath(artifactsDir, phaseIdx), state.AuditLogPath(auditDir, phaseIdx, iteration))
 	copyFile(state.PromptPath(artifactsDir, phaseIdx), state.AuditPromptPath(auditDir, phaseIdx, iteration))
+	for _, o := range outputs {
+		copyFile(filepath.Join(artifactsDir, o), state.AuditOutputPath(auditDir, phaseIdx, iteration, o))
+	}
 }
 
 // archiveAndClearFeedback copies all feedback files to the audit directory, then
