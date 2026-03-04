@@ -533,7 +533,9 @@ Reads current config + prompts, sends to Claude with schema docs + instruction, 
 orc improve
 ```
 
-Builds context (schema + current config + prompts), launches Claude in interactive mode with context pre-loaded. The user chats about their workflow, Claude edits `.orc/` files directly.
+Builds context (schema + current config + prompts + audit data from previous runs), launches Claude in interactive mode with context pre-loaded. The user chats about their workflow, Claude edits `.orc/` files directly.
+
+**Audit awareness:** Both modes should read `.orc/audit/` data (costs, timing, iteration logs) from previous runs to provide data-driven suggestions — e.g., if a phase consistently loops 3 times, suggest prompt changes; if costs are high, suggest a cheaper model.
 
 **Implementation:** Follow the existing PLAN.md design. Key architectural decisions: file-block parsing approach for one-shot output, validation-before-write step (parsed config is validated via `config.Load()` before writing to disk), and `FilteredEnv()` extraction to `dispatch` package (shared by scaffold, doctor, improve). Key files:
 - `internal/improve/improve.go` — OneShot and Interactive functions
@@ -894,6 +896,42 @@ Exit code: 0
 **Priority:** P2
 **Effort:** Medium
 **Dependencies:** None (richer output with R-019)
+
+---
+
+### R-040: Audit log separation + Doctor full-run visibility
+
+`orc doctor` can only see the failed phase's log (last 200 lines). It knows nothing about other phases in the run or previous loop iterations — dispatch functions open logs with `O_TRUNC`, so every iteration overwrites the previous one. This makes it impossible for doctor to diagnose loop failures (e.g., "review found a vulnerability but implement didn't get the feedback" gets misdiagnosed as "timeout too short").
+
+Additionally, audit data (costs.json, timing.json) lives in `$ARTIFACTS_DIR` where agents can discover it, even though no prompt references it. Agents should stay "fresh" per iteration — they must not see previous iteration data.
+
+**Changes:**
+
+1. **Introduce `.orc/audit/<ticket>/`** — a directory outside `$ARTIFACTS_DIR` that agents never see (not exposed as any env variable, not in any prompt). Contains:
+   - `costs.json` — moved from artifacts
+   - `timing.json` — moved from artifacts
+   - `logs/phase-N.iter-M.log` — archived iteration logs
+   - `prompts/phase-N.iter-M.md` — archived iteration prompts
+
+2. **Runner archives before re-dispatch** — before re-dispatching a phase in a loop, the runner copies the current log + rendered prompt to `.orc/audit/<ticket>/logs/phase-N.iter-M.log`. Dispatch keeps truncating — agents stay fresh.
+
+3. **Doctor reads all phase logs** — `gatherAllLogs()` reads logs from ALL phases (not just the failed one). `gatherIterationLogs()` reads archived iteration logs from the audit dir. Doctor sees the full run history for diagnosis.
+
+**Key files:**
+- `internal/state/artifacts.go` — add `AuditDir()`, `AuditLogPath()`, `AuditPromptPath()`
+- `internal/runner/runner.go` — add `archivePhaseFiles()`, track dispatch counts, move costs/timing to audit dir
+- `internal/doctor/doctor.go` — add `gatherAllLogs()`, `gatherIterationLogs()`, `truncateLines()`, update prompt
+
+**Acceptance criteria:**
+- Previous loop iterations' logs are preserved in `.orc/audit/<ticket>/` and NOT visible to agents
+- `costs.json` and `timing.json` are written to `.orc/audit/<ticket>/`, not `$ARTIFACTS_DIR`
+- `orc doctor` reads logs from all phases and all archived iterations
+- `loop-counts.json` stays in `$ARTIFACTS_DIR` (review agents read it)
+- Existing tests pass; new tests verify archiving and doctor visibility
+
+**Priority:** P1
+**Effort:** Medium
+**Dependencies:** R-039
 
 ---
 

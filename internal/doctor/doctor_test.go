@@ -237,3 +237,121 @@ func TestRun_PhaseIndexOutOfRange(t *testing.T) {
 		t.Errorf("expected 'out of range' error, got %v", err)
 	}
 }
+
+func TestGatherAllLogs_MultiplePhases(t *testing.T) {
+	dir := t.TempDir()
+	artifactsDir := filepath.Join(dir, ".orc", "artifacts")
+	os.MkdirAll(filepath.Join(artifactsDir, "logs"), 0755)
+
+	// Write logs for 3 phases
+	os.WriteFile(state.LogPath(artifactsDir, 0), []byte("plan output"), 0644)
+	os.WriteFile(state.LogPath(artifactsDir, 1), []byte("implement output"), 0644)
+	os.WriteFile(state.LogPath(artifactsDir, 2), []byte("review output"), 0644)
+
+	phases := []config.Phase{
+		{Name: "plan"},
+		{Name: "implement"},
+		{Name: "review"},
+	}
+
+	// failedIdx=1 (implement), so we should get plan and review logs
+	result := gatherAllLogs(artifactsDir, phases, 1)
+	if !strings.Contains(result, "plan output") {
+		t.Error("missing plan log")
+	}
+	if strings.Contains(result, "implement output") {
+		t.Error("should not contain failed phase log")
+	}
+	if !strings.Contains(result, "review output") {
+		t.Error("missing review log")
+	}
+	if !strings.Contains(result, "Phase 1: plan") {
+		t.Error("missing phase header for plan")
+	}
+	if !strings.Contains(result, "Phase 3: review") {
+		t.Error("missing phase header for review")
+	}
+}
+
+func TestGatherAllLogs_MissingLogs(t *testing.T) {
+	dir := t.TempDir()
+	artifactsDir := filepath.Join(dir, ".orc", "artifacts")
+	os.MkdirAll(filepath.Join(artifactsDir, "logs"), 0755)
+
+	// Only write log for phase 0
+	os.WriteFile(state.LogPath(artifactsDir, 0), []byte("plan output"), 0644)
+
+	phases := []config.Phase{
+		{Name: "plan"},
+		{Name: "implement"},
+		{Name: "review"},
+	}
+
+	result := gatherAllLogs(artifactsDir, phases, 2)
+	if !strings.Contains(result, "plan output") {
+		t.Error("missing plan log")
+	}
+	// implement has no log — should be silently skipped
+	if strings.Contains(result, "implement") {
+		t.Error("should not mention phase with no log")
+	}
+}
+
+func TestGatherIterationLogs_WithHistory(t *testing.T) {
+	dir := t.TempDir()
+	auditDir := filepath.Join(dir, ".orc", "audit", "TEST-1")
+	logsDir := filepath.Join(auditDir, "logs")
+	os.MkdirAll(logsDir, 0755)
+
+	// Write archived iteration logs for phase 2 (index 1)
+	os.WriteFile(state.AuditLogPath(auditDir, 1, 1), []byte("iteration 1 output"), 0644)
+	os.WriteFile(state.AuditLogPath(auditDir, 1, 2), []byte("iteration 2 output"), 0644)
+
+	result := gatherIterationLogs(auditDir, 1)
+	if !strings.Contains(result, "iteration 1 output") {
+		t.Error("missing iteration 1")
+	}
+	if !strings.Contains(result, "iteration 2 output") {
+		t.Error("missing iteration 2")
+	}
+	if !strings.Contains(result, "phase-2.iter-1.log") {
+		t.Error("missing iteration 1 header")
+	}
+	if !strings.Contains(result, "phase-2.iter-2.log") {
+		t.Error("missing iteration 2 header")
+	}
+}
+
+func TestGatherIterationLogs_NoHistory(t *testing.T) {
+	dir := t.TempDir()
+	result := gatherIterationLogs(dir, 0)
+	if result != "" {
+		t.Errorf("expected empty string for no history, got %q", result)
+	}
+}
+
+func TestTruncateLines_BelowThreshold(t *testing.T) {
+	content := "line 1\nline 2\nline 3"
+	result := truncateLines(content, 10)
+	if result != content {
+		t.Errorf("expected pass-through, got %q", result)
+	}
+}
+
+func TestTruncateLines_AboveThreshold(t *testing.T) {
+	var lines []string
+	for i := 0; i < 50; i++ {
+		lines = append(lines, "log line")
+	}
+	content := strings.Join(lines, "\n")
+
+	result := truncateLines(content, 10)
+	if !strings.HasPrefix(result, "... (truncated to last 10 lines)") {
+		t.Errorf("expected truncation prefix, got %q", result[:40])
+	}
+	outLines := strings.Split(result, "\n")
+	// 1 prefix line + 10 content lines = 11
+	if len(outLines) != 11 {
+		t.Errorf("expected 11 lines, got %d", len(outLines))
+	}
+}

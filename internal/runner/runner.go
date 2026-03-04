@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,13 +21,15 @@ import (
 
 // Runner drives the workflow state machine.
 type Runner struct {
-	Config     *config.Config
-	State      *state.State
-	Env        *dispatch.Environment
-	Dispatcher dispatch.Dispatcher
-	Timing     *state.Timing
-	Costs      *state.CostData
-	skipped    map[string]bool
+	Config        *config.Config
+	State         *state.State
+	Env           *dispatch.Environment
+	Dispatcher    dispatch.Dispatcher
+	Timing        *state.Timing
+	Costs         *state.CostData
+	skipped       map[string]bool
+	auditDir      string
+	dispatchCount map[int]int // tracks how many times each phase has been dispatched
 }
 
 // appendPhaseLog appends a message to the phase log file.
@@ -48,12 +51,12 @@ func (r *Runner) failAndHint(status string, exitCode int, err error) error {
 		fmt.Fprintf(os.Stderr, "warning: failed to save state: %v\n", saveErr)
 	}
 	if r.Timing != nil {
-		if flushErr := r.Timing.Flush(r.Env.ArtifactsDir); flushErr != nil {
+		if flushErr := r.Timing.Flush(r.auditDir); flushErr != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to flush timing: %v\n", flushErr)
 		}
 	}
 	if r.Costs != nil {
-		if flushErr := r.Costs.Flush(r.Env.ArtifactsDir); flushErr != nil {
+		if flushErr := r.Costs.Flush(r.auditDir); flushErr != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to flush costs: %v\n", flushErr)
 		}
 	}
@@ -79,23 +82,30 @@ func (r *Runner) Run(ctx context.Context) error {
 		return setupErr(err)
 	}
 
+	// Initialize audit dir for costs, timing, and log archives
+	r.auditDir = state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket)
+	if err := os.MkdirAll(r.auditDir, 0755); err != nil {
+		return setupErr(fmt.Errorf("creating audit dir: %w", err))
+	}
+
 	loopCounts, err := state.LoadLoopCounts(r.Env.ArtifactsDir)
 	if err != nil {
 		return setupErr(fmt.Errorf("loading loop counts: %w", err))
 	}
 
-	timing, err := state.LoadTiming(r.Env.ArtifactsDir)
+	timing, err := state.LoadTiming(r.auditDir)
 	if err != nil {
 		return setupErr(fmt.Errorf("loading timing: %w", err))
 	}
 	r.Timing = timing
 
-	costs, err := state.LoadCosts(r.Env.ArtifactsDir)
+	costs, err := state.LoadCosts(r.auditDir)
 	if err != nil {
 		return setupErr(fmt.Errorf("loading costs: %w", err))
 	}
 	r.Costs = costs
 	r.skipped = make(map[string]bool)
+	r.dispatchCount = make(map[int]int)
 
 	total := len(r.Config.Phases)
 
@@ -150,6 +160,12 @@ func (r *Runner) Run(ctx context.Context) error {
 		ux.PhaseHeader(i, total, phase)
 		r.Timing.AddStart(phase.Name)
 
+		// Archive logs/prompts before re-dispatch (iteration > 0)
+		if r.dispatchCount[i] > 0 {
+			archivePhaseFiles(r.Env.ArtifactsDir, r.auditDir, i, r.dispatchCount[i])
+		}
+		r.dispatchCount[i]++
+
 		r.Env.PhaseIndex = i
 		start := time.Now()
 		result, err := r.Dispatcher.Dispatch(ctx, phase, r.Env)
@@ -168,7 +184,7 @@ func (r *Runner) Run(ctx context.Context) error {
 			if result.InputTokens == 0 && result.OutputTokens == 0 {
 				fmt.Fprintf(os.Stderr, "  note: no token counts in stream output for phase %q (token tracking is best-effort)\n", phase.Name)
 			}
-			if flushErr := r.Costs.Flush(r.Env.ArtifactsDir); flushErr != nil {
+			if flushErr := r.Costs.Flush(r.auditDir); flushErr != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to flush costs: %v\n", flushErr)
 			}
 			// Check phase-level cost limit
@@ -308,7 +324,7 @@ func (r *Runner) Run(ctx context.Context) error {
 
 		duration := time.Since(start)
 		r.Timing.AddEnd(phase.Name)
-		if err := r.Timing.Flush(r.Env.ArtifactsDir); err != nil {
+		if err := r.Timing.Flush(r.auditDir); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to flush timing: %v\n", err)
 		}
 		r.State.Advance()
@@ -323,10 +339,10 @@ func (r *Runner) Run(ctx context.Context) error {
 	if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
 		return fmt.Errorf("saving final state: %w", err)
 	}
-	if err := r.Timing.Flush(r.Env.ArtifactsDir); err != nil {
+	if err := r.Timing.Flush(r.auditDir); err != nil {
 		return fmt.Errorf("flushing timing: %w", err)
 	}
-	if err := r.Costs.Flush(r.Env.ArtifactsDir); err != nil {
+	if err := r.Costs.Flush(r.auditDir); err != nil {
 		return fmt.Errorf("flushing costs: %w", err)
 	}
 	r.printRunSummary(-1)
@@ -605,7 +621,7 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 	}
 
 	// Flush costs and check cost limits after parallel phases complete
-	if err := r.Costs.Flush(r.Env.ArtifactsDir); err != nil {
+	if err := r.Costs.Flush(r.auditDir); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to flush costs: %v\n", err)
 	}
 	for _, pi := range []struct {
@@ -651,13 +667,41 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 	if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
 		return fmt.Errorf("saving state after parallel advance: %w", err)
 	}
-	if err := r.Timing.Flush(r.Env.ArtifactsDir); err != nil {
+	if err := r.Timing.Flush(r.auditDir); err != nil {
 		return fmt.Errorf("flushing timing after parallel: %w", err)
 	}
-	if err := r.Costs.Flush(r.Env.ArtifactsDir); err != nil {
+	if err := r.Costs.Flush(r.auditDir); err != nil {
 		return fmt.Errorf("flushing costs after parallel: %w", err)
 	}
 	return nil
+}
+
+// archivePhaseFiles copies the current log and prompt files to the audit directory
+// before they get overwritten by the next dispatch. iteration is the 1-indexed
+// count of prior dispatches (e.g., 1 means this is the first archive).
+func archivePhaseFiles(artifactsDir, auditDir string, phaseIdx, iteration int) {
+	copyFile(state.LogPath(artifactsDir, phaseIdx), state.AuditLogPath(auditDir, phaseIdx, iteration))
+	copyFile(state.PromptPath(artifactsDir, phaseIdx), state.AuditPromptPath(auditDir, phaseIdx, iteration))
+}
+
+// copyFile copies src to dst, creating parent directories as needed.
+// Errors are silently ignored — archiving should not break the run.
+func copyFile(src, dst string) {
+	in, err := os.Open(src)
+	if err != nil {
+		return
+	}
+	defer in.Close()
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return
+	}
+	out, err := os.Create(dst)
+	if err != nil {
+		return
+	}
+	defer out.Close()
+	io.Copy(out, in)
 }
 
 // evalCondition runs a shell command and returns true if it exits 0.

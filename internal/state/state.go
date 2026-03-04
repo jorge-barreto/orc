@@ -71,8 +71,9 @@ type TicketSummary struct {
 
 // ListTickets reads all ticket subdirectories under baseArtifactsDir,
 // loads each ticket's state and costs, and returns them sorted by directory name.
+// Costs are loaded from baseAuditDir first, falling back to baseArtifactsDir.
 // Directories that lack a state.json are skipped.
-func ListTickets(baseArtifactsDir string) ([]TicketSummary, error) {
+func ListTickets(baseArtifactsDir, baseAuditDir string) ([]TicketSummary, error) {
 	entries, err := os.ReadDir(baseArtifactsDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -101,9 +102,14 @@ func ListTickets(baseArtifactsDir string) ([]TicketSummary, error) {
 			st.Ticket = e.Name()
 		}
 
-		costs, err := LoadCosts(ad)
+		// Try audit dir first for costs, fall back to artifacts dir
+		auditDir := filepath.Join(baseAuditDir, e.Name())
+		costs, err := LoadCosts(auditDir)
 		if err != nil {
-			costs = &CostData{}
+			costs, err = LoadCosts(ad)
+			if err != nil {
+				costs = &CostData{}
+			}
 		}
 
 		tickets = append(tickets, TicketSummary{

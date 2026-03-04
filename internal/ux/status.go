@@ -26,9 +26,16 @@ func formatCache(read, creation int) string {
 }
 
 // RenderStatus prints the full status display for a ticket.
-func RenderStatus(cfg *config.Config, st *state.State, artifactsDir string) {
-	timing, _ := state.LoadTiming(artifactsDir)
-	costs, _ := state.LoadCosts(artifactsDir)
+// It loads timing and costs from auditDir first, falling back to artifactsDir.
+func RenderStatus(cfg *config.Config, st *state.State, artifactsDir, auditDir string) {
+	timing, err := state.LoadTiming(auditDir)
+	if err != nil {
+		timing, _ = state.LoadTiming(artifactsDir)
+	}
+	costs, err := state.LoadCosts(auditDir)
+	if err != nil {
+		costs, _ = state.LoadCosts(artifactsDir)
+	}
 	loopCounts, _ := state.LoadLoopCounts(artifactsDir)
 
 	// Header
@@ -174,4 +181,3 @@ func RenderStatusAll(cfg *config.Config, tickets []state.TicketSummary) {
 	}
 	fmt.Println()
 }
-
