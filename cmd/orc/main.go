@@ -283,6 +283,9 @@ func statusCmd() *cli.Command {
 			}
 
 			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts", ticket)
+			if !state.HasState(artifactsDir) {
+				return fmt.Errorf("no run found for ticket %s", ticket)
+			}
 			st, err := state.Load(artifactsDir)
 			if err != nil {
 				return fmt.Errorf("loading state: %w", err)
