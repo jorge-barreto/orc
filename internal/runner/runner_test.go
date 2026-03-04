@@ -936,6 +936,11 @@ func TestDryRunPrint_VarsAreSorted(t *testing.T) {
 	io.Copy(&buf, pr)
 	output := buf.String()
 
+	// Verify new flow diagram header format
+	if !strings.Contains(output, "Workflow: test") {
+		t.Fatalf("expected 'Workflow: test' in output, got:\n%s", output)
+	}
+
 	alphaIdx := strings.Index(output, "ALPHA")
 	middleIdx := strings.Index(output, "MIDDLE")
 	zebraIdx := strings.Index(output, "ZEBRA")

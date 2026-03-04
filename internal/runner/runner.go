@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -460,75 +459,10 @@ func runLoopCheck(ctx context.Context, check string, phase config.Phase, env *di
 
 // DryRunPrint prints the phase plan without executing.
 func (r *Runner) DryRunPrint() {
-	total := len(r.Config.Phases)
-	fmt.Printf("\n%sDry run — %d phases:%s\n\n", ux.Bold, total, ux.Reset)
-
-	if r.Config.MaxCost > 0 {
-		fmt.Printf("  max-cost: $%.2f\n", r.Config.MaxCost)
+	expandFn := func(s string) string {
+		return dispatch.ExpandVars(s, r.Env.Vars())
 	}
-
-	if len(r.Env.CustomVars) > 0 {
-		fmt.Printf("  %sVars:%s\n", ux.Bold, ux.Reset)
-		keys := make([]string, 0, len(r.Env.CustomVars))
-		for k := range r.Env.CustomVars {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			fmt.Printf("    %s = %s\n", k, r.Env.CustomVars[k])
-		}
-		fmt.Println()
-	}
-
-	for i, p := range r.Config.Phases {
-		fmt.Printf("  %s%d.%s %s%s%s (%s)", ux.Cyan, i+1, ux.Reset, ux.Bold, p.Name, ux.Reset, p.Type)
-		if p.Description != "" {
-			fmt.Printf(" — %s", p.Description)
-		}
-		fmt.Println()
-
-		switch p.Type {
-		case "script":
-			expanded := dispatch.ExpandVars(p.Run, r.Env.Vars())
-			fmt.Printf("     run: %s\n", expanded)
-		case "agent":
-			fmt.Printf("     prompt: %s\n", p.Prompt)
-			fmt.Printf("     model: %s, timeout: %dm\n", p.Model, p.Timeout)
-			if p.MaxCost > 0 {
-				fmt.Printf("     max-cost: $%.2f\n", p.MaxCost)
-			}
-			if len(p.AllowTools) > 0 {
-				fmt.Printf("     allow-tools: %v\n", p.AllowTools)
-			}
-		case "gate":
-			// no extra details for gates
-		}
-
-		if len(p.Outputs) > 0 {
-			fmt.Printf("     outputs: %v\n", p.Outputs)
-		}
-		if p.Loop != nil {
-			fmt.Printf("     loop: goto %s (min %d, max %d)\n", p.Loop.Goto, p.Loop.Min, p.Loop.Max)
-			if p.Loop.Check != "" {
-				expanded := dispatch.ExpandVars(p.Loop.Check, r.Env.Vars())
-				fmt.Printf("     loop.check: %s\n", expanded)
-			}
-			if p.Loop.OnExhaust != nil {
-				fmt.Printf("     on-exhaust: goto %s (max %d)\n", p.Loop.OnExhaust.Goto, p.Loop.OnExhaust.Max)
-			}
-		}
-		if p.Condition != "" {
-			fmt.Printf("     condition: %s\n", p.Condition)
-		}
-		if p.Cwd != "" {
-			expanded := dispatch.ExpandVars(p.Cwd, r.Env.Vars())
-			fmt.Printf("     cwd: %s\n", expanded)
-		}
-		if p.ParallelWith != "" {
-			fmt.Printf("     parallel-with: %s\n", p.ParallelWith)
-		}
-	}
-	fmt.Println()
+	ux.FlowDiagram(r.Config, r.Env.CustomVars, expandFn)
 }
 
 // runParallel runs two phases concurrently.
