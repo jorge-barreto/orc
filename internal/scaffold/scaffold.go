@@ -11,6 +11,7 @@ import (
 
 	"github.com/jorge-barreto/orc/internal/config"
 	"github.com/jorge-barreto/orc/internal/contextgather"
+	"github.com/jorge-barreto/orc/internal/dispatch"
 	"github.com/jorge-barreto/orc/internal/fileblocks"
 	"github.com/jorge-barreto/orc/internal/ux"
 )
@@ -168,24 +169,11 @@ func runClaudeCapture(ctx context.Context, prompt string) (string, error) {
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = filteredEnv()
+	cmd.Env = dispatch.FilteredEnv()
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("claude: %w", err)
 	}
 	return stdout.String(), nil
-}
-
-// filteredEnv returns the current environment with CLAUDECODE stripped.
-func filteredEnv() []string {
-	var env []string
-	for _, e := range os.Environ() {
-		key := strings.SplitN(e, "=", 2)[0]
-		if strings.HasPrefix(key, "CLAUDECODE") {
-			continue
-		}
-		env = append(env, e)
-	}
-	return env
 }
 
 // renderWorkflowSummary builds a human-readable workflow line.

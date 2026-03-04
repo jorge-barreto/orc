@@ -1,0 +1,274 @@
+package improve
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"syscall"
+
+	"github.com/jorge-barreto/orc/internal/config"
+	"github.com/jorge-barreto/orc/internal/dispatch"
+	"github.com/jorge-barreto/orc/internal/fileblocks"
+	"github.com/jorge-barreto/orc/internal/state"
+	"github.com/jorge-barreto/orc/internal/ux"
+)
+
+func readOrcFiles(projectRoot string) (configYAML string, phaseFiles map[string]string, err error) {
+	configPath := filepath.Join(projectRoot, ".orc", "config.yaml")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return "", nil, fmt.Errorf("no .orc/config.yaml found — run 'orc init' first")
+	}
+	configYAML = string(data)
+
+	matches, _ := filepath.Glob(filepath.Join(projectRoot, ".orc", "phases", "*.md"))
+	phaseFiles = make(map[string]string, len(matches))
+	for _, match := range matches {
+		content, err := os.ReadFile(match)
+		if err != nil {
+			continue
+		}
+		relPath, _ := filepath.Rel(projectRoot, match)
+		relPath = filepath.ToSlash(relPath)
+		phaseFiles[relPath] = string(content)
+	}
+	return configYAML, phaseFiles, nil
+}
+
+func readAuditSummary(projectRoot string) string {
+	auditBase := filepath.Join(projectRoot, ".orc", "audit")
+	entries, err := os.ReadDir(auditBase)
+	if err != nil {
+		return ""
+	}
+
+	var parts []string
+	limit := 5
+	if len(entries) < limit {
+		limit = len(entries)
+	}
+	for _, e := range entries[:limit] {
+		if !e.IsDir() {
+			continue
+		}
+		ticket := e.Name()
+		auditDir := filepath.Join(auditBase, ticket)
+		var lines []string
+
+		costs, err := state.LoadCosts(auditDir)
+		if err == nil && costs.TotalCostUSD > 0 {
+			lines = append(lines, fmt.Sprintf("- Total cost: $%.2f", costs.TotalCostUSD))
+			var phaseCosts []string
+			for _, p := range costs.Phases {
+				phaseCosts = append(phaseCosts, fmt.Sprintf("%s ($%.2f)", p.Name, p.CostUSD))
+			}
+			if len(phaseCosts) > 0 {
+				lines = append(lines, fmt.Sprintf("- Phase costs: %s", strings.Join(phaseCosts, ", ")))
+			}
+		}
+
+		timing, err := state.LoadTiming(auditDir)
+		if err == nil && len(timing.Entries) > 0 {
+			var timingParts []string
+			for _, t := range timing.Entries {
+				if t.Duration != "" {
+					timingParts = append(timingParts, fmt.Sprintf("%s (%s)", t.Phase, t.Duration))
+				}
+			}
+			if len(timingParts) > 0 {
+				lines = append(lines, fmt.Sprintf("- Phase timing: %s", strings.Join(timingParts, ", ")))
+			}
+		}
+
+		artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts", ticket)
+		loops, err := state.LoadLoopCounts(artifactsDir)
+		if err == nil && len(loops) > 0 {
+			var loopParts []string
+			for k, v := range loops {
+				loopParts = append(loopParts, fmt.Sprintf("%s=%d", k, v))
+			}
+			lines = append(lines, fmt.Sprintf("- Loop iterations: %s", strings.Join(loopParts, ", ")))
+		}
+
+		if len(lines) > 0 {
+			parts = append(parts, fmt.Sprintf("### Ticket: %s\n%s", ticket, strings.Join(lines, "\n")))
+		}
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+	return "The following data is from previous workflow runs. Use it to inform your suggestions.\n\n" +
+		strings.Join(parts, "\n\n")
+}
+
+// OneShot reads the current config, sends it to Claude with the user's instruction,
+// validates the output, and writes changed files.
+func OneShot(ctx context.Context, projectRoot, instruction string) error {
+	configYAML, phaseFiles, err := readOrcFiles(projectRoot)
+	if err != nil {
+		return err
+	}
+	auditSummary := readAuditSummary(projectRoot)
+	prompt := buildOneShotPrompt(configYAML, phaseFiles, auditSummary, instruction)
+
+	fmt.Printf("  %sReading current config...%s\n", ux.Dim, ux.Reset)
+	fmt.Printf("  %sApplying change...%s\n", ux.Dim, ux.Reset)
+
+	output, err := runClaudeCapture(ctx, prompt)
+	if err != nil {
+		return err
+	}
+
+	blocks := fileblocks.Parse(output)
+	if len(blocks) == 0 {
+		return fmt.Errorf("no changes produced")
+	}
+
+	return writeChanges(projectRoot, blocks)
+}
+
+func runClaudeCapture(ctx context.Context, prompt string) (string, error) {
+	cmd := exec.CommandContext(ctx, "claude", "-p", prompt, "--model", "sonnet")
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = dispatch.FilteredEnv()
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("claude: %w", err)
+	}
+	return stdout.String(), nil
+}
+
+func writeChanges(projectRoot string, blocks []fileblocks.FileBlock) error {
+	absRoot, err := filepath.Abs(projectRoot)
+	if err != nil {
+		return fmt.Errorf("resolving project root: %w", err)
+	}
+
+	var kept []fileblocks.FileBlock
+	for _, b := range blocks {
+		if !strings.HasPrefix(b.Path, ".orc/") {
+			continue
+		}
+		fullPath := filepath.Join(absRoot, b.Path)
+		if !isWithinDir(absRoot, fullPath) {
+			continue
+		}
+		kept = append(kept, b)
+	}
+	if len(kept) == 0 {
+		return fmt.Errorf("no changes produced (all file blocks were outside .orc/)")
+	}
+
+	hasConfig := false
+	for _, b := range kept {
+		if b.Path == ".orc/config.yaml" {
+			hasConfig = true
+			break
+		}
+	}
+
+	if hasConfig {
+		tmpDir, err := os.MkdirTemp("", "orc-improve-*")
+		if err != nil {
+			return fmt.Errorf("creating temp dir: %w", err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		if err := copyOrcDir(projectRoot, tmpDir); err != nil {
+			return fmt.Errorf("copying .orc/ for validation: %w", err)
+		}
+
+		for _, b := range kept {
+			fullPath := filepath.Join(tmpDir, b.Path)
+			if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+				return fmt.Errorf("creating directory for %s: %w", b.Path, err)
+			}
+			if err := os.WriteFile(fullPath, []byte(b.Content+"\n"), 0644); err != nil {
+				return fmt.Errorf("writing %s to temp dir: %w", b.Path, err)
+			}
+		}
+
+		if _, err := config.Load(filepath.Join(tmpDir, ".orc", "config.yaml"), tmpDir); err != nil {
+			return fmt.Errorf("invalid config: %w", err)
+		}
+	}
+
+	for _, b := range kept {
+		fullPath := filepath.Join(absRoot, b.Path)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			return fmt.Errorf("creating directory for %s: %w", b.Path, err)
+		}
+		if err := os.WriteFile(fullPath, []byte(b.Content+"\n"), 0644); err != nil {
+			return fmt.Errorf("writing %s: %w", b.Path, err)
+		}
+	}
+
+	fmt.Println()
+	for _, b := range kept {
+		fmt.Printf("  %s✓ Updated %s%s\n", ux.Green, b.Path, ux.Reset)
+	}
+	return nil
+}
+
+// isWithinDir checks that path is within the base directory.
+func isWithinDir(base, path string) bool {
+	rel, err := filepath.Rel(base, path)
+	return err == nil && !strings.HasPrefix(rel, "..") && rel != ".."
+}
+
+func copyOrcDir(projectRoot, tmpDir string) error {
+	srcOrc := filepath.Join(projectRoot, ".orc")
+	return filepath.WalkDir(srcOrc, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(srcOrc, path)
+		if rel == "artifacts" || strings.HasPrefix(rel, "artifacts"+string(filepath.Separator)) ||
+			rel == "audit" || strings.HasPrefix(rel, "audit"+string(filepath.Separator)) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		dstPath := filepath.Join(tmpDir, ".orc", rel)
+		if d.IsDir() {
+			return os.MkdirAll(dstPath, 0755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
+			return err
+		}
+		return os.WriteFile(dstPath, data, 0644)
+	})
+}
+
+// Interactive launches Claude in interactive mode with workflow context pre-loaded.
+func Interactive(projectRoot string) error {
+	configYAML, phaseFiles, err := readOrcFiles(projectRoot)
+	if err != nil {
+		return err
+	}
+	auditSummary := readAuditSummary(projectRoot)
+	ctx := buildInteractiveContext(configYAML, phaseFiles, auditSummary)
+
+	claudePath, err := exec.LookPath("claude")
+	if err != nil {
+		return fmt.Errorf("claude not found: %w", err)
+	}
+
+	fmt.Printf("  %sLoading workflow context...%s\n", ux.Dim, ux.Reset)
+
+	args := []string{"claude", "--append-system-prompt", ctx}
+	env := dispatch.FilteredEnv()
+	return syscall.Exec(claudePath, args, env)
+}
