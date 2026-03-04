@@ -38,7 +38,7 @@ func buildOneShotPrompt(configYAML string, phaseFiles map[string]string, auditSu
 	b.WriteString("- All file paths must start with .orc/\n")
 	b.WriteString("- If you add a new agent phase, include its prompt file.\n")
 	b.WriteString("- Ensure the config remains valid per the schema above.\n")
-	b.WriteString("\n## Output Format\n```yaml file=.orc/config.yaml\n<config content>\n```\n")
+	b.WriteString("\n## Output Format\n````yaml file=.orc/config.yaml\n<config content>\n````\n")
 	return b.String()
 }
 
