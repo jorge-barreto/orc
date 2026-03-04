@@ -49,8 +49,9 @@ func runCmd() *cli.Command {
 		Name:      "run",
 		Usage:     "Run the workflow for a ticket",
 		ArgsUsage: "<ticket>",
+		UsageText: "orc run PROJ-123\n   orc run PROJ-123 --auto --verbose\n   orc run PROJ-123 --retry 3",
 		Flags: []cli.Flag{
-			&cli.BoolFlag{Name: "auto", Usage: "Skip human gates"},
+			&cli.BoolFlag{Name: "auto", Usage: "Unattended mode — skip gates, no interactive steering"},
 			&cli.IntFlag{Name: "retry", Usage: "Retry from phase N (1-indexed)"},
 			&cli.IntFlag{Name: "from", Usage: "Start from phase N (1-indexed)"},
 			&cli.BoolFlag{Name: "dry-run", Usage: "Print phase plan without executing"},

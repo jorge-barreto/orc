@@ -288,8 +288,9 @@ Example:
 gate
 ----
 
-Prompts the operator for y/n approval at the terminal. If the operator
-answers "n", the workflow stops with status "failed".
+Prompts the operator for approval at the terminal. The operator can type
+"y" to continue, or any other text to request a revision — the text is
+captured as feedback in the phase log and the workflow stops.
 
 When --auto is passed, all gate phases are automatically approved and skipped.
 
@@ -411,8 +412,10 @@ simple error retry and deliberate quality iteration.
 
 Failure path: When a phase with loop fails, the failure output is
 written to .orc/artifacts/<ticket>/feedback/from-<phase>.md, the loop
-counter increments, and the runner jumps back to loop.goto. If the
-counter reaches loop.max, the loop is exhausted.
+counter increments, and the runner jumps back to loop.goto. On the
+next iteration, all feedback files are automatically prepended to
+agent prompts so agents see prior failure context. If the counter
+reaches loop.max, the loop is exhausted.
 
 Success path: When a phase with loop succeeds but the iteration count
 is less than loop.min, the runner forces another iteration (writing
@@ -460,11 +463,12 @@ orc run returns structured exit codes for scripting and CI/CD:
   0    Success. Workflow completed, all phases passed.
   1    Retryable failure. An agent phase failed, a loop exceeded
        its max, or a timeout was hit. A fresh orc run might succeed.
-  2    Human intervention needed. A gate was denied, or a phase produced
-       an unrecoverable error. Don't retry automatically.
+  2    Human intervention needed. A gate was denied, a cost limit was
+       exceeded, or a phase produced an unrecoverable error. Don't retry
+       automatically.
   3    Configuration or setup error. Config invalid, prompt file missing,
        required binary not found. Fix the config before retrying.
-  130  Signal interrupt. SIGINT (Ctrl+C) or SIGTERM was received.
+  130  Signal interrupt. SIGINT (Ctrl+C), SIGTERM, or SIGHUP was received.
 
 A wrapper script can check $? to decide whether to retry:
 
@@ -581,8 +585,22 @@ feedback/
 
 When a phase with a loop fails (or succeeds but min is not yet met),
 its output is written to feedback/from-<phase-name>.md. Feedback is
-automatically appended to agent prompts on subsequent runs, so agents
-receive error context without needing to manually read feedback files.
+automatically prepended to agent prompts on the next iteration, so
+agents receive prior failure context without needing to manually read
+feedback files. Multiple feedback files are concatenated with headers
+(e.g., "--- Feedback from review ---").
+
+Audit Directory
+---------------
+
+orc maintains a separate .orc/audit/<ticket>/ directory that preserves
+cost data, timing, and archived iteration logs across cancellations and
+re-runs. When a phase loops, its previous iteration's logs and prompts
+are archived here with iteration numbers (e.g., phase-1.iter-1.log).
+
+When you run orc cancel, the audit directory is preserved by rotating
+to a timestamped name. orc status reads from the audit directory for
+cost and timing data.
 
 Declared Outputs
 ----------------
