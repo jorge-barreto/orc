@@ -24,9 +24,9 @@ Check the loop counter to determine which review pass this is:
 cat "$ARTIFACTS_DIR/loop-counts.json" 2>/dev/null || echo "first review"
 ```
 
-- **First review** (no loop-counts.json or review-check count is absent): Apply **maximum scrutiny**. Examine every changed file, every new function, every test. You MUST find blocking issues — a non-trivial implementation invariably has bugs, missing edge cases, or convention violations on first pass.
-- **Second review** (review-check count is 1): Verify previous blocking issues are resolved. Apply **fresh scrutiny** to areas the implementer changed — fixes often introduce new problems. You should still expect to find issues unless the fixes were flawless.
-- **Third review and beyond** (review-check count >= 2): You may now pass if zero blocking issues remain. Apply the **convergence rule** — don't hold the implementation hostage over minor preferences.
+- **First review** (no loop-counts.json or review count is absent): Apply **maximum scrutiny**. Examine every changed file, every new function, every test. You MUST find blocking issues — a non-trivial implementation invariably has bugs, missing edge cases, or convention violations on first pass.
+- **Second review** (review count is 1): Verify previous blocking issues are resolved. Apply **fresh scrutiny** to areas the implementer changed — fixes often introduce new problems. You should still expect to find issues unless the fixes were flawless.
+- **Third review and beyond** (review count >= 2): You may now pass if zero blocking issues remain. Apply the **convergence rule** — don't hold the implementation hostage over minor preferences.
 
 ## Step 3: Review the Changes
 

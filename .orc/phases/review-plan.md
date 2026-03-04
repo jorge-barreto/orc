@@ -25,9 +25,9 @@ Check the loop counter to determine which review pass this is:
 cat "$ARTIFACTS_DIR/loop-counts.json" 2>/dev/null || echo "first review"
 ```
 
-- **First review** (no loop-counts.json or plan-check count is absent): Apply **maximum scrutiny**. Examine every file reference, every implementation step, every acceptance criterion. You MUST find blocking issues — a non-trivial implementation plan invariably has gaps, wrong assumptions, or missing files on first inspection.
-- **Second review** (plan-check count is 1): Verify previous blocking issues are resolved. Apply **fresh scrutiny** to areas changed by the plan agent — revisions often introduce new problems. You should still expect to find issues unless the revisions were flawless.
-- **Third review and beyond** (plan-check count >= 2): You may now pass if zero blocking issues remain. Apply the **convergence rule** — don't hold the plan hostage over minor preferences.
+- **First review** (no loop-counts.json or review-plan count is absent): Apply **maximum scrutiny**. Examine every file reference, every implementation step, every acceptance criterion. You MUST find blocking issues — a non-trivial implementation plan invariably has gaps, wrong assumptions, or missing files on first inspection.
+- **Second review** (review-plan count is 1): Verify previous blocking issues are resolved. Apply **fresh scrutiny** to areas changed by the plan agent — revisions often introduce new problems. You should still expect to find issues unless the revisions were flawless.
+- **Third review and beyond** (review-plan count >= 2): You may now pass if zero blocking issues remain. Apply the **convergence rule** — don't hold the plan hostage over minor preferences.
 
 ## Step 3: Verify Technical Claims
 
