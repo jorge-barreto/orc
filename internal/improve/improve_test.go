@@ -1,6 +1,7 @@
 package improve
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -343,6 +344,46 @@ func TestReadAuditSummary_WithData(t *testing.T) {
 	}
 	if !strings.Contains(result, "Run status: completed") {
 		t.Errorf("result should contain run status, got: %s", result)
+	}
+}
+
+func TestReadAuditSummary_SortsByRecency(t *testing.T) {
+	dir := t.TempDir()
+	auditBase := filepath.Join(dir, ".orc", "audit")
+
+	// Create 3 audit dirs with different timing starts.
+	// OLD-RUN started earliest, NEW-RUN started latest.
+	runs := []struct {
+		name  string
+		start string
+	}{
+		{"A-OLD-RUN", "2026-01-01T00:00:00Z"},
+		{"B-NEW-RUN", "2026-03-01T00:00:00Z"},
+		{"C-MID-RUN", "2026-02-01T00:00:00Z"},
+	}
+	for _, r := range runs {
+		ad := filepath.Join(auditBase, r.name)
+		os.MkdirAll(ad, 0755)
+		timing := fmt.Sprintf(`{"entries":[{"phase":"plan","start":"%s","end":"%s","duration":"1m 00s"}]}`, r.start, r.start)
+		os.WriteFile(filepath.Join(ad, "timing.json"), []byte(timing), 0644)
+		os.WriteFile(filepath.Join(ad, "costs.json"), []byte(`{"total_cost_usd":0.10,"phases":[]}`), 0644)
+	}
+
+	result := readAuditSummary(dir)
+
+	// B-NEW-RUN (March) should appear before C-MID-RUN (Feb) before A-OLD-RUN (Jan)
+	newIdx := strings.Index(result, "B-NEW-RUN")
+	midIdx := strings.Index(result, "C-MID-RUN")
+	oldIdx := strings.Index(result, "A-OLD-RUN")
+
+	if newIdx == -1 || midIdx == -1 || oldIdx == -1 {
+		t.Fatalf("expected all runs in output, got:\n%s", result)
+	}
+	if newIdx >= midIdx {
+		t.Errorf("NEW-RUN (at %d) should appear before MID-RUN (at %d)", newIdx, midIdx)
+	}
+	if midIdx >= oldIdx {
+		t.Errorf("MID-RUN (at %d) should appear before OLD-RUN (at %d)", midIdx, oldIdx)
 	}
 }
 

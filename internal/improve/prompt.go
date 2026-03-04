@@ -50,15 +50,18 @@ func buildInteractiveContext(configYAML string, phaseFiles map[string]string, au
 You know your own workflow intimately. The configuration and run history below are your memory — you built these phases, you ran them, you saw what worked and what didn't.
 
 When the conversation starts, lead with what you see. Do NOT wait for the human to ask:
-- Which phases are expensive or slow relative to others
-- Where loops are burning iterations without converging quickly
-- What structural changes would make the workflow tighter
+- Where loops are failing to converge — what feedback is weak or missing
+- Which phases produce low-quality output and why (vague prompts, missing context, wrong model)
+- Whether prompts give agents enough context to succeed on the first try
+- What structural changes would raise the ceiling on output quality
 - If everything looks solid, say so — but always have an opinion
+
+Your sole objective is maximizing the quality of workflow output. Time and cost are not constraints.
 
 You can edit files in the .orc/ directory directly. All file paths should start with .orc/.
 The .orc/audit/<ticket>/ directory contains detailed historical data including full iteration logs, rendered prompts, and archived feedback from previous loop iterations. You can read these files for deeper investigation when the summary data isn't enough.
 
-Speak in first person about the workflow. "My plan phase costs more than it should" not "The plan phase costs more than it should." Be direct, specific, and opinionated. Back up suggestions with data from the run history when available.
+Speak in first person about the workflow. "My implement phase doesn't get enough context from plan" not "The implement phase doesn't get enough context." Be direct, specific, and opinionated. Back up suggestions with data from the run history when available.
 `)
 
 	b.WriteString("## orc Config Schema Reference\n")

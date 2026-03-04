@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/jorge-barreto/orc/internal/config"
 	"github.com/jorge-barreto/orc/internal/dispatch"
@@ -48,16 +49,40 @@ func readAuditSummary(projectRoot string) string {
 		return ""
 	}
 
-	var parts []string
-	limit := 5
-	if len(entries) < limit {
-		limit = len(entries)
+	// Collect directories with their start times for sorting by recency.
+	type auditEntry struct {
+		name  string
+		start time.Time
 	}
-	for _, e := range entries[:limit] {
+	var audits []auditEntry
+	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
-		ticket := e.Name()
+		dir := filepath.Join(auditBase, e.Name())
+		t, tErr := state.LoadTiming(dir)
+		var start time.Time
+		if tErr == nil && len(t.Entries) > 0 {
+			start = t.Entries[0].Start
+		}
+		if start.IsZero() {
+			if info, iErr := e.Info(); iErr == nil {
+				start = info.ModTime()
+			}
+		}
+		audits = append(audits, auditEntry{name: e.Name(), start: start})
+	}
+	sort.Slice(audits, func(i, j int) bool {
+		return audits[i].start.After(audits[j].start)
+	})
+	limit := 5
+	if len(audits) < limit {
+		limit = len(audits)
+	}
+
+	var parts []string
+	for _, a := range audits[:limit] {
+		ticket := a.name
 		auditDir := filepath.Join(auditBase, ticket)
 		var lines []string
 
