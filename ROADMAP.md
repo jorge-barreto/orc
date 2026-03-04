@@ -325,6 +325,34 @@ On failure, the table still prints (up to the phase that failed), with the faili
 
 ---
 
+### R-039: loop.check feedback uses declared outputs, not check stdout
+
+**Bug:** When `loop.check` fails, the runner writes the check command's stdout as feedback via `handleLoopFailure`. But check commands like `test -f $ARTIFACTS_DIR/review-pass.txt` are pure pass/fail signals — they produce no output. So `feedback/from-<phase>.md` is written with empty content, and the feedback injection in `RenderAndSavePrompt` skips it (empty files are filtered). The downstream agent gets no feedback and re-implements blindly.
+
+**Root cause:** `runner.go:254-262` — `runLoopCheck` returns `checkOutput` (the check command's stdout), which is passed to `handleLoopFailure` as the feedback content. For signal-type checks, this is always empty.
+
+**The semantic model:** The check command is a gate (pass/fail). The phase's declared outputs (e.g., `review-findings.md`) are the content. Feedback should always come from the declared outputs, never from the check's stdout.
+
+**Fix:**
+- Add a helper `readDeclaredOutputs(artifactsDir string, outputs []string) string` that reads and concatenates the phase's declared output artifact files
+- In the `loop.check` failure block, pass `readDeclaredOutputs(...)` to `handleLoopFailure` instead of `checkOutput`
+- This flows naturally through the existing on-exhaust path too (the `output` parameter in `handleLoopFailure` will already contain the declared outputs)
+
+**Key files:**
+- `internal/runner/runner.go` — lines 252-268 (loop.check failure block), `handleLoopFailure`
+- `internal/state/artifacts.go` — `WriteFeedback`, `ReadAllFeedback` (these are fine, the bug is upstream)
+
+**Acceptance criteria:**
+- When `loop.check` fails, `feedback/from-<phase>.md` contains the content of the phase's declared output artifacts (not the check command's stdout)
+- Feedback injection in `RenderAndSavePrompt` delivers this content to the next agent automatically
+- Existing tests pass; new test verifies declared outputs are used as feedback on check failure
+
+**Priority:** P0 (blocks all loop.check workflows from converging)
+**Effort:** Small
+**Dependencies:** None
+
+---
+
 ## Wave 1: Convergent Quality
 
 **Theme:** The core product differentiator. The convergent review loop is what makes orc more than "run these phases in order" — it's "iterate until adversarial quality checks pass, with a guaranteed minimum number of review cycles."

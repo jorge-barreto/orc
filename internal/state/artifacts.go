@@ -107,6 +107,23 @@ func CheckOutputs(artifactsDir string, outputs []string) []string {
 	return missing
 }
 
+// ReadDeclaredOutputs reads and concatenates the content of declared output artifact files.
+// Missing or unreadable files are silently skipped. Returns empty string if no content found.
+func ReadDeclaredOutputs(artifactsDir string, outputs []string) string {
+	var parts []string
+	for _, o := range outputs {
+		data, err := os.ReadFile(filepath.Join(artifactsDir, o))
+		if err != nil {
+			continue
+		}
+		content := strings.TrimSpace(string(data))
+		if content != "" {
+			parts = append(parts, content)
+		}
+	}
+	return strings.Join(parts, "\n\n")
+}
+
 // PromptPath returns the path for a rendered prompt file.
 func PromptPath(artifactsDir string, idx int) string {
 	return filepath.Join(artifactsDir, "prompts", fmt.Sprintf("phase-%d.md", idx+1))
