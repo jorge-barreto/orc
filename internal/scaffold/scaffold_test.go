@@ -10,7 +10,26 @@ import (
 	"github.com/jorge-barreto/orc/internal/config"
 )
 
+func stubClaude(t *testing.T) {
+	t.Helper()
+	orig := runClaude
+	t.Cleanup(func() { runClaude = orig })
+	runClaude = func(_ context.Context, _ string) (string, error) {
+		return "```yaml file=.orc/config.yaml\n" +
+			"name: test-project\n" +
+			"phases:\n" +
+			"  - name: plan\n" +
+			"    type: agent\n" +
+			"    prompt: .orc/phases/plan.md\n" +
+			"```\n\n" +
+			"```markdown file=.orc/phases/plan.md\n" +
+			"You are a planning assistant.\n" +
+			"```\n", nil
+	}
+}
+
 func TestInit_CreatesDirectoryStructure(t *testing.T) {
+	stubClaude(t)
 	dir := t.TempDir()
 	if err := Init(context.Background(), dir); err != nil {
 		t.Fatalf("Init failed: %v", err)
@@ -43,6 +62,7 @@ func TestInit_CreatesDirectoryStructure(t *testing.T) {
 }
 
 func TestInit_GeneratedConfigIsValid(t *testing.T) {
+	stubClaude(t)
 	dir := t.TempDir()
 	if err := Init(context.Background(), dir); err != nil {
 		t.Fatalf("Init failed: %v", err)

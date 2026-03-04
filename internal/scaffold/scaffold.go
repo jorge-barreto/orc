@@ -92,7 +92,7 @@ func initWithAI(ctx context.Context, targetDir string) error {
 // generateConfig calls claude, parses the output, and validates the generated config
 // in a temp directory. Returns the validated file blocks or an error.
 func generateConfig(ctx context.Context, prompt string) ([]fileblocks.FileBlock, error) {
-	output, err := runClaudeCapture(ctx, prompt)
+	output, err := runClaude(ctx, prompt)
 	if err != nil {
 		return nil, err
 	}
@@ -163,8 +163,11 @@ func printSuccess(source string, written []string) {
 	}
 }
 
-// runClaudeCapture invokes claude -p with the given prompt and returns stdout.
-func runClaudeCapture(ctx context.Context, prompt string) (string, error) {
+// runClaude is the function used to invoke claude. Tests can override this.
+var runClaude = runClaudeCaptureDefault
+
+// runClaudeCaptureDefault invokes claude -p with the given prompt and returns stdout.
+func runClaudeCaptureDefault(ctx context.Context, prompt string) (string, error) {
 	cmd := exec.CommandContext(ctx, "claude", "-p", prompt, "--model", "opus", "--effort", "high")
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
