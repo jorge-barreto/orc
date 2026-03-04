@@ -300,9 +300,25 @@ func truncateLines(content string, maxLines int) string {
 }
 
 func runClaude(ctx context.Context, prompt, model string) error {
-	cmd := exec.CommandContext(ctx, "claude", "-p", prompt, "--model", model, "--effort", "high")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd := exec.CommandContext(ctx, "claude", "-p", prompt,
+		"--model", model, "--effort", "high",
+		"--output-format", "stream-json",
+	)
 	cmd.Env = dispatch.FilteredEnv()
-	return cmd.Run()
+	cmd.Stderr = os.Stderr
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("stdout pipe: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("starting claude: %w", err)
+	}
+
+	_, streamErr := dispatch.ProcessStream(ctx, stdout, os.Stdout, nil, nil)
+
+	if err := cmd.Wait(); err != nil && streamErr == nil {
+		return fmt.Errorf("claude: %w", err)
+	}
+	return streamErr
 }
