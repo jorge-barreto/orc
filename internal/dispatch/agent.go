@@ -178,6 +178,9 @@ func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 		output = tr.Stream.Text
 	}
 	res := &Result{ExitCode: tr.ExitCode, Output: output, Turns: 1}
+	if ctx.Err() == context.DeadlineExceeded {
+		res.TimedOut = true
+	}
 	if tr.Stream != nil {
 		res.CostUSD = tr.Stream.CostUSD
 		res.InputTokens = tr.Stream.InputTokens
@@ -222,6 +225,9 @@ func RunAgentWithPrompt(ctx context.Context, phase config.Phase, env *Environmen
 		output = tr.Stream.Text
 	}
 	res := &Result{ExitCode: tr.ExitCode, Output: output, Turns: 1}
+	if ctx.Err() == context.DeadlineExceeded {
+		res.TimedOut = true
+	}
 	if tr.Stream != nil {
 		res.CostUSD = tr.Stream.CostUSD
 		res.InputTokens = tr.Stream.InputTokens
@@ -325,6 +331,7 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 	return &Result{
 		ExitCode:                 exitCode,
 		Output:                   output,
+		TimedOut:                 ctx.Err() == context.DeadlineExceeded,
 		CostUSD:                  totalCost,
 		InputTokens:              totalInput,
 		OutputTokens:             totalOutput,
