@@ -138,6 +138,7 @@ func OneShot(ctx context.Context, projectRoot, instruction string) error {
 func runClaudeCapture(ctx context.Context, prompt string) (string, error) {
 	cmd := exec.CommandContext(ctx, "claude", "-p", prompt,
 		"--model", "opus",
+		"--effort", "high",
 		"--output-format", "stream-json",
 		"--verbose",
 		"--include-partial-messages",
@@ -289,7 +290,7 @@ func Interactive(projectRoot string) error {
 
 	fmt.Printf("  %sLoading workflow context...%s\n", ux.Dim, ux.Reset)
 
-	args := []string{"claude", "--append-system-prompt", ctx, "Analyze my workflow and suggest improvements."}
+	args := []string{"claude", "--model", "opus", "--effort", "high", "--append-system-prompt", ctx, "Analyze my workflow and suggest improvements."}
 	env := dispatch.FilteredEnv()
 	return syscall.Exec(claudePath, args, env)
 }
