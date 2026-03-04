@@ -196,6 +196,52 @@ func TestCheckOutputs_SomeMissing(t *testing.T) {
 	}
 }
 
+func TestReadDeclaredOutputs_AllPresent(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "findings.md"), []byte("issue A"), 0644)
+	os.WriteFile(filepath.Join(dir, "summary.md"), []byte("summary B"), 0644)
+
+	result := ReadDeclaredOutputs(dir, []string{"findings.md", "summary.md"})
+	if !strings.Contains(result, "issue A") {
+		t.Fatalf("missing findings content; got: %q", result)
+	}
+	if !strings.Contains(result, "summary B") {
+		t.Fatalf("missing summary content; got: %q", result)
+	}
+}
+
+func TestReadDeclaredOutputs_SomeMissing(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "findings.md"), []byte("issue A"), 0644)
+
+	result := ReadDeclaredOutputs(dir, []string{"findings.md", "missing.md"})
+	if !strings.Contains(result, "issue A") {
+		t.Fatalf("missing findings content; got: %q", result)
+	}
+	if strings.Contains(result, "missing") {
+		t.Fatalf("should not contain missing file reference; got: %q", result)
+	}
+}
+
+func TestReadDeclaredOutputs_Empty(t *testing.T) {
+	dir := t.TempDir()
+	result := ReadDeclaredOutputs(dir, []string{})
+	if result != "" {
+		t.Fatalf("expected empty string, got %q", result)
+	}
+}
+
+func TestReadDeclaredOutputs_SkipsEmptyContent(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "empty.md"), []byte("   \n  "), 0644)
+	os.WriteFile(filepath.Join(dir, "real.md"), []byte("actual content"), 0644)
+
+	result := ReadDeclaredOutputs(dir, []string{"empty.md", "real.md"})
+	if result != "actual content" {
+		t.Fatalf("expected only real content, got %q", result)
+	}
+}
+
 func TestPromptPath(t *testing.T) {
 	got := PromptPath("/art", 0)
 	want := filepath.Join("/art", "prompts", "phase-1.md")

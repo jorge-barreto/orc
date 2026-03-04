@@ -1349,10 +1349,12 @@ func TestRun_LoopCheckFeedbackWritten(t *testing.T) {
 		Name: "test",
 		Phases: []config.Phase{
 			{Name: "a", Type: "script", Run: "echo"},
-			{Name: "b", Type: "script", Run: "echo", Loop: &config.Loop{
-				Goto: "a", Min: 1, Max: 3,
-				Check: "echo 'check output' && test -f " + markerPath,
-			}},
+			{Name: "b", Type: "script", Run: "echo",
+				Outputs: []string{"review-findings.md"},
+				Loop: &config.Loop{
+					Goto: "a", Min: 1, Max: 3,
+					Check: "test -f " + markerPath,
+				}},
 		},
 	}
 
@@ -1364,6 +1366,9 @@ func TestRun_LoopCheckFeedbackWritten(t *testing.T) {
 			bCount++
 			n := bCount
 			mu.Unlock()
+			// Create the declared output file (simulates agent writing review findings)
+			os.WriteFile(filepath.Join(env.ArtifactsDir, "review-findings.md"),
+				[]byte("Found 3 issues in handler.go"), 0644)
 			if n == 2 {
 				os.WriteFile(markerPath, []byte("pass"), 0644)
 			}
@@ -1383,8 +1388,66 @@ func TestRun_LoopCheckFeedbackWritten(t *testing.T) {
 	if err != nil {
 		t.Fatalf("feedback file not written: %v", err)
 	}
-	if !strings.Contains(string(data), "check output") {
-		t.Fatalf("feedback = %q, want to contain 'check output'", string(data))
+	if !strings.Contains(string(data), "Found 3 issues in handler.go") {
+		t.Fatalf("feedback should contain declared output content, got: %q", string(data))
+	}
+}
+
+func TestRun_LoopCheckFeedbackUsesDeclaredOutputs(t *testing.T) {
+	tmpDir := t.TempDir()
+	markerPath := filepath.Join(tmpDir, "check-marker")
+
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo",
+				Outputs: []string{"review-findings.md"},
+				Loop: &config.Loop{
+					Goto: "a", Min: 1, Max: 3,
+					Check: "echo 'check-sentinel-do-not-use' && test -f " + markerPath,
+				}},
+		},
+	}
+
+	bCount := 0
+	mu := sync.Mutex{}
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		if phase.Name == "b" {
+			mu.Lock()
+			bCount++
+			n := bCount
+			mu.Unlock()
+			os.WriteFile(filepath.Join(env.ArtifactsDir, "review-findings.md"),
+				[]byte("Review: variable naming is inconsistent in handler.go"), 0644)
+			if n == 2 {
+				os.WriteFile(markerPath, []byte("pass"), 0644)
+			}
+		}
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fbPath := filepath.Join(r.Env.ArtifactsDir, "feedback", "from-b.md")
+	data, err := os.ReadFile(fbPath)
+	if err != nil {
+		t.Fatalf("feedback file not written: %v", err)
+	}
+
+	feedback := string(data)
+	// Feedback must contain the declared output content
+	if !strings.Contains(feedback, "variable naming is inconsistent") {
+		t.Fatalf("feedback should contain declared output content, got: %q", feedback)
+	}
+	// Feedback must NOT contain the check command's stdout (the old buggy behavior)
+	if strings.Contains(feedback, "check-sentinel-do-not-use") {
+		t.Fatalf("feedback should NOT contain check stdout, got: %q", feedback)
 	}
 }
 

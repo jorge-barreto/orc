@@ -259,7 +259,8 @@ func (r *Runner) Run(ctx context.Context) error {
 				appendPhaseLog(r.Env.ArtifactsDir, i, fmt.Sprintf("\n[orc] %s: %s\n%s", phase.Name, checkMsg, checkOutput))
 				ux.PhaseFail(i, phase.Name, checkMsg)
 
-				shouldContinue, loopErr := r.handleLoopFailure(i, phase, loopCounts, checkOutput)
+				feedback := state.ReadDeclaredOutputs(r.Env.ArtifactsDir, phase.Outputs)
+				shouldContinue, loopErr := r.handleLoopFailure(i, phase, loopCounts, feedback)
 				if loopErr != nil {
 					return loopErr
 				}
