@@ -288,6 +288,25 @@ func TestAuditFeedbackPath(t *testing.T) {
 	}
 }
 
+func TestAuditOutputPath(t *testing.T) {
+	got := AuditOutputPath("/audit", 0, 1, "design.md")
+	want := filepath.Join("/audit", "outputs", "phase-1.iter-1.design.md")
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	got = AuditOutputPath("/audit", 2, 3, "report.md")
+	want = filepath.Join("/audit", "outputs", "phase-3.iter-3.report.md")
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	// filepath.Base strips subdirectory prefix
+	got = AuditOutputPath("/audit", 0, 1, "subdir/report.md")
+	want = filepath.Join("/audit", "outputs", "phase-1.iter-1.report.md")
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
 func TestPromptPath(t *testing.T) {
 	got := PromptPath("/art", 0)
 	want := filepath.Join("/art", "prompts", "phase-1.md")

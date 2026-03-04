@@ -1870,3 +1870,97 @@ func TestRun_OuterLoopClearsFeedback(t *testing.T) {
 		t.Fatalf("expected no feedback after outer loop, got: %s", feedback)
 	}
 }
+
+func TestRun_AuditStateOnCompletion(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	auditDir := state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket)
+	loaded, err := state.Load(auditDir)
+	if err != nil {
+		t.Fatalf("audit state not found: %v", err)
+	}
+	if loaded.Status != state.StatusCompleted {
+		t.Fatalf("audit status = %q, want completed", loaded.Status)
+	}
+}
+
+func TestRun_AuditStateOnFailure(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	mock.results["a"] = &dispatch.Result{ExitCode: 1}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected failure")
+	}
+
+	auditDir := state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket)
+	loaded, loadErr := state.Load(auditDir)
+	if loadErr != nil {
+		t.Fatalf("audit state not found: %v", loadErr)
+	}
+	if loaded.Status != state.StatusFailed {
+		t.Fatalf("audit status = %q, want failed", loaded.Status)
+	}
+}
+
+func TestRun_ArchivesOutputsBeforeReDispatch(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo",
+				Outputs: []string{"result.md"},
+				Loop:    &config.Loop{Goto: "a", Min: 1, Max: 3}},
+		},
+	}
+
+	var mu sync.Mutex
+	bCount := 0
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		if phase.Name == "b" {
+			mu.Lock()
+			bCount++
+			n := bCount
+			mu.Unlock()
+			os.WriteFile(filepath.Join(env.ArtifactsDir, "result.md"),
+				[]byte(fmt.Sprintf("iteration %d", n)), 0644)
+			if n == 1 {
+				return &dispatch.Result{ExitCode: 1, Output: "b failed"}, nil
+			}
+		}
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+
+	r := newTestRunner(t, cfg, mock)
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	auditDir := state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket)
+	archived := state.AuditOutputPath(auditDir, 1, 1, "result.md")
+	data, err := os.ReadFile(archived)
+	if err != nil {
+		t.Fatalf("archived output not found: %v", err)
+	}
+	if string(data) != "iteration 1" {
+		t.Fatalf("archived output = %q, want %q", string(data), "iteration 1")
+	}
+}
