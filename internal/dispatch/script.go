@@ -47,5 +47,9 @@ func RunScript(ctx context.Context, phase config.Phase, env *Environment) (*Resu
 		return nil, err
 	}
 
-	return &Result{ExitCode: code, Output: captured.String()}, nil
+	res := &Result{ExitCode: code, Output: captured.String()}
+	if ctx.Err() == context.DeadlineExceeded {
+		res.TimedOut = true
+	}
+	return res, nil
 }

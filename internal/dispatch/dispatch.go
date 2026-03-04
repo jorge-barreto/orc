@@ -76,6 +76,7 @@ func PhaseWorkDir(phase config.Phase, env *Environment) string {
 type Result struct {
 	ExitCode                 int
 	Output                   string
+	TimedOut                 bool // true if killed by orc's phase timeout
 	CostUSD                  float64
 	InputTokens              int
 	OutputTokens             int

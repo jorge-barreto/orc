@@ -185,7 +185,7 @@ func TestGatherTiming_WithData(t *testing.T) {
 	}
 	timing.Flush(dir)
 
-	result := gatherTiming(dir, "test")
+	result := gatherTiming(dir)
 	if !strings.Contains(result, "test") {
 		t.Error("missing phase name")
 	}
@@ -203,7 +203,7 @@ func TestGatherTiming_MissingEnd(t *testing.T) {
 	}
 	timing.Flush(dir)
 
-	result := gatherTiming(dir, "build")
+	result := gatherTiming(dir)
 	if !strings.Contains(result, "did not complete") {
 		t.Errorf("expected 'did not complete', got %q", result)
 	}
@@ -211,7 +211,7 @@ func TestGatherTiming_MissingEnd(t *testing.T) {
 
 func TestGatherTiming_NoData(t *testing.T) {
 	dir := t.TempDir()
-	result := gatherTiming(dir, "nonexistent")
+	result := gatherTiming(dir)
 	if result != "" {
 		t.Errorf("expected empty string, got %q", result)
 	}

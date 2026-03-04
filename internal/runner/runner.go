@@ -203,7 +203,9 @@ func (r *Runner) Run(ctx context.Context) error {
 		if err != nil || (result != nil && result.ExitCode != 0) {
 			r.Timing.AddEnd(phase.Name)
 			errMsg := "non-zero exit"
-			if err != nil {
+			if result != nil && result.TimedOut {
+				errMsg = fmt.Sprintf("timed out after %dm", phase.Timeout)
+			} else if err != nil {
 				errMsg = err.Error()
 			}
 			appendPhaseLog(r.Env.ArtifactsDir, i, fmt.Sprintf("\n[orc] phase %q failed: %s\n", phase.Name, errMsg))
@@ -599,7 +601,9 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 			cancel() // cancel the other goroutine
 			r.Timing.AddEnd(phase.Name)
 			errMsg := "non-zero exit"
-			if pr.err != nil {
+			if pr.result != nil && pr.result.TimedOut {
+				errMsg = fmt.Sprintf("timed out after %dm", phase.Timeout)
+			} else if pr.err != nil {
 				errMsg = pr.err.Error()
 			}
 			appendPhaseLog(r.Env.ArtifactsDir, pr.idx, fmt.Sprintf("\n[orc] phase %q failed: %s\n", phase.Name, errMsg))

@@ -31,6 +31,8 @@ const diagPrompt = `You are diagnosing a failed orc workflow phase. Analyze the 
 %s%s%s%s%s
 Instructions:
 1. Identify what went wrong from the log output. Cross-reference with other phase logs and previous iterations if available.
+   - If a phase log mentions "timed out", it was killed by orc's phase timeout. This usually means the agent ran out of time — possibly due to network issues, slow API responses, or the task being too large for the configured timeout.
+   - Check the Execution Context timing: if a phase's duration closely matches its configured timeout, it likely timed out even if upstream of the current failed phase.
 2. Classify this as a WORKFLOW problem (config, phase ordering, missing outputs) or a CODE problem (the task the agent was working on).
 3. Suggest specific fixes.
 4. Recommend the next command to run:
@@ -58,7 +60,7 @@ func Run(ctx context.Context, projectRoot, artifactsDir string, cfg *config.Conf
 	log := gatherLog(artifactsDir, st.PhaseIndex)
 	prompt := gatherPrompt(artifactsDir, st.PhaseIndex, phase)
 	feedback := gatherFeedback(artifactsDir)
-	timing := gatherTimingWithFallback(auditDir, artifactsDir, phase.Name)
+	timing := gatherTimingWithFallback(auditDir, artifactsDir)
 	loops := gatherLoopCounts(artifactsDir)
 	otherLogs := gatherAllLogs(artifactsDir, cfg.Phases, st.PhaseIndex)
 	iterLogs := gatherIterationLogs(auditDir, st.PhaseIndex)
@@ -194,24 +196,22 @@ func gatherFeedback(artifactsDir string) string {
 }
 
 // gatherTimingWithFallback tries the audit dir first, falls back to artifacts dir.
-func gatherTimingWithFallback(auditDir, artifactsDir, phaseName string) string {
-	result := gatherTiming(auditDir, phaseName)
+// Returns timing for ALL phases so the doctor can correlate durations with timeouts.
+func gatherTimingWithFallback(auditDir, artifactsDir string) string {
+	result := gatherTiming(auditDir)
 	if result == "" {
-		result = gatherTiming(artifactsDir, phaseName)
+		result = gatherTiming(artifactsDir)
 	}
 	return result
 }
 
-func gatherTiming(dir, phaseName string) string {
+func gatherTiming(dir string) string {
 	timing, err := state.LoadTiming(dir)
 	if err != nil {
 		return ""
 	}
 	var parts []string
 	for _, e := range timing.Entries {
-		if e.Phase != phaseName {
-			continue
-		}
 		if e.Duration != "" {
 			parts = append(parts, fmt.Sprintf("%s started %s, duration %s",
 				e.Phase, e.Start.Format("15:04:05"), e.Duration))
