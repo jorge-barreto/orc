@@ -303,6 +303,7 @@ func runClaude(ctx context.Context, prompt, model string) error {
 	cmd := exec.CommandContext(ctx, "claude", "-p", prompt,
 		"--model", model, "--effort", "high",
 		"--output-format", "stream-json",
+		"--verbose",
 	)
 	cmd.Env = dispatch.FilteredEnv()
 	cmd.Stderr = os.Stderr

@@ -135,6 +135,7 @@ func runClaudeCapture(ctx context.Context, prompt string) (string, error) {
 	cmd := exec.CommandContext(ctx, "claude", "-p", prompt,
 		"--model", "sonnet",
 		"--output-format", "stream-json",
+		"--verbose",
 	)
 	cmd.Env = dispatch.FilteredEnv()
 	cmd.Stderr = os.Stderr
