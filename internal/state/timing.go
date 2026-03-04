@@ -83,8 +83,29 @@ func (t *Timing) Flush(artifactsDir string) error {
 	return t.save(artifactsDir)
 }
 
-func formatDuration(d time.Duration) string {
+// TotalElapsed returns the sum of all completed timing entry durations.
+func (t *Timing) TotalElapsed() time.Duration {
+	var total time.Duration
+	for _, e := range t.Entries {
+		if !e.End.IsZero() {
+			total += e.End.Sub(e.Start)
+		}
+	}
+	return total
+}
+
+// FormatDuration formats a duration as "Xm YYs" or "Xh YYm" for longer durations.
+func FormatDuration(d time.Duration) string {
+	if d >= time.Hour {
+		h := int(d.Hours())
+		m := int(d.Minutes()) % 60
+		return fmt.Sprintf("%dh %02dm", h, m)
+	}
 	m := int(d.Minutes())
 	s := int(d.Seconds()) % 60
 	return fmt.Sprintf("%dm %02ds", m, s)
+}
+
+func formatDuration(d time.Duration) string {
+	return FormatDuration(d)
 }
