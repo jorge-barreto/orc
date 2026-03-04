@@ -304,6 +304,7 @@ func runClaude(ctx context.Context, prompt, model string) error {
 		"--model", model, "--effort", "high",
 		"--output-format", "stream-json",
 		"--verbose",
+		"--include-partial-messages",
 	)
 	cmd.Env = dispatch.FilteredEnv()
 	cmd.Stderr = os.Stderr
