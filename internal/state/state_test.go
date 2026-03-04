@@ -6,6 +6,22 @@ import (
 	"testing"
 )
 
+func TestHasState(t *testing.T) {
+	dir := t.TempDir()
+	if HasState(dir) {
+		t.Fatal("HasState should return false for empty dir")
+	}
+
+	// Write a state file, then check again.
+	st := &State{Status: StatusRunning}
+	if err := st.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+	if !HasState(dir) {
+		t.Fatal("HasState should return true after Save")
+	}
+}
+
 func TestLoad_NoExistingState(t *testing.T) {
 	dir := t.TempDir()
 	st, err := Load(dir)

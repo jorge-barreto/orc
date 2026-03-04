@@ -25,6 +25,12 @@ func statePath(artifactsDir string) string {
 	return filepath.Join(artifactsDir, "state.json")
 }
 
+// HasState reports whether a state file exists in the artifacts directory.
+func HasState(artifactsDir string) bool {
+	_, err := os.Stat(statePath(artifactsDir))
+	return err == nil
+}
+
 // Load reads the state from the artifacts directory. Returns a new state if not found.
 func Load(artifactsDir string) (*State, error) {
 	path := statePath(artifactsDir)
