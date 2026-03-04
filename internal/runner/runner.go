@@ -293,12 +293,22 @@ func (r *Runner) Run(ctx context.Context) error {
 		if phase.Loop != nil {
 			iteration := loopCounts[phase.Name] + 1
 			loopCounts[phase.Name] = iteration
-			if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
-				return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("saving loop counts: %w", err))
-			}
 
 			if iteration < phase.Loop.Min {
 				// min not reached — forced loop-back with success output as feedback
+				gotoIdx := r.Config.PhaseIndex(phase.Loop.Goto)
+				if gotoIdx < 0 {
+					return r.failAndHint(state.StatusFailed, ExitConfigError,
+						fmt.Errorf("phase %q: loop.goto %q not found", phase.Name, phase.Loop.Goto))
+				}
+
+				if err := r.prepareBackwardJump(gotoIdx, i, loopCounts); err != nil {
+					return r.failAndHint(state.StatusFailed, ExitRetryable, err)
+				}
+				if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
+					return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("saving loop counts: %w", err))
+				}
+
 				output := ""
 				if result != nil {
 					output = result.Output
@@ -307,11 +317,6 @@ func (r *Runner) Run(ctx context.Context) error {
 					return err
 				}
 
-				gotoIdx := r.Config.PhaseIndex(phase.Loop.Goto)
-				if gotoIdx < 0 {
-					return r.failAndHint(state.StatusFailed, ExitConfigError,
-						fmt.Errorf("phase %q: loop.goto %q not found", phase.Name, phase.Loop.Goto))
-				}
 				r.Timing.AddEnd(phase.Name)
 				ux.LoopBack(phase.Name, phase.Loop.Goto, iteration, phase.Loop.Max)
 
@@ -321,7 +326,11 @@ func (r *Runner) Run(ctx context.Context) error {
 				}
 				continue
 			}
+
 			// iteration >= min AND pass: break out of loop, advance normally
+			if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
+				return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("saving loop counts: %w", err))
+			}
 			// Archive and clear feedback so downstream phases don't see stale loop feedback
 			archiveAndClearFeedback(r.Env.ArtifactsDir, r.auditDir, i, r.dispatchCount[i])
 		}
@@ -353,6 +362,20 @@ func (r *Runner) Run(ctx context.Context) error {
 	return nil
 }
 
+// prepareBackwardJump resets state for phases that will be re-executed after a backward jump.
+// It clears loop counters for phases in [gotoIdx, currentIdx) and removes stale feedback.
+// The jumping phase's own counter (at currentIdx) is NOT touched — the caller manages it.
+// Must be called BEFORE SaveLoopCounts and WriteFeedback so the save includes resets
+// and the new feedback isn't immediately cleared.
+func (r *Runner) prepareBackwardJump(gotoIdx, currentIdx int, loopCounts map[string]int) error {
+	for j := gotoIdx; j < currentIdx; j++ {
+		name := r.Config.Phases[j].Name
+		delete(loopCounts, name)
+		delete(loopCounts, name+":exhaust")
+	}
+	return state.ClearFeedback(r.Env.ArtifactsDir)
+}
+
 // handleLoopFailure processes a loop iteration failure (from phase failure or check failure).
 // output is the content to write as feedback. Returns true if the main loop should continue.
 func (r *Runner) handleLoopFailure(i int, phase config.Phase, loopCounts map[string]int, output string) (bool, error) {
@@ -376,6 +399,16 @@ func (r *Runner) handleLoopFailure(i int, phase config.Phase, loopCounts map[str
 			}
 			loopCounts[exhaustKey] = exhaustCount
 			delete(loopCounts, phase.Name) // reset loop counter
+
+			gotoIdx := r.Config.PhaseIndex(phase.Loop.OnExhaust.Goto)
+			if gotoIdx < 0 {
+				return false, r.failAndHint(state.StatusFailed, ExitConfigError,
+					fmt.Errorf("phase %q: loop.on-exhaust.goto %q not found", phase.Name, phase.Loop.OnExhaust.Goto))
+			}
+
+			if err := r.prepareBackwardJump(gotoIdx, i, loopCounts); err != nil {
+				return false, r.failAndHint(state.StatusFailed, ExitRetryable, err)
+			}
 			if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
 				return false, r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("saving loop counts: %w", err))
 			}
@@ -387,11 +420,6 @@ func (r *Runner) handleLoopFailure(i int, phase config.Phase, loopCounts map[str
 				return false, err
 			}
 
-			gotoIdx := r.Config.PhaseIndex(phase.Loop.OnExhaust.Goto)
-			if gotoIdx < 0 {
-				return false, r.failAndHint(state.StatusFailed, ExitConfigError,
-					fmt.Errorf("phase %q: loop.on-exhaust.goto %q not found", phase.Name, phase.Loop.OnExhaust.Goto))
-			}
 			ux.LoopExhausted(phase.Name, iteration)
 			ux.LoopBack(phase.Name, phase.Loop.OnExhaust.Goto, exhaustCount, phase.Loop.OnExhaust.Max)
 
@@ -414,6 +442,15 @@ func (r *Runner) handleLoopFailure(i int, phase config.Phase, loopCounts map[str
 	}
 
 	// Not exhausted — loop back
+	gotoIdx := r.Config.PhaseIndex(phase.Loop.Goto)
+	if gotoIdx < 0 {
+		return false, r.failAndHint(state.StatusFailed, ExitConfigError,
+			fmt.Errorf("phase %q: loop.goto %q not found", phase.Name, phase.Loop.Goto))
+	}
+
+	if err := r.prepareBackwardJump(gotoIdx, i, loopCounts); err != nil {
+		return false, r.failAndHint(state.StatusFailed, ExitRetryable, err)
+	}
 	if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
 		return false, r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("saving loop counts: %w", err))
 	}
@@ -421,11 +458,6 @@ func (r *Runner) handleLoopFailure(i int, phase config.Phase, loopCounts map[str
 		return false, err
 	}
 
-	gotoIdx := r.Config.PhaseIndex(phase.Loop.Goto)
-	if gotoIdx < 0 {
-		return false, r.failAndHint(state.StatusFailed, ExitConfigError,
-			fmt.Errorf("phase %q: loop.goto %q not found", phase.Name, phase.Loop.Goto))
-	}
 	ux.LoopBack(phase.Name, phase.Loop.Goto, iteration, phase.Loop.Max)
 
 	r.State.SetPhase(gotoIdx)

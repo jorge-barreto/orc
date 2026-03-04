@@ -1758,3 +1758,115 @@ func TestRun_CostsWrittenToAuditDir(t *testing.T) {
 		t.Fatalf("expected no costs in artifacts dir, got %d entries", len(artCosts.Phases))
 	}
 }
+
+// TestRun_OuterLoopResetsIntermediateCounters verifies that when an outer loop
+// jumps backward, loop counters for intermediate phases are reset to zero.
+// This prevents counter bleed across outer-loop iterations.
+func TestRun_OuterLoopResetsIntermediateCounters(t *testing.T) {
+	// 4 phases: pick → work → review (loops to work, max=3) → next (loops to pick, max=3)
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "pick", Type: "script", Run: "echo"},
+			{Name: "work", Type: "script", Run: "echo"},
+			{Name: "review", Type: "script", Run: "echo", Loop: &config.Loop{Goto: "work", Min: 1, Max: 3}},
+			{Name: "next", Type: "script", Run: "echo", Loop: &config.Loop{Goto: "pick", Min: 1, Max: 3}},
+		},
+	}
+
+	var mu sync.Mutex
+	reviewCount := 0
+	nextCount := 0
+
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch phase.Name {
+		case "review":
+			reviewCount++
+			// Fail on first call of each outer iteration to exercise loop counter
+			if reviewCount == 1 || reviewCount == 3 {
+				return &dispatch.Result{ExitCode: 1, Output: "review fail"}, nil
+			}
+			return &dispatch.Result{ExitCode: 0}, nil
+		case "next":
+			nextCount++
+			if nextCount == 1 {
+				// First outer iteration: fail to trigger outer loop-back
+				return &dispatch.Result{ExitCode: 1, Output: "more work"}, nil
+			}
+			return &dispatch.Result{ExitCode: 0}, nil
+		}
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+
+	r := newTestRunner(t, cfg, mock)
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// After run, review's loop counter should reflect only the second outer iteration.
+	// Without the fix, it would accumulate across both iterations.
+	counts, err := state.LoadLoopCounts(r.Env.ArtifactsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// review ran: iter1(fail+pass=2 dispatches), iter2(fail+pass=2 dispatches) = 4 total
+	if reviewCount != 4 {
+		t.Fatalf("review dispatched %d times, want 4", reviewCount)
+	}
+
+	// The review counter should be 2 (1 fail + 1 pass from the second outer iteration).
+	// Without the fix, it would be 4 (accumulated across both iterations).
+	if counts["review"] != 2 {
+		t.Fatalf("review loop count = %d, want 2", counts["review"])
+	}
+}
+
+// TestRun_OuterLoopClearsFeedback verifies that feedback files from a previous
+// outer-loop iteration are cleared when the outer loop jumps backward.
+func TestRun_OuterLoopClearsFeedback(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "pick", Type: "script", Run: "echo"},
+			{Name: "work", Type: "script", Run: "echo"},
+			{Name: "next", Type: "script", Run: "echo", Loop: &config.Loop{Goto: "pick", Min: 1, Max: 3}},
+		},
+	}
+
+	var mu sync.Mutex
+	nextCount := 0
+	var artDir string
+
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		artDir = env.ArtifactsDir
+		mu.Lock()
+		defer mu.Unlock()
+		if phase.Name == "next" {
+			nextCount++
+			if nextCount == 1 {
+				return &dispatch.Result{ExitCode: 1, Output: "retry"}, nil
+			}
+		}
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+
+	r := newTestRunner(t, cfg, mock)
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// After run completes, feedback directory should be empty.
+	// The outer loop's backward jump should have cleared stale feedback.
+	feedback, err := state.ReadAllFeedback(artDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if feedback != "" {
+		t.Fatalf("expected no feedback after outer loop, got: %s", feedback)
+	}
+}
