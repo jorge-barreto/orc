@@ -181,14 +181,24 @@ func TestRun_LoopBasicConvergence(t *testing.T) {
 		t.Fatalf("status = %q", r.State.Status)
 	}
 
-	// Verify feedback file was written on failure
-	fbPath := filepath.Join(r.Env.ArtifactsDir, "feedback", "from-c.md")
-	data, err := os.ReadFile(fbPath)
+	// Feedback should be cleared after loop exit
+	fb, err := state.ReadAllFeedback(r.Env.ArtifactsDir)
 	if err != nil {
-		t.Fatalf("feedback file not written: %v", err)
+		t.Fatal(err)
+	}
+	if fb != "" {
+		t.Fatalf("feedback should be cleared after loop exit, got %q", fb)
+	}
+
+	// Verify feedback was archived to audit dir
+	auditDir := state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket)
+	auditFb := state.AuditFeedbackPath(auditDir, 2, 2, "c")
+	data, err := os.ReadFile(auditFb)
+	if err != nil {
+		t.Fatalf("archived feedback not found: %v", err)
 	}
 	if !strings.Contains(string(data), "c failed") {
-		t.Fatalf("feedback = %q", string(data))
+		t.Fatalf("archived feedback = %q", string(data))
 	}
 }
 
@@ -398,11 +408,21 @@ func TestRun_LoopExhaustFeedbackHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Check feedback has convergence-failed header
-	fbPath := filepath.Join(r.Env.ArtifactsDir, "feedback", "from-b.md")
-	data, err := os.ReadFile(fbPath)
+	// Feedback should be cleared after loop exit
+	fb, err := state.ReadAllFeedback(r.Env.ArtifactsDir)
 	if err != nil {
-		t.Fatalf("feedback file not written: %v", err)
+		t.Fatal(err)
+	}
+	if fb != "" {
+		t.Fatalf("feedback should be cleared after loop exit, got %q", fb)
+	}
+
+	// Check archived feedback has convergence-failed header
+	auditDir := state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket)
+	auditFb := state.AuditFeedbackPath(auditDir, 1, 2, "b")
+	data, err := os.ReadFile(auditFb)
+	if err != nil {
+		t.Fatalf("archived feedback not found: %v", err)
 	}
 	if !strings.Contains(string(data), "Convergence failed") {
 		t.Fatalf("expected convergence-failed header, got: %q", string(data))
@@ -434,14 +454,87 @@ func TestRun_LoopFeedbackOnPass(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Feedback should be written on the forced loop-back (iteration 1 < min 2)
-	fbPath := filepath.Join(r.Env.ArtifactsDir, "feedback", "from-b.md")
-	data, err := os.ReadFile(fbPath)
+	// Feedback should be cleared after loop exit
+	fb, err := state.ReadAllFeedback(r.Env.ArtifactsDir)
 	if err != nil {
-		t.Fatalf("feedback file not written on success loop-back: %v", err)
+		t.Fatal(err)
+	}
+	if fb != "" {
+		t.Fatalf("feedback should be cleared after loop exit, got %q", fb)
+	}
+
+	// Archived feedback should contain the forced loop-back output
+	auditDir := state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket)
+	auditFb := state.AuditFeedbackPath(auditDir, 1, 2, "b")
+	data, err := os.ReadFile(auditFb)
+	if err != nil {
+		t.Fatalf("archived feedback not found: %v", err)
 	}
 	if !strings.Contains(string(data), "b output") {
-		t.Fatalf("feedback = %q", string(data))
+		t.Fatalf("archived feedback = %q", string(data))
+	}
+}
+
+// TestRun_FeedbackClearedOnLoopExit verifies that downstream phases don't see
+// stale loop feedback. Phase b loops (fails once, then succeeds), then phase c runs.
+// After b's loop exits, the feedback directory must be empty.
+func TestRun_FeedbackClearedOnLoopExit(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo", Loop: &config.Loop{Goto: "a", Min: 1, Max: 3}},
+			{Name: "c", Type: "script", Run: "echo"},
+		},
+	}
+
+	bCount := 0
+	mu := sync.Mutex{}
+	var cSawFeedback string
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		if phase.Name == "b" {
+			mu.Lock()
+			bCount++
+			n := bCount
+			mu.Unlock()
+			if n == 1 {
+				return &dispatch.Result{ExitCode: 1, Output: "b failed"}, nil
+			}
+		}
+		if phase.Name == "c" {
+			// Capture what feedback c would see
+			fb, _ := state.ReadAllFeedback(env.ArtifactsDir)
+			cSawFeedback = fb
+		}
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Phase c must NOT have seen b's feedback
+	if cSawFeedback != "" {
+		t.Fatalf("phase c should not see loop feedback from b, got: %q", cSawFeedback)
+	}
+
+	// Feedback directory should be empty after run
+	fb, err := state.ReadAllFeedback(r.Env.ArtifactsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fb != "" {
+		t.Fatalf("feedback should be cleared after loop exit, got %q", fb)
+	}
+
+	// Feedback was archived to audit dir
+	auditDir := state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket)
+	auditFb := state.AuditFeedbackPath(auditDir, 1, 2, "b")
+	if _, err := os.Stat(auditFb); os.IsNotExist(err) {
+		t.Fatalf("expected archived feedback at %s", auditFb)
 	}
 }
 
@@ -1264,9 +1357,20 @@ func TestRun_LoopCheckFailTriggersLoopBack(t *testing.T) {
 		t.Fatalf("status = %q", r.State.Status)
 	}
 
-	fbPath := filepath.Join(r.Env.ArtifactsDir, "feedback", "from-b.md")
-	if _, err := os.Stat(fbPath); err != nil {
-		t.Fatalf("feedback file not written: %v", err)
+	// Feedback should be cleared after loop exit
+	fb, readErr := state.ReadAllFeedback(r.Env.ArtifactsDir)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if fb != "" {
+		t.Fatalf("feedback should be cleared after loop exit, got %q", fb)
+	}
+
+	// Verify feedback was archived to audit dir
+	auditDir := state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket)
+	auditFb := state.AuditFeedbackPath(auditDir, 1, 2, "b")
+	if _, statErr := os.Stat(auditFb); statErr != nil {
+		t.Fatalf("archived feedback not found: %v", statErr)
 	}
 }
 
@@ -1384,13 +1488,24 @@ func TestRun_LoopCheckFeedbackWritten(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fbPath := filepath.Join(r.Env.ArtifactsDir, "feedback", "from-b.md")
-	data, err := os.ReadFile(fbPath)
-	if err != nil {
-		t.Fatalf("feedback file not written: %v", err)
+	// Feedback should be cleared after loop exit
+	fb, readErr := state.ReadAllFeedback(r.Env.ArtifactsDir)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if fb != "" {
+		t.Fatalf("feedback should be cleared after loop exit, got %q", fb)
+	}
+
+	// Archived feedback should contain declared output content
+	auditDir := state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket)
+	auditFb := state.AuditFeedbackPath(auditDir, 1, 2, "b")
+	data, readErr := os.ReadFile(auditFb)
+	if readErr != nil {
+		t.Fatalf("archived feedback not found: %v", readErr)
 	}
 	if !strings.Contains(string(data), "Found 3 issues in handler.go") {
-		t.Fatalf("feedback should contain declared output content, got: %q", string(data))
+		t.Fatalf("archived feedback should contain declared output content, got: %q", string(data))
 	}
 }
 
@@ -1435,20 +1550,30 @@ func TestRun_LoopCheckFeedbackUsesDeclaredOutputs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fbPath := filepath.Join(r.Env.ArtifactsDir, "feedback", "from-b.md")
-	data, err := os.ReadFile(fbPath)
-	if err != nil {
-		t.Fatalf("feedback file not written: %v", err)
+	// Feedback should be cleared after loop exit
+	fb, readErr := state.ReadAllFeedback(r.Env.ArtifactsDir)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if fb != "" {
+		t.Fatalf("feedback should be cleared after loop exit, got %q", fb)
+	}
+
+	// Archived feedback must contain the declared output content
+	auditDir := state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket)
+	auditFb := state.AuditFeedbackPath(auditDir, 1, 2, "b")
+	data, readErr := os.ReadFile(auditFb)
+	if readErr != nil {
+		t.Fatalf("archived feedback not found: %v", readErr)
 	}
 
 	feedback := string(data)
-	// Feedback must contain the declared output content
 	if !strings.Contains(feedback, "variable naming is inconsistent") {
-		t.Fatalf("feedback should contain declared output content, got: %q", feedback)
+		t.Fatalf("archived feedback should contain declared output content, got: %q", feedback)
 	}
 	// Feedback must NOT contain the check command's stdout (the old buggy behavior)
 	if strings.Contains(feedback, "check-sentinel-do-not-use") {
-		t.Fatalf("feedback should NOT contain check stdout, got: %q", feedback)
+		t.Fatalf("archived feedback should NOT contain check stdout, got: %q", feedback)
 	}
 }
 
