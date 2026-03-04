@@ -190,6 +190,23 @@ func gatherRunStatus(artifactsDir string) string {
 	return fmt.Sprintf("- Run status: %s", s.Status)
 }
 
+// writeContextFile writes content to .orc/artifacts/<name> and returns the absolute path.
+func writeContextFile(projectRoot, name, content string) (string, error) {
+	dir := filepath.Join(projectRoot, ".orc", "artifacts")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("creating artifacts dir: %w", err)
+	}
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return "", fmt.Errorf("writing context file: %w", err)
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return path, nil
+	}
+	return abs, nil
+}
+
 // OneShot reads the current config, sends it to Claude with the user's instruction,
 // validates the output, and writes changed files.
 func OneShot(ctx context.Context, projectRoot, instruction string) error {
@@ -200,9 +217,15 @@ func OneShot(ctx context.Context, projectRoot, instruction string) error {
 	auditSummary := readAuditSummary(projectRoot)
 	prompt := buildOneShotPrompt(configYAML, phaseFiles, auditSummary, instruction)
 
+	promptFile, err := writeContextFile(projectRoot, ".improve-prompt.md", prompt)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(promptFile)
+
 	fmt.Printf("  %sReading current config...%s\n\n", ux.Dim, ux.Reset)
 
-	output, err := runClaudeCapture(ctx, prompt)
+	output, err := runClaudeCapture(ctx, promptFile)
 	if err != nil {
 		return err
 	}
@@ -219,8 +242,8 @@ func OneShot(ctx context.Context, projectRoot, instruction string) error {
 	return writeChanges(projectRoot, blocks)
 }
 
-func runClaudeCapture(ctx context.Context, prompt string) (string, error) {
-	cmd := exec.CommandContext(ctx, "claude", "-p", prompt,
+func runClaudeCapture(ctx context.Context, promptFile string) (string, error) {
+	cmd := exec.CommandContext(ctx, "claude", "-p", "Read the file at "+promptFile+" and follow its instructions exactly.",
 		"--model", "opus",
 		"--effort", "high",
 		"--output-format", "stream-json",
@@ -367,6 +390,16 @@ func Interactive(projectRoot string) error {
 	auditSummary := readAuditSummary(projectRoot)
 	ctx := buildInteractiveContext(configYAML, phaseFiles, auditSummary)
 
+	absRoot, err := filepath.Abs(projectRoot)
+	if err != nil {
+		return fmt.Errorf("resolving project root: %w", err)
+	}
+	ctxFile, err := writeContextFile(absRoot, ".improve-context.md", ctx)
+	if err != nil {
+		return err
+	}
+	// No defer Remove — syscall.Exec replaces the process. File lives in artifacts (gitignored).
+
 	claudePath, err := exec.LookPath("claude")
 	if err != nil {
 		return fmt.Errorf("claude not found: %w", err)
@@ -374,7 +407,8 @@ func Interactive(projectRoot string) error {
 
 	fmt.Printf("  %sLoading workflow context...%s\n", ux.Dim, ux.Reset)
 
-	args := []string{"claude", "--model", "opus", "--effort", "high", "--append-system-prompt", ctx, "Analyze my workflow and suggest improvements."}
+	sysPrompt := "Your full workflow context is at " + ctxFile + ". Read it immediately before saying anything."
+	args := []string{"claude", "--model", "opus", "--effort", "high", "--append-system-prompt", sysPrompt, "Analyze my workflow and suggest improvements."}
 	env := dispatch.FilteredEnv()
 	return syscall.Exec(claudePath, args, env)
 }
