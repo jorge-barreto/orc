@@ -137,9 +137,10 @@ func OneShot(ctx context.Context, projectRoot, instruction string) error {
 
 func runClaudeCapture(ctx context.Context, prompt string) (string, error) {
 	cmd := exec.CommandContext(ctx, "claude", "-p", prompt,
-		"--model", "sonnet",
+		"--model", "opus",
 		"--output-format", "stream-json",
 		"--verbose",
+		"--include-partial-messages",
 	)
 	cmd.Env = dispatch.FilteredEnv()
 	cmd.Stderr = os.Stderr
