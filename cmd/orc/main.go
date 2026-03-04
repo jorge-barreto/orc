@@ -336,14 +336,16 @@ func doctorCmd() *cli.Command {
 
 func initCmd() *cli.Command {
 	return &cli.Command{
-		Name:  "init",
-		Usage: "Initialize a new .orc/ directory with AI-generated workflow config",
+		Name:      "init",
+		Usage:     "Initialize a new .orc/ directory with AI-generated workflow config",
+		ArgsUsage: "[description]",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			dir, err := os.Getwd()
 			if err != nil {
 				return err
 			}
-			return scaffold.Init(ctx, dir)
+			userPrompt := cmd.Args().First()
+			return scaffold.Init(ctx, dir, userPrompt)
 		},
 	}
 }
