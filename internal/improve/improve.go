@@ -123,9 +123,13 @@ func OneShot(ctx context.Context, projectRoot, instruction string) error {
 		return err
 	}
 
+	if output == "" {
+		return fmt.Errorf("claude returned no output")
+	}
+
 	blocks := fileblocks.Parse(output)
 	if len(blocks) == 0 {
-		return fmt.Errorf("no changes produced")
+		return fmt.Errorf("no file blocks found in output — expected fenced code blocks with file= annotations")
 	}
 
 	return writeChanges(projectRoot, blocks)
@@ -149,7 +153,7 @@ func runClaudeCapture(ctx context.Context, prompt string) (string, error) {
 		return "", fmt.Errorf("starting claude: %w", err)
 	}
 
-	result, streamErr := dispatch.ProcessStream(ctx, stdout, os.Stderr, nil, nil)
+	result, streamErr := dispatch.ProcessStream(ctx, stdout, os.Stdout, nil, nil)
 
 	if err := cmd.Wait(); err != nil && streamErr == nil {
 		return "", fmt.Errorf("claude: %w", err)
@@ -284,7 +288,7 @@ func Interactive(projectRoot string) error {
 
 	fmt.Printf("  %sLoading workflow context...%s\n", ux.Dim, ux.Reset)
 
-	args := []string{"claude", "--append-system-prompt", ctx}
+	args := []string{"claude", "--append-system-prompt", ctx, "Analyze my workflow and suggest improvements."}
 	env := dispatch.FilteredEnv()
 	return syscall.Exec(claudePath, args, env)
 }
