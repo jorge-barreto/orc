@@ -76,11 +76,7 @@ func PhaseSkip(index int, phaseName string) {
 
 // ToolUse prints an inline tool call.
 func ToolUse(name, input string) {
-	summary := input
-	if len(summary) > 80 {
-		summary = summary[:77] + "..."
-	}
-	fmt.Printf("  %s⚡ %s%s %s\n", Cyan, name, Reset, summary)
+	fmt.Printf("  %s⚡ %s%s %s\n", Cyan, name, Reset, input)
 }
 
 // ToolDenied prints a denied tool call.
