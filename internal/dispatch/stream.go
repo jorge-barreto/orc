@@ -189,10 +189,17 @@ func handleStreamEvent(event *streamEvent, textBuf *strings.Builder, ss *streamS
 
 	case "content_block_stop":
 		if ss.toolName != "" {
+			summary := toolUseSummary(ss.toolName, ss.inputBuf.String())
 			if ss.hadText && display != nil {
 				fmt.Fprint(display, "\n")
 			}
-			ux.ToolUse(ss.toolName, toolUseSummary(ss.toolName, ss.inputBuf.String()))
+			if ss.hadText && logFile != nil {
+				fmt.Fprint(logFile, "\n")
+			}
+			ux.ToolUse(ss.toolName, summary)
+			if logFile != nil {
+				fmt.Fprintf(logFile, "⚡ %s %s\n", ss.toolName, summary)
+			}
 			ss.toolName = ""
 			ss.inputBuf.Reset()
 			ss.hadText = false
