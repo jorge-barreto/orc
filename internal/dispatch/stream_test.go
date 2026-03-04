@@ -20,7 +20,7 @@ func TestProcessStream_TextDeltas(t *testing.T) {
 
 	var display bytes.Buffer
 	var log bytes.Buffer
-	result, err := processStream(context.Background(), input, &display, &log, nil)
+	result, err := ProcessStream(context.Background(), input, &display, &log, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestProcessStream_ToolUseEvent(t *testing.T) {
 	)
 
 	var display bytes.Buffer
-	result, err := processStream(context.Background(), input, &display, nil, nil)
+	result, err := ProcessStream(context.Background(), input, &display, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestProcessStream_PermissionDenials(t *testing.T) {
 		`{"type":"result","total_cost_usd":0.02,"session_id":"s2","usage":{"input_tokens":300,"output_tokens":150},"permission_denials":[{"tool_name":"Bash","input":"docker compose up"},{"tool_name":"Read","input":"/etc/shadow"}]}`,
 	)
 
-	result, err := processStream(context.Background(), input, nil, nil, nil)
+	result, err := ProcessStream(context.Background(), input, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestProcessStream_PermissionDenials(t *testing.T) {
 
 func TestProcessStream_EmptyStream(t *testing.T) {
 	input := streamLines()
-	result, err := processStream(context.Background(), input, nil, nil, nil)
+	result, err := ProcessStream(context.Background(), input, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestProcessStream_MalformedJSON(t *testing.T) {
 		`{"type":"result","total_cost_usd":0.01,"session_id":"s3","usage":{"input_tokens":50,"output_tokens":25},"permission_denials":[]}`,
 	)
 
-	result, err := processStream(context.Background(), input, nil, nil, nil)
+	result, err := ProcessStream(context.Background(), input, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestProcessStream_ContextCancelled(t *testing.T) {
 		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello"}}}`,
 	)
 
-	_, err := processStream(ctx, input, nil, nil, nil)
+	_, err := ProcessStream(ctx, input, nil, nil, nil)
 	if err != context.Canceled {
 		t.Fatalf("expected context.Canceled, got %v", err)
 	}
@@ -140,7 +140,7 @@ func TestProcessStream_ResultCostAndTokens(t *testing.T) {
 		`{"type":"result","total_cost_usd":0.03,"session_id":"s4","usage":{"input_tokens":500,"output_tokens":200,"cache_creation_input_tokens":1000,"cache_read_input_tokens":4000},"permission_denials":[]}`,
 	)
 
-	result, err := processStream(context.Background(), input, nil, nil, nil)
+	result, err := ProcessStream(context.Background(), input, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestProcessStream_NilWriters(t *testing.T) {
 		`{"type":"result","total_cost_usd":0.01,"session_id":"s5","usage":{"input_tokens":10,"output_tokens":5},"permission_denials":[]}`,
 	)
 
-	result, err := processStream(context.Background(), input, nil, nil, nil)
+	result, err := ProcessStream(context.Background(), input, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestProcessStream_MultiToolStreaming(t *testing.T) {
 	)
 
 	var display bytes.Buffer
-	result, err := processStream(context.Background(), input, &display, nil, nil)
+	result, err := ProcessStream(context.Background(), input, &display, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,10 +215,10 @@ func TestProcessStream_MultiToolStreaming(t *testing.T) {
 
 func TestToolUseSummary(t *testing.T) {
 	tests := []struct {
-		name     string
-		tool     string
-		rawJSON  string
-		want     string
+		name    string
+		tool    string
+		rawJSON string
+		want    string
 	}{
 		{"Bash command", "Bash", `{"command":"ls -la"}`, "ls -la"},
 		{"Read file_path", "Read", `{"file_path":"/tmp/foo.go"}`, "/tmp/foo.go"},
@@ -261,7 +261,7 @@ func TestProcessStream_FullTokenCounts(t *testing.T) {
 		`{"type":"result","total_cost_usd":0.05,"session_id":"s1","usage":{"input_tokens":1500,"output_tokens":800,"cache_creation_input_tokens":3000,"cache_read_input_tokens":10000},"permission_denials":[]}`,
 	)
 
-	result, err := processStream(context.Background(), input, nil, nil, nil)
+	result, err := ProcessStream(context.Background(), input, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +287,7 @@ func TestProcessStream_NoUsageObject(t *testing.T) {
 		`{"type":"result","total_cost_usd":0,"session_id":"s1","permission_denials":[]}`,
 	)
 
-	result, err := processStream(context.Background(), input, nil, nil, nil)
+	result, err := ProcessStream(context.Background(), input, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +310,7 @@ func TestProcessStream_UsageWithoutCacheFields(t *testing.T) {
 		`{"type":"result","total_cost_usd":0.03,"session_id":"s1","usage":{"input_tokens":2000,"output_tokens":1000},"permission_denials":[]}`,
 	)
 
-	result, err := processStream(context.Background(), input, nil, nil, nil)
+	result, err := ProcessStream(context.Background(), input, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +337,7 @@ func TestProcessStream_RawLogReceivesAllLines(t *testing.T) {
 	input := streamLines(lines...)
 
 	var rawLog bytes.Buffer
-	result, err := processStream(context.Background(), input, nil, nil, &rawLog)
+	result, err := ProcessStream(context.Background(), input, nil, nil, &rawLog)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +372,7 @@ func TestProcessStream_NilRawLog(t *testing.T) {
 		`{"type":"result","total_cost_usd":0.01,"session_id":"s1","usage":{"input_tokens":10,"output_tokens":5},"permission_denials":[]}`,
 	)
 
-	result, err := processStream(context.Background(), input, nil, nil, nil)
+	result, err := ProcessStream(context.Background(), input, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
