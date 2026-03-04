@@ -36,7 +36,6 @@ func RenderStatus(cfg *config.Config, st *state.State, artifactsDir, auditDir st
 	if err != nil {
 		costs, _ = state.LoadCosts(artifactsDir)
 	}
-	loopCounts, _ := state.LoadLoopCounts(artifactsDir)
 
 	// Header
 	fmt.Printf("%sTicket:%s  %s\n", Bold, Reset, st.Ticket)
@@ -52,10 +51,19 @@ func RenderStatus(cfg *config.Config, st *state.State, artifactsDir, auditDir st
 	hasCompleted := timing != nil && len(timing.Entries) > 0
 	if hasCompleted {
 		fmt.Printf("\n  %s%-4s%-20s%8s%10s%16s%18s%8s%s\n",
-			Bold, "#", "PHASE", "TIME", "COST", "TOKENS IN/OUT", "CACHE R/W", "LOOPS", Reset)
+			Bold, "#", "PHASE", "TIME", "COST", "TOKENS IN/OUT", "CACHE R/W", "RUN", Reset)
+
+		// Count total occurrences of each phase to know which ones repeated
+		phaseTotal := make(map[string]int)
+		for _, te := range timing.Entries {
+			phaseTotal[te.Phase]++
+		}
 
 		costIdx := 0
+		phaseSeen := make(map[string]int)
 		for i, te := range timing.Entries {
+			phaseSeen[te.Phase]++
+
 			dur := te.Duration
 			if dur == "" {
 				dur = "-"
@@ -73,18 +81,14 @@ func RenderStatus(cfg *config.Config, st *state.State, artifactsDir, auditDir st
 				cacheStr = formatCache(ce.CacheReadInputTokens, ce.CacheCreationInputTokens)
 			}
 
-			// Loop count
-			var loopStr string
-			if loopCounts != nil {
-				count, _ := loopCounts[te.Phase]
-				exhaust, _ := loopCounts[te.Phase+":exhaust"]
-				if total := count + exhaust; total > 0 {
-					loopStr = fmt.Sprintf("%d", total)
-				}
+			// Run number — only show for phases that ran more than once
+			var runStr string
+			if phaseTotal[te.Phase] > 1 {
+				runStr = fmt.Sprintf("%d", phaseSeen[te.Phase])
 			}
 
 			fmt.Printf("  %s%-4d%s%-20s%8s%10s%16s%18s%8s\n",
-				Dim, i+1, Reset, te.Phase, dur, costStr, tokenStr, cacheStr, loopStr)
+				Dim, i+1, Reset, te.Phase, dur, costStr, tokenStr, cacheStr, runStr)
 		}
 
 		// Total cost line
