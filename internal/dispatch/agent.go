@@ -27,8 +27,8 @@ var defaultAllowTools = []string{
 // buildAgentArgs constructs the claude CLI arguments for an agent turn.
 // If sessionID is non-empty and isFirst is true, uses --session-id.
 // If sessionID is non-empty and isFirst is false, uses --resume.
-func buildAgentArgs(phase config.Phase, prompt, sessionID string, isFirst bool, configTools, extraTools []string) []string {
-	args := []string{"-p", prompt,
+func buildAgentArgs(phase config.Phase, sessionID string, isFirst bool, configTools, extraTools []string) []string {
+	args := []string{"-p",
 		"--output-format", "stream-json",
 		"--verbose",
 		"--include-partial-messages",
@@ -71,11 +71,12 @@ type turnResult struct {
 
 // runAgentTurn executes a single agent turn: starts subprocess, processes stream, waits.
 func runAgentTurn(ctx context.Context, phase config.Phase, env *Environment, prompt, sessionID string, isFirst bool, logFile io.Writer, rawLog io.Writer, extraTools []string) (*turnResult, error) {
-	args := buildAgentArgs(phase, prompt, sessionID, isFirst, env.DefaultAllowTools, extraTools)
+	args := buildAgentArgs(phase, sessionID, isFirst, env.DefaultAllowTools, extraTools)
 
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Dir = PhaseWorkDir(phase, env)
 	cmd.Env = BuildEnv(env)
+	cmd.Stdin = strings.NewReader(prompt)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
