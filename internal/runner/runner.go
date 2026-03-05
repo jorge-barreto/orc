@@ -220,8 +220,8 @@ func (r *Runner) Run(ctx context.Context) error {
 
 			// Handle loop
 			if phase.Loop != nil {
-				output := ""
-				if result != nil {
+				output := state.ReadDeclaredOutputs(r.Env.ArtifactsDir, phase.Outputs)
+				if output == "" && result != nil {
 					output = result.Output
 				}
 				if output == "" {
