@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -50,6 +51,45 @@ func SaveLoopCounts(artifactsDir string, counts map[string]int) error {
 		return err
 	}
 	return writeFileAtomic(filepath.Join(artifactsDir, "loop-counts.json"), data, 0644)
+}
+
+// LoadDispatchCounts reads the dispatch count map from the audit directory.
+// Keys are phase indices (as strings); values are the number of times each phase was dispatched.
+func LoadDispatchCounts(auditDir string) (map[int]int, error) {
+	path := filepath.Join(auditDir, "dispatch-counts.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return make(map[int]int), nil
+		}
+		return nil, err
+	}
+	var raw map[string]int
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	counts := make(map[int]int, len(raw))
+	for k, v := range raw {
+		idx, err := strconv.Atoi(k)
+		if err != nil {
+			continue
+		}
+		counts[idx] = v
+	}
+	return counts, nil
+}
+
+// SaveDispatchCounts writes the dispatch count map to the audit directory.
+func SaveDispatchCounts(auditDir string, counts map[int]int) error {
+	raw := make(map[string]int, len(counts))
+	for k, v := range counts {
+		raw[strconv.Itoa(k)] = v
+	}
+	data, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(filepath.Join(auditDir, "dispatch-counts.json"), data, 0644)
 }
 
 // WriteFeedback writes error output from a failing phase to the feedback directory.
@@ -173,6 +213,11 @@ func AuditBaseDir(projectRoot string) string {
 // AuditDir returns the audit directory for a specific ticket.
 func AuditDir(projectRoot, ticket string) string {
 	return filepath.Join(projectRoot, ".orc", "audit", ticket)
+}
+
+// AuditStreamLogPath returns the path for an archived stream log in the audit dir.
+func AuditStreamLogPath(auditDir string, phaseIdx, iteration int) string {
+	return filepath.Join(auditDir, "logs", fmt.Sprintf("phase-%d.iter-%d.stream.jsonl", phaseIdx+1, iteration))
 }
 
 // AuditLogPath returns the path for an archived iteration log in the audit dir.

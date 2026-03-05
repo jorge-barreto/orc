@@ -328,6 +328,45 @@ func TestLogPath(t *testing.T) {
 	}
 }
 
+func TestAuditStreamLogPath(t *testing.T) {
+	got := AuditStreamLogPath("/audit", 0, 1)
+	want := filepath.Join("/audit", "logs", "phase-1.iter-1.stream.jsonl")
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	got = AuditStreamLogPath("/audit", 4, 3)
+	want = filepath.Join("/audit", "logs", "phase-5.iter-3.stream.jsonl")
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestDispatchCounts_RoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	original := map[int]int{0: 3, 9: 7}
+	if err := SaveDispatchCounts(dir, original); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadDispatchCounts(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded[0] != 3 || loaded[9] != 7 {
+		t.Fatalf("got %v, want map[0:3 9:7]", loaded)
+	}
+}
+
+func TestDispatchCounts_NoFile(t *testing.T) {
+	dir := t.TempDir()
+	counts, err := LoadDispatchCounts(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(counts) != 0 {
+		t.Fatalf("expected empty map, got %v", counts)
+	}
+}
+
 func TestStreamLogPath(t *testing.T) {
 	got := StreamLogPath("/art", 0)
 	want := filepath.Join("/art", "logs", "phase-1.stream.jsonl")

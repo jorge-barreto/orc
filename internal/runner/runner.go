@@ -110,7 +110,12 @@ func (r *Runner) Run(ctx context.Context) error {
 	}
 	r.Costs = costs
 	r.skipped = make(map[string]bool)
-	r.dispatchCount = make(map[int]int)
+
+	dispatchCounts, err := state.LoadDispatchCounts(r.auditDir)
+	if err != nil {
+		return setupErr(fmt.Errorf("loading dispatch counts: %w", err))
+	}
+	r.dispatchCount = dispatchCounts
 
 	total := len(r.Config.Phases)
 
@@ -165,15 +170,16 @@ func (r *Runner) Run(ctx context.Context) error {
 		ux.PhaseHeader(i, total, phase)
 		r.Timing.AddStart(phase.Name)
 
-		// Archive logs/prompts before re-dispatch (iteration > 0)
-		if r.dispatchCount[i] > 0 {
-			archivePhaseFiles(r.Env.ArtifactsDir, r.auditDir, i, r.dispatchCount[i], phase.Outputs)
-		}
-		r.dispatchCount[i]++
-
 		r.Env.PhaseIndex = i
 		start := time.Now()
 		result, err := r.Dispatcher.Dispatch(ctx, phase, r.Env)
+
+		// Archive every dispatch to audit (before any error/interrupt handling)
+		r.dispatchCount[i]++
+		archivePhaseFiles(r.Env.ArtifactsDir, r.auditDir, i, r.dispatchCount[i], phase.Outputs)
+		if saveErr := state.SaveDispatchCounts(r.auditDir, r.dispatchCount); saveErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to save dispatch counts: %v\n", saveErr)
+		}
 
 		if ctx.Err() != nil {
 			r.Timing.AddEnd(phase.Name)
@@ -564,6 +570,9 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 	var failedIdx int = -1
 	for pr := range results {
 		phase := r.Config.Phases[pr.idx]
+		// Archive every parallel dispatch to audit
+		r.dispatchCount[pr.idx]++
+		archivePhaseFiles(r.Env.ArtifactsDir, r.auditDir, pr.idx, r.dispatchCount[pr.idx], phase.Outputs)
 		// Record cost data for agent phases (cost is incurred regardless of success/failure)
 		if phase.Type == "agent" && pr.result != nil {
 			r.Costs.Record(phase.Name, pr.idx, pr.result.CostUSD, pr.result.InputTokens, pr.result.OutputTokens, pr.result.CacheCreationInputTokens, pr.result.CacheReadInputTokens, pr.result.Turns)
@@ -590,6 +599,9 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 			r.Timing.AddEnd(phase.Name)
 			ux.PhaseComplete(pr.idx, time.Since(start))
 		}
+	}
+	if saveErr := state.SaveDispatchCounts(r.auditDir, r.dispatchCount); saveErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to save dispatch counts: %v\n", saveErr)
 	}
 
 	if firstErr != nil {
@@ -657,12 +669,13 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 	return nil
 }
 
-// archivePhaseFiles copies the current log and prompt files to the audit directory
-// before they get overwritten by the next dispatch. iteration is the 1-indexed
-// count of prior dispatches (e.g., 1 means this is the first archive).
+// archivePhaseFiles copies the current log, prompt, and stream log files to the
+// audit directory. Called after every dispatch so audit has a complete record.
+// iteration is 1-indexed (1 = first dispatch).
 func archivePhaseFiles(artifactsDir, auditDir string, phaseIdx, iteration int, outputs []string) {
 	copyFile(state.LogPath(artifactsDir, phaseIdx), state.AuditLogPath(auditDir, phaseIdx, iteration))
 	copyFile(state.PromptPath(artifactsDir, phaseIdx), state.AuditPromptPath(auditDir, phaseIdx, iteration))
+	copyFile(state.StreamLogPath(artifactsDir, phaseIdx), state.AuditStreamLogPath(auditDir, phaseIdx, iteration))
 	for _, o := range outputs {
 		copyFile(filepath.Join(artifactsDir, o), state.AuditOutputPath(auditDir, phaseIdx, iteration, o))
 	}
