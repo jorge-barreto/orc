@@ -339,6 +339,65 @@ func contains(ss []string, s string) bool {
 	return false
 }
 
+func TestBuildEnv_UnprefixedVars(t *testing.T) {
+	env := &Environment{
+		ProjectRoot:  "/proj",
+		WorkDir:      "/work",
+		ArtifactsDir: "/art",
+		Ticket:       "T-1",
+	}
+	result := BuildEnv(env)
+
+	find := func(prefix string) string {
+		for _, e := range result {
+			if strings.HasPrefix(e, prefix+"=") {
+				return strings.TrimPrefix(e, prefix+"=")
+			}
+		}
+		return ""
+	}
+
+	if v := find("TICKET"); v != "T-1" {
+		t.Fatalf("TICKET = %q", v)
+	}
+	if v := find("ARTIFACTS_DIR"); v != "/art" {
+		t.Fatalf("ARTIFACTS_DIR = %q", v)
+	}
+	if v := find("WORK_DIR"); v != "/work" {
+		t.Fatalf("WORK_DIR = %q", v)
+	}
+	if v := find("PROJECT_ROOT"); v != "/proj" {
+		t.Fatalf("PROJECT_ROOT = %q", v)
+	}
+}
+
+func TestBuildEnv_UnprefixedCustomVars(t *testing.T) {
+	env := &Environment{
+		ProjectRoot:  "/proj",
+		WorkDir:      "/work",
+		ArtifactsDir: "/art",
+		Ticket:       "T-1",
+		CustomVars:   map[string]string{"MY_DIR": "/proj/sub"},
+	}
+	result := BuildEnv(env)
+	foundPrefixed := false
+	foundUnprefixed := false
+	for _, e := range result {
+		if e == "ORC_MY_DIR=/proj/sub" {
+			foundPrefixed = true
+		}
+		if e == "MY_DIR=/proj/sub" {
+			foundUnprefixed = true
+		}
+	}
+	if !foundPrefixed {
+		t.Fatal("ORC_MY_DIR not found in BuildEnv output")
+	}
+	if !foundUnprefixed {
+		t.Fatal("MY_DIR not found in BuildEnv output")
+	}
+}
+
 func TestPhaseWorkDir_NoCwd(t *testing.T) {
 	env := &Environment{
 		ProjectRoot:  "/proj",
