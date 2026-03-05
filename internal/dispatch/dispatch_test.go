@@ -254,9 +254,21 @@ func TestPhaseWorkDir_ExpandedCwd(t *testing.T) {
 	}
 }
 
+func TestBuildAgentArgs_PromptViaStdin(t *testing.T) {
+	phase := config.Phase{Model: "opus", Effort: "high"}
+	args := buildAgentArgs(phase, "", true, nil, nil)
+	if args[0] != "-p" {
+		t.Fatalf("first arg should be -p, got %q", args[0])
+	}
+	// -p should be a standalone flag; the next arg must not look like a prompt
+	if args[1] == "" || args[1][0] != '-' {
+		t.Fatalf("prompt should not be passed as CLI arg; args[1] = %q", args[1])
+	}
+}
+
 func TestBuildAgentArgs_IncludesEffort(t *testing.T) {
 	phase := config.Phase{Model: "opus", Effort: "high"}
-	args := buildAgentArgs(phase, "hello", "", true, nil, nil)
+	args := buildAgentArgs(phase, "", true, nil, nil)
 	found := false
 	for i, a := range args {
 		if a == "--effort" && i+1 < len(args) && args[i+1] == "high" {
@@ -271,7 +283,7 @@ func TestBuildAgentArgs_IncludesEffort(t *testing.T) {
 
 func TestBuildAgentArgs_IncludesDefaultTools(t *testing.T) {
 	phase := config.Phase{Model: "opus", Effort: "high"}
-	args := buildAgentArgs(phase, "hello", "", true, nil, nil)
+	args := buildAgentArgs(phase, "", true, nil, nil)
 	tools := toolsFromArgs(args)
 	for _, want := range defaultAllowTools {
 		if !contains(tools, want) {
@@ -282,7 +294,7 @@ func TestBuildAgentArgs_IncludesDefaultTools(t *testing.T) {
 
 func TestBuildAgentArgs_MergesPhaseTools(t *testing.T) {
 	phase := config.Phase{Model: "opus", Effort: "high", AllowTools: []string{"Bash", "NotebookEdit"}}
-	args := buildAgentArgs(phase, "hello", "", true, nil, nil)
+	args := buildAgentArgs(phase, "", true, nil, nil)
 	tools := toolsFromArgs(args)
 	for _, want := range append(defaultAllowTools, "Bash", "NotebookEdit") {
 		if !contains(tools, want) {
@@ -294,7 +306,7 @@ func TestBuildAgentArgs_MergesPhaseTools(t *testing.T) {
 func TestBuildAgentArgs_MergesConfigTools(t *testing.T) {
 	phase := config.Phase{Model: "opus", Effort: "high"}
 	configTools := []string{"mcp__atlassian__*", "Bash"}
-	args := buildAgentArgs(phase, "hello", "", true, configTools, nil)
+	args := buildAgentArgs(phase, "", true, configTools, nil)
 	tools := toolsFromArgs(args)
 	for _, want := range append(defaultAllowTools, "mcp__atlassian__*", "Bash") {
 		if !contains(tools, want) {
@@ -307,7 +319,7 @@ func TestBuildAgentArgs_DeduplicatesTools(t *testing.T) {
 	// Config, phase, and extra tools all overlap with defaults
 	phase := config.Phase{Model: "opus", Effort: "high", AllowTools: []string{"Read", "Bash"}}
 	configTools := []string{"Read", "Bash"}
-	args := buildAgentArgs(phase, "hello", "", true, configTools, []string{"Read", "Write"})
+	args := buildAgentArgs(phase, "", true, configTools, []string{"Read", "Write"})
 	tools := toolsFromArgs(args)
 	count := 0
 	for _, t := range tools {
