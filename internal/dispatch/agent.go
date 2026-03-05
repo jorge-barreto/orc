@@ -121,7 +121,10 @@ func RenderAndSavePrompt(phase config.Phase, env *Environment) (string, error) {
 		return "", fmt.Errorf("reading feedback: %w", err)
 	}
 	if feedback != "" {
-		rendered += "\n\n" + feedback
+		rendered += "\n\n## ⚠️ LOOP FEEDBACK — ACTION REQUIRED\n\n" +
+			"A previous phase failed and this phase is being re-run. " +
+			"You MUST address the following feedback before proceeding with any other work.\n\n" +
+			feedback
 	}
 
 	if err := os.WriteFile(state.PromptPath(env.ArtifactsDir, env.PhaseIndex), []byte(rendered), 0644); err != nil {
