@@ -81,6 +81,8 @@ CLI Flags
   orc run <ticket> --dry-run    Preview phase plan
   orc run <ticket> --retry <phase>    Retry from phase (number or name)
   orc run <ticket> --from <phase>     Start from phase (number or name)
+  orc flow                        Visualize workflow as a flow diagram
+  orc flow --no-color             Flow diagram without color
   orc cancel <ticket>           Cancel run and remove all artifacts
   orc cancel <ticket> --force   Cancel even if a run appears active
   orc status <ticket>           Show workflow status for a ticket

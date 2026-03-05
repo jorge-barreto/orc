@@ -10,13 +10,18 @@ import (
 
 // ANSI color helpers
 const (
-	Reset  = "\033[0m"
-	Bold   = "\033[1m"
-	Dim    = "\033[2m"
-	Red    = "\033[31m"
-	Green  = "\033[32m"
-	Yellow = "\033[33m"
-	Cyan   = "\033[36m"
+	Reset     = "\033[0m"
+	Bold      = "\033[1m"
+	Dim       = "\033[2m"
+	Red       = "\033[31m"
+	Green     = "\033[32m"
+	Yellow    = "\033[33m"
+	Cyan      = "\033[36m"
+	Magenta   = "\033[35m"
+	Blue      = "\033[34m"
+	BoldCyan  = "\033[1;36m"
+	BoldBlue  = "\033[1;34m"
+	BoldGreen = "\033[1;32m"
 )
 
 func timestamp() string {

@@ -32,6 +32,7 @@ func main() {
 			initCmd(),
 			runCmd(),
 			validateCmd(),
+			flowCmd(),
 			cancelCmd(),
 			statusCmd(),
 			doctorCmd(),

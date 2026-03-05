@@ -109,6 +109,19 @@ orc run PROJ-123 --verbose     # save raw stream-json output
 
 **Attended vs auto mode**: By default, orc runs in attended mode — you can type follow-up instructions to steer agent phases, and if an agent attempts a tool that wasn't pre-approved, orc prompts you to approve it. With `--auto`, orc runs fully unattended with no stdin interaction.
 
+### `orc flow`
+
+Visualizes the workflow config as a rich flow diagram with bracket-loop regions, phase icons, model badges, and color.
+
+```bash
+orc flow                  # colored flow diagram
+orc flow --no-color       # without ANSI colors
+```
+
+| Flag | Description |
+|------|-------------|
+| `--no-color` | Disable colored output |
+
 ### `orc status [ticket]`
 
 Shows workflow progress. With a ticket argument, shows detailed phase-by-phase execution trace with timing, costs, token counts, and artifacts listing. Without an argument, lists all tickets with their status and cost.

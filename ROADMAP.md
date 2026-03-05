@@ -935,6 +935,126 @@ Additionally, audit data (costs.json, timing.json) lives in `$ARTIFACTS_DIR` whe
 
 ---
 
+### R-042: `orc flow` — workflow visualization
+
+A new command that renders a rich, colored visualization of the workflow config. Unlike `--dry-run` (which shows raw commands and inline loop arrows), `orc flow` presents the workflow as a readable document with bracket-loop regions, descriptions, and tasteful color.
+
+**Key design changes from `--dry-run`:**
+
+1. **Loops as bracket regions** — `╭─ plan loop` / `╰─` with `│` gutter. Nesting is indented brackets inside brackets. No more tracing `┌─▶` up and `loop ──┘` down.
+2. **One line per concern** — phase name + model badge on line 1, description on line 2, outputs on line 3, loop annotation on line 4. Each optional, only appears if relevant.
+3. **Descriptions not details** — outputs are just filenames (`→ plan.md`), loop targets are just `↩ plan (max 3)`. Raw grep commands and full script bodies are hidden by default.
+4. **Breathing room** — blank lines between phases inside loops, full separator between top-level sections.
+
+**Example output:**
+```
+  orc · idaho-surplus-line-suite
+  13 phases · 8 agents · 4 scripts · 1 gate · 5 loops
+
+  ──────────────────────────────────────────────────────────────────────
+
+   1  ◆ create-epic                                               sonnet
+        Create an epic bead for the Jira ticket
+        → epic-id.txt
+
+  ╭─ plan loop
+  │
+   2  ◆ plan                                                  opus ⚡
+        Thoroughly analyze the ticket and plan implementation
+        → plan.md  classification.txt
+  │
+   3  ◆ review-plan                                           opus ⚡
+        Adversarial review of the plan
+        → plan-review.md
+        ↩ plan (max 3)  if APPROVED in plan-approved.txt
+  │
+   4  ⏸ plan-gate
+        Human reviews the plan — bad plans are fatal
+        ↩ plan (max 3)
+  │
+  ╰─
+
+   5  ◆ create-beads                                              sonnet
+        Break the plan into ordered beads with dependencies
+        → bead-ids.txt
+
+  ╭─ bead loop
+  │
+   6  ▸ pick-bead
+        Select the next ready bead via bdv next
+  │
+  │  ╭─ impl loop
+  │  │
+  │  │   8  ◆ implement                                             opus
+  │  │        Implement changes for the current bead
+  │  │
+  │  │   9  ▸ build-test
+  │  │        Compile and run tests
+  │  │        ↩ implement (max 5)
+  │  │
+  │  │  11  ◆ review                                          opus ⚡
+  │  │        Expert panel code review
+  │  │        → review-result.txt
+  │  │        ↩ implement (max 3)  if PASS in review-result.txt
+  │  │
+  │  ╰─
+  │
+  12  ◆ wrap-up                                                   sonnet
+        Commit changes, close bead, note discovered issues
+  │
+  13  ▸ check-remaining
+        Loop back if incomplete beads remain
+        ↩ pick-bead (max 20)
+  │
+  ╰─
+
+  ✓ complete
+```
+
+**Color scheme** (designed with UX hierarchy and color theory — split-complementary + triadic, warm=action / cool=informational):
+
+| Element | Color | Rationale |
+|---------|-------|-----------|
+| Phase name | BoldCyan `\033[1;36m` | Highest salience — primary scan target |
+| Agent icon `◆` | Cyan | Primary work units, brand color |
+| Script icon `▸` | Yellow | Imperative actions, action/caution |
+| Gate icon `⏸` | Red | Blockers — stop/attention |
+| Model badge | Blue `\033[34m` | Recessive metadata, cool/quiet |
+| Model qualifier `⚡` | Bold Blue | Same family, slightly more salient |
+| Loop brackets `╭│╰` | Magenta `\033[35m` | Structural chrome, dedicated channel |
+| Loop label | Magenta | Same as brackets |
+| Outputs `→` | Green | Creation/success |
+| Loop-back `↩` | Yellow | Caution — "you might go back" |
+| Loop-back condition | Dim | Qualifying detail, reads second |
+| Description | plain | Maximum legibility for body text |
+| Phase number | Dim | Reference anchor, not primary |
+| Project name | Bold + Cyan | Banner identity |
+| Stats line | Dim | Secondary info |
+| `✓ complete` | Bold Green | Strongest positive signal |
+
+New ANSI constants needed: `Magenta` (`\033[35m`), `Blue` (`\033[34m`), `BoldCyan` (`\033[1;36m`).
+
+**Implementation approach:**
+- New subcommand `orc flow` in `cmd/orc/main.go`
+- New rendering function in `internal/ux/` (can reuse loop-scope logic from `flow.go`)
+- Description comes from a new optional `description` field on phases in config (or inferred from prompt file frontmatter — TBD)
+- `--verbose` flag to show raw commands, conditions, check scripts (like current `--dry-run`)
+- Respects `--no-color` — layout works without color via icons `◆▸⏸` + indentation + box-drawing chars
+
+**Acceptance criteria:**
+- `orc flow` renders the bracket-loop visualization with color
+- Nested loops display correctly with indented gutters
+- All phase types show correct icons and model badges
+- `--no-color` produces readable uncolored output
+- Works for simple (3-phase) and complex (13+ phase, nested loop) configs
+- Header shows workflow name, phase count breakdown, loop count
+
+**Priority:** P2
+**Effort:** Medium
+**Dependencies:** None (builds on R-011 loop-scope logic; benefits from a `description` field on phases)
+
+---
+
 ## Wave 3: Observability & History
 
 **Theme:** Know what orc did, what it cost, and how it performed over time. Required for client deployment — stakeholders need visibility.
