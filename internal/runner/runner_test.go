@@ -1695,14 +1695,21 @@ func TestRun_LoopArchivesLogs(t *testing.T) {
 	}
 }
 
-func TestRun_NoArchiveOnFirstDispatch(t *testing.T) {
+func TestRun_ArchivesOnFirstDispatch(t *testing.T) {
 	cfg := &config.Config{
 		Name: "test",
 		Phases: []config.Phase{
 			{Name: "a", Type: "script", Run: "echo"},
 		},
 	}
-	mock := newMock()
+	mock := &callbackDispatcher{
+		fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+			logPath := state.LogPath(env.ArtifactsDir, env.PhaseIndex)
+			os.MkdirAll(filepath.Dir(logPath), 0755)
+			os.WriteFile(logPath, []byte("first dispatch log"), 0644)
+			return &dispatch.Result{ExitCode: 0}, nil
+		},
+	}
 	r := newTestRunner(t, cfg, mock)
 
 	err := r.Run(context.Background())
@@ -1711,9 +1718,13 @@ func TestRun_NoArchiveOnFirstDispatch(t *testing.T) {
 	}
 
 	auditDir := state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket)
-	matches, _ := filepath.Glob(filepath.Join(auditDir, "logs", "*.iter-*.log"))
-	if len(matches) != 0 {
-		t.Fatalf("expected no iteration archives, got %v", matches)
+	iter1Log := state.AuditLogPath(auditDir, 0, 1)
+	data, err := os.ReadFile(iter1Log)
+	if err != nil {
+		t.Fatalf("expected archived log at %s: %v", iter1Log, err)
+	}
+	if string(data) != "first dispatch log" {
+		t.Fatalf("archived log = %q, want %q", string(data), "first dispatch log")
 	}
 }
 
@@ -1962,5 +1973,139 @@ func TestRun_ArchivesOutputsBeforeReDispatch(t *testing.T) {
 	}
 	if string(data) != "iteration 1" {
 		t.Fatalf("archived output = %q, want %q", string(data), "iteration 1")
+	}
+}
+
+func TestRun_DispatchCountsSurviveResume(t *testing.T) {
+	// Phase a succeeds, phase b fails — simulates an interrupted run.
+	// On "resume" (second Runner with same dirs), dispatch counts should persist
+	// so iter-1 from the first run is not overwritten.
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo"},
+		},
+	}
+
+	artDir := filepath.Join(t.TempDir(), "artifacts")
+	workDir := t.TempDir()
+
+	// First run: both phases succeed, writing logs
+	callCount := 0
+	mock1 := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		callCount++
+		logPath := state.LogPath(env.ArtifactsDir, env.PhaseIndex)
+		os.MkdirAll(filepath.Dir(logPath), 0755)
+		os.WriteFile(logPath, []byte(fmt.Sprintf("run1 call %d", callCount)), 0644)
+		if phase.Name == "b" {
+			return &dispatch.Result{ExitCode: 1, Output: "fail"}, nil
+		}
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+
+	r1 := &Runner{
+		Config: cfg,
+		State:  &state.State{Status: state.StatusRunning},
+		Env: &dispatch.Environment{
+			ProjectRoot:  workDir,
+			WorkDir:      workDir,
+			ArtifactsDir: artDir,
+			Ticket:       "TEST-1",
+			PhaseCount:   len(cfg.Phases),
+		},
+		Dispatcher: mock1,
+	}
+	r1.Run(context.Background()) // will fail at phase b
+
+	// Verify iter-1 exists for both phases
+	auditDir := state.AuditDir(workDir, "TEST-1")
+	if _, err := os.Stat(state.AuditLogPath(auditDir, 0, 1)); err != nil {
+		t.Fatalf("iter-1 for phase a missing after first run: %v", err)
+	}
+	if _, err := os.Stat(state.AuditLogPath(auditDir, 1, 1)); err != nil {
+		t.Fatalf("iter-1 for phase b missing after first run: %v", err)
+	}
+
+	// Second run (simulating resume): re-dispatches from phase b (index 1)
+	mock2 := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		logPath := state.LogPath(env.ArtifactsDir, env.PhaseIndex)
+		os.MkdirAll(filepath.Dir(logPath), 0755)
+		os.WriteFile(logPath, []byte("run2 "+phase.Name), 0644)
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+
+	r2 := &Runner{
+		Config: cfg,
+		State:  &state.State{PhaseIndex: 1, Status: state.StatusRunning, Ticket: "TEST-1"},
+		Env: &dispatch.Environment{
+			ProjectRoot:  workDir,
+			WorkDir:      workDir,
+			ArtifactsDir: artDir,
+			Ticket:       "TEST-1",
+			PhaseCount:   len(cfg.Phases),
+		},
+		Dispatcher: mock2,
+	}
+	if err := r2.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// iter-1 for phase b should still have run1 content (not overwritten)
+	data, err := os.ReadFile(state.AuditLogPath(auditDir, 1, 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "run1") {
+		t.Fatalf("iter-1 should have run1 content, got %q", string(data))
+	}
+
+	// iter-2 for phase b should have run2 content
+	data, err = os.ReadFile(state.AuditLogPath(auditDir, 1, 2))
+	if err != nil {
+		t.Fatalf("iter-2 for phase b missing after resume: %v", err)
+	}
+	if !strings.Contains(string(data), "run2") {
+		t.Fatalf("iter-2 should have run2 content, got %q", string(data))
+	}
+}
+
+func TestRun_ParallelArchivesLogs(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo", ParallelWith: "b"},
+			{Name: "b", Type: "script", Run: "echo"},
+		},
+	}
+
+	var mu sync.Mutex
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		logPath := state.LogPath(env.ArtifactsDir, env.PhaseIndex)
+		os.MkdirAll(filepath.Dir(logPath), 0755)
+		os.WriteFile(logPath, []byte("parallel log "+phase.Name), 0644)
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+
+	r := newTestRunner(t, cfg, mock)
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	auditDir := state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket)
+	for _, pi := range []struct {
+		name string
+		idx  int
+	}{{"a", 0}, {"b", 1}} {
+		path := state.AuditLogPath(auditDir, pi.idx, 1)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("parallel phase %q iter-1 log missing: %v", pi.name, err)
+		}
+		if !strings.Contains(string(data), pi.name) {
+			t.Fatalf("parallel phase %q log = %q, expected to contain phase name", pi.name, string(data))
+		}
 	}
 }
