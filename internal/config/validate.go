@@ -126,8 +126,11 @@ func Validate(cfg *Config, projectRoot string) error {
 				p.Timeout = 10
 			}
 		case "gate":
-			if p.Cwd != "" {
-				return fmt.Errorf("config: gate phase %q: 'cwd' is not supported on gate phases", p.Name)
+			if p.Cwd != "" && p.Run == "" {
+				return fmt.Errorf("config: gate phase %q: 'cwd' requires 'run' on gate phases", p.Name)
+			}
+			if p.Cwd == "" && cfg.Cwd != "" && p.Run != "" {
+				p.Cwd = cfg.Cwd
 			}
 		default:
 			return fmt.Errorf("config: phase %q: unknown type %q (must be agent, script, or gate)", p.Name, p.Type)

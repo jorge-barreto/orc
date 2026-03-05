@@ -522,11 +522,25 @@ func TestValidate_VarsCustomAccepted(t *testing.T) {
 	}
 }
 
-func TestValidate_GateCwdRejected(t *testing.T) {
+func TestValidate_GateCwdWithoutRunRejected(t *testing.T) {
 	cfg := minimalConfig(Phase{Name: "g", Type: "gate", Cwd: "/tmp"})
 	err := Validate(cfg, t.TempDir())
-	if err == nil || !strings.Contains(err.Error(), "not supported on gate") {
+	if err == nil || !strings.Contains(err.Error(), "'cwd' requires 'run'") {
 		t.Fatalf("expected gate+cwd error, got %v", err)
+	}
+}
+
+func TestValidate_GateRunWithCwdAllowed(t *testing.T) {
+	cfg := minimalConfig(Phase{Name: "g", Type: "gate", Run: "cat plan.md", Cwd: "/tmp"})
+	if err := Validate(cfg, t.TempDir()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_GateRunWithoutCwdAllowed(t *testing.T) {
+	cfg := minimalConfig(Phase{Name: "g", Type: "gate", Run: "echo hello"})
+	if err := Validate(cfg, t.TempDir()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -804,7 +818,7 @@ func TestValidate_TopLevelCwdInheritedByScript(t *testing.T) {
 	}
 }
 
-func TestValidate_TopLevelCwdNotInheritedByGate(t *testing.T) {
+func TestValidate_TopLevelCwdNotInheritedByGateWithoutRun(t *testing.T) {
 	cfg := &Config{
 		Name:   "test",
 		Cwd:    "/work",
@@ -814,7 +828,21 @@ func TestValidate_TopLevelCwdNotInheritedByGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cfg.Phases[0].Cwd != "" {
-		t.Fatalf("Cwd = %q, want empty (gate should not inherit cwd)", cfg.Phases[0].Cwd)
+		t.Fatalf("Cwd = %q, want empty (gate without run should not inherit cwd)", cfg.Phases[0].Cwd)
+	}
+}
+
+func TestValidate_TopLevelCwdInheritedByGateWithRun(t *testing.T) {
+	cfg := &Config{
+		Name:   "test",
+		Cwd:    "/work",
+		Phases: []Phase{{Name: "g", Type: "gate", Run: "ls"}},
+	}
+	if err := Validate(cfg, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Phases[0].Cwd != "/work" {
+		t.Fatalf("Cwd = %q, want /work (gate with run should inherit cwd)", cfg.Phases[0].Cwd)
 	}
 }
 
