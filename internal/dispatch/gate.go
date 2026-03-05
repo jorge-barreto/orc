@@ -4,8 +4,12 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/jorge-barreto/orc/internal/config"
 	"github.com/jorge-barreto/orc/internal/state"
@@ -25,6 +29,24 @@ func RunGate(ctx context.Context, phase config.Phase, env *Environment) (*Result
 		fmt.Print(msg)
 		logFile.WriteString(msg)
 		return &Result{ExitCode: 0, Output: msg}, nil
+	}
+
+	// Run pre-prompt command if specified
+	if phase.Run != "" {
+		expanded := ExpandVars(phase.Run, env.Vars())
+		cmd := exec.CommandContext(ctx, "bash", "-c", expanded)
+		cmd.Dir = PhaseWorkDir(phase, env)
+		cmd.Env = BuildEnv(env)
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		cmd.Cancel = func() error {
+			return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+		}
+		cmd.WaitDelay = 5 * time.Second
+		cmd.Stdout = io.MultiWriter(os.Stdout, logFile)
+		cmd.Stderr = io.MultiWriter(os.Stderr, logFile)
+		if err := cmd.Run(); err != nil {
+			logFile.WriteString(fmt.Sprintf("gate run command failed: %v\n", err))
+		}
 	}
 
 	// Show gate description
