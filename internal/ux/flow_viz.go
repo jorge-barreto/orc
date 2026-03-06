@@ -281,7 +281,11 @@ func FlowViz(cfg *config.Config) {
 				pg := buildOtherGutter(scopes, si, s.endIdx, c)
 				fmt.Printf("  %s%s│%s\n", pg, sc, c.reset)
 				fmt.Printf("  %s%s╰─%s\n", pg, sc, c.reset)
-				fmt.Println()
+				if pg != "" {
+					fmt.Printf("  %s\n", pg)
+				} else {
+					fmt.Println()
+				}
 			}
 		}
 
@@ -298,7 +302,7 @@ func FlowViz(cfg *config.Config) {
 				inScope := isInAnyScope(scopes, i) && isInAnyScope(scopes, i+1)
 				if inScope {
 					// Blank line with gutter between phases in a loop
-					nextGutter := buildGutter(scopes, i+1, c)
+					nextGutter := buildGutter(scopes, i, c)
 					fmt.Printf("  %s\n", nextGutter)
 				} else {
 					// Separator between top-level sections
