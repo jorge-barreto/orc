@@ -144,6 +144,10 @@ Phase fields
                              for recovery.
   allow-tools      list      Additional tools to approve for this agent phase.
                              Merged with defaults. Only valid on agent phases.
+  mcp-config       string    Path to MCP server config file (agent only). Supports
+                             variable expansion. Passed as --mcp-config to claude.
+                             File need not exist at config validation time (may be
+                             produced by a prior phase).
   cwd              string    Working directory for this phase (expanded with vars).
                              Not supported on gate phases.
 
@@ -168,6 +172,7 @@ Validation Rules
 - Agent phases require a prompt file that exists on disk.
 - Model must be opus, sonnet, haiku, or empty.
 - Output filenames must not contain path separators.
+- mcp-config is only valid on agent phases.
 - Gate phases cannot have a cwd field.
 
 Example Config
@@ -268,6 +273,32 @@ Additional tools can be approved at two levels:
 All lists are merged and deduplicated. In attended mode (without --auto),
 if the agent attempts a tool that wasn't pre-approved, orc prompts you
 to approve it for the remainder of that phase.
+
+MCP Configuration
+~~~~~~~~~~~~~~~~~
+
+Agent phases can connect to MCP servers by specifying a config file:
+
+  mcp-config: $ARTIFACTS_DIR/mcp-config.json
+
+The path supports variable expansion ($ARTIFACTS_DIR, custom vars, etc.).
+When set, orc passes --mcp-config <expanded-path> to claude -p. The file
+need not exist at config load time — it can be produced by a prior script
+phase (e.g., launching a browser and writing the CDP endpoint).
+
+Example:
+
+  - name: browser-setup
+    type: script
+    run: .orc/scripts/launch-browser.sh
+    outputs: [mcp-config.json]
+
+  - name: verify
+    type: agent
+    prompt: .orc/phases/verify.md
+    mcp-config: $ARTIFACTS_DIR/mcp-config.json
+    allow-tools:
+      - "mcp__playwright__*"
 
 If outputs are declared and missing after the agent finishes, orc re-invokes
 the agent once with a prompt asking it to produce the missing files. If they

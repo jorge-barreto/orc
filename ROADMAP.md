@@ -1055,6 +1055,103 @@ New ANSI constants needed: `Magenta` (`\033[35m`), `Blue` (`\033[34m`), `BoldCya
 
 ---
 
+### R-043: Forward `AskUserQuestion` from agent phases to terminal
+
+When an agent phase's `claude -p` subprocess calls `AskUserQuestion`, the question is silently swallowed — the user running orc never sees it and can't respond. This blocks agent phases that need human input mid-turn (e.g., choosing between approaches, confirming environment issues).
+
+**Problem observed:** Running `orc run ISLMS-889 --from screenshot-before`, the agent hit a blocker (AWS SSO expired) and called `AskUserQuestion` with options. The question never appeared in the orc terminal.
+
+**How it works today:**
+- `ProcessStream()` parses stream-json events: text deltas are displayed, tool use is tracked for summary display (`⚡ ToolName summary`)
+- Permission denials are already detected in the stream and handled post-turn (prompted, approved, resumed via `--resume`)
+- `AskUserQuestion` tool calls appear in stream-json as tool_use events but are not detected or forwarded
+
+**What needs to change:**
+1. Detect `AskUserQuestion` tool use in `ProcessStream()` at `content_block_stop` — parse the questions/options JSON and store on `StreamResult` (same pattern as `PermissionDenials`)
+2. In `RunAgentAttended`, after each turn, check for user questions — present them in the terminal with numbered options, collect the answer via blocking stdin read (same as gate.go), and resume the session with the answer
+3. In unattended mode (`--auto`), log a warning — the agent will have already gotten a result from Claude Code's internal handling
+
+**UX example:**
+```
+  ┌─ Agent Question ─────────────────────────
+  │ The Playwright e2e tests can't run because the API server
+  │ can't reach AWS Cognito. Should I try a different approach?
+  │
+  │  1) Refresh AWS SSO
+  │  2) Skip screenshots
+  │  3) Use existing data
+  │
+  │ [1-3 or type custom answer]:
+```
+
+**Key files:** `internal/dispatch/stream.go`, `internal/dispatch/agent.go`
+
+**Acceptance criteria:**
+- Agent phase `AskUserQuestion` calls are displayed in the orc terminal with options
+- User can select an option or type a custom answer
+- The answer is forwarded to the agent via `--resume`
+- Works in attended mode; graceful fallback in `--auto` mode
+- No regression in existing stream parsing or steering behavior
+
+**Priority:** P1
+**Effort:** Medium
+**Dependencies:** None
+
+---
+
+### R-044: `mcp-config` field on agent phases
+
+Agent phases need to connect to MCP servers, but the server configuration may be dynamic — determined at runtime by a prior phase. The motivating use case is Playwright CDP handoff: a script phase launches a browser and navigates to a target page, producing a CDP WebSocket endpoint URL. An agent phase then needs to connect to that browser via `@playwright/mcp --cdp-endpoint <url>`. Today the only way to do this is to bypass orc entirely and call `claude -p` from a shell script, losing all of orc's agent machinery (prompt rendering, streaming, cost tracking, output validation, attended mode, audit trail).
+
+**Config schema change:**
+```yaml
+phases:
+  - name: screenshot-nav
+    type: script
+    run: .orc/scripts/screenshot-nav.sh
+    outputs: [mcp-config.json, browser.pid]
+
+  - name: screenshot-verify
+    type: agent
+    prompt: .orc/phases/screenshot-verify.md
+    mcp-config: $ARTIFACTS_DIR/mcp-config.json
+    allow-tools:
+      - "mcp__playwright__*"
+
+  - name: screenshot-cleanup
+    type: script
+    run: kill $(cat $ARTIFACTS_DIR/browser.pid) 2>/dev/null; true
+```
+
+`mcp-config` is an optional string field on agent phases. Its value is a file path supporting variable expansion (via `ExpandVars`). When set, orc adds `--mcp-config <expanded-path>` to the `claude -p` invocation. The file need not exist at config validation time (it may be produced by a prior phase), but must exist at dispatch time.
+
+**Implementation approach:**
+- Add `MCPConfig string \`yaml:"mcp-config"\`` to `config.Phase`
+- In `validate.go`: reject `mcp-config` on non-agent phases (same pattern as `allow-tools` and `max-cost`)
+- In `buildAgentArgs()`: if `phase.MCPConfig` is non-empty, expand variables, then append `--mcp-config <path>` to the args slice
+- No file-existence check at validation time — same as how `outputs` are only checked after dispatch
+- Update `internal/docs/content.go` with the new field
+
+**Why not broader alternatives:**
+- A generic `claude-args` escape hatch could conflict with orc-managed args (`--model`, `--output-format`) and undermines the abstraction
+- Inline MCP config in YAML requires JSON-in-YAML and careful escaping for dynamic values
+- A new `mcp-agent` phase type violates composability — the point is simple phases combined in sequence
+- R-029 (phase output variables) is related but much heavier; `mcp-config` works today via artifact files
+
+**Acceptance criteria:**
+- `mcp-config` field is parsed on agent phases
+- Validation rejects `mcp-config` on non-agent phases
+- Variable expansion works (e.g., `$ARTIFACTS_DIR/mcp-config.json`)
+- `buildAgentArgs` passes `--mcp-config <path>` to `claude -p` when set
+- Existing configs without `mcp-config` work unchanged
+- Tests cover: field present, field absent, non-agent rejection, variable expansion
+
+**Priority:** P1
+**Effort:** Small
+**Dependencies:** None
+
+---
+
 ## Wave 3: Observability & History
 
 **Theme:** Know what orc did, what it cost, and how it performed over time. Required for client deployment — stakeholders need visibility.

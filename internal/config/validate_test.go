@@ -754,6 +754,40 @@ func TestValidate_DefaultAllowToolsWhitespaceEntry(t *testing.T) {
 	}
 }
 
+// mcp-config validation
+
+func TestValidate_MCPConfigOnAgent(t *testing.T) {
+	tmp := t.TempDir()
+	os.WriteFile(filepath.Join(tmp, "p.md"), []byte("prompt"), 0644)
+	cfg := minimalConfig(Phase{Name: "a", Type: "agent", Prompt: "p.md", MCPConfig: "$ARTIFACTS_DIR/mcp.json"})
+	if err := Validate(cfg, tmp); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_MCPConfigOnScript(t *testing.T) {
+	cfg := minimalConfig(Phase{Name: "a", Type: "script", Run: "echo", MCPConfig: "mcp.json"})
+	if err := Validate(cfg, t.TempDir()); err == nil || !strings.Contains(err.Error(), "'mcp-config' is only valid on agent phases") {
+		t.Fatalf("expected mcp-config error, got %v", err)
+	}
+}
+
+func TestValidate_MCPConfigOnGate(t *testing.T) {
+	cfg := minimalConfig(Phase{Name: "a", Type: "gate", MCPConfig: "mcp.json"})
+	if err := Validate(cfg, t.TempDir()); err == nil || !strings.Contains(err.Error(), "'mcp-config' is only valid on agent phases") {
+		t.Fatalf("expected mcp-config error, got %v", err)
+	}
+}
+
+func TestValidate_MCPConfigEmpty(t *testing.T) {
+	tmp := t.TempDir()
+	os.WriteFile(filepath.Join(tmp, "p.md"), []byte("prompt"), 0644)
+	cfg := minimalConfig(Phase{Name: "a", Type: "agent", Prompt: "p.md"})
+	if err := Validate(cfg, tmp); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 // Top-level defaults tests
 
 func TestValidate_TopLevelModelInherited(t *testing.T) {

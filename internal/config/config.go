@@ -52,6 +52,7 @@ type Phase struct {
 	MaxCost      float64  `yaml:"max-cost"`
 	Outputs      []string `yaml:"outputs"`
 	AllowTools   []string `yaml:"allow-tools"`
+	MCPConfig    string   `yaml:"mcp-config"`
 	Condition    string   `yaml:"condition"`
 	ParallelWith string   `yaml:"parallel-with"`
 	OnFail       *OnFail  `yaml:"on-fail"`

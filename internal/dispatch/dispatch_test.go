@@ -256,7 +256,8 @@ func TestPhaseWorkDir_ExpandedCwd(t *testing.T) {
 
 func TestBuildAgentArgs_PromptViaStdin(t *testing.T) {
 	phase := config.Phase{Model: "opus", Effort: "high"}
-	args := buildAgentArgs(phase, "", true, nil, nil)
+	env := &Environment{ProjectRoot: "/proj", WorkDir: "/work", ArtifactsDir: "/art", Ticket: "T-1"}
+	args := buildAgentArgs(phase, env, "", true, nil)
 	if args[0] != "-p" {
 		t.Fatalf("first arg should be -p, got %q", args[0])
 	}
@@ -268,7 +269,8 @@ func TestBuildAgentArgs_PromptViaStdin(t *testing.T) {
 
 func TestBuildAgentArgs_IncludesEffort(t *testing.T) {
 	phase := config.Phase{Model: "opus", Effort: "high"}
-	args := buildAgentArgs(phase, "", true, nil, nil)
+	env := &Environment{ProjectRoot: "/proj", WorkDir: "/work", ArtifactsDir: "/art", Ticket: "T-1"}
+	args := buildAgentArgs(phase, env, "", true, nil)
 	found := false
 	for i, a := range args {
 		if a == "--effort" && i+1 < len(args) && args[i+1] == "high" {
@@ -283,7 +285,8 @@ func TestBuildAgentArgs_IncludesEffort(t *testing.T) {
 
 func TestBuildAgentArgs_IncludesDefaultTools(t *testing.T) {
 	phase := config.Phase{Model: "opus", Effort: "high"}
-	args := buildAgentArgs(phase, "", true, nil, nil)
+	env := &Environment{ProjectRoot: "/proj", WorkDir: "/work", ArtifactsDir: "/art", Ticket: "T-1"}
+	args := buildAgentArgs(phase, env, "", true, nil)
 	tools := toolsFromArgs(args)
 	for _, want := range defaultAllowTools {
 		if !contains(tools, want) {
@@ -294,7 +297,8 @@ func TestBuildAgentArgs_IncludesDefaultTools(t *testing.T) {
 
 func TestBuildAgentArgs_MergesPhaseTools(t *testing.T) {
 	phase := config.Phase{Model: "opus", Effort: "high", AllowTools: []string{"Bash", "NotebookEdit"}}
-	args := buildAgentArgs(phase, "", true, nil, nil)
+	env := &Environment{ProjectRoot: "/proj", WorkDir: "/work", ArtifactsDir: "/art", Ticket: "T-1"}
+	args := buildAgentArgs(phase, env, "", true, nil)
 	tools := toolsFromArgs(args)
 	for _, want := range append(defaultAllowTools, "Bash", "NotebookEdit") {
 		if !contains(tools, want) {
@@ -305,8 +309,9 @@ func TestBuildAgentArgs_MergesPhaseTools(t *testing.T) {
 
 func TestBuildAgentArgs_MergesConfigTools(t *testing.T) {
 	phase := config.Phase{Model: "opus", Effort: "high"}
-	configTools := []string{"mcp__atlassian__*", "Bash"}
-	args := buildAgentArgs(phase, "", true, configTools, nil)
+	env := &Environment{ProjectRoot: "/proj", WorkDir: "/work", ArtifactsDir: "/art", Ticket: "T-1",
+		DefaultAllowTools: []string{"mcp__atlassian__*", "Bash"}}
+	args := buildAgentArgs(phase, env, "", true, nil)
 	tools := toolsFromArgs(args)
 	for _, want := range append(defaultAllowTools, "mcp__atlassian__*", "Bash") {
 		if !contains(tools, want) {
@@ -318,8 +323,9 @@ func TestBuildAgentArgs_MergesConfigTools(t *testing.T) {
 func TestBuildAgentArgs_DeduplicatesTools(t *testing.T) {
 	// Config, phase, and extra tools all overlap with defaults
 	phase := config.Phase{Model: "opus", Effort: "high", AllowTools: []string{"Read", "Bash"}}
-	configTools := []string{"Read", "Bash"}
-	args := buildAgentArgs(phase, "", true, configTools, []string{"Read", "Write"})
+	env := &Environment{ProjectRoot: "/proj", WorkDir: "/work", ArtifactsDir: "/art", Ticket: "T-1",
+		DefaultAllowTools: []string{"Read", "Bash"}}
+	args := buildAgentArgs(phase, env, "", true, []string{"Read", "Write"})
 	tools := toolsFromArgs(args)
 	count := 0
 	for _, t := range tools {
@@ -329,6 +335,47 @@ func TestBuildAgentArgs_DeduplicatesTools(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("Read appeared %d times, want 1; tools=%v", count, tools)
+	}
+}
+
+func TestBuildAgentArgs_MCPConfig(t *testing.T) {
+	phase := config.Phase{Model: "opus", Effort: "high", MCPConfig: "$ARTIFACTS_DIR/mcp.json"}
+	env := &Environment{
+		ProjectRoot:  "/proj",
+		WorkDir:      "/work",
+		ArtifactsDir: "/art",
+		Ticket:       "T-1",
+	}
+	args := buildAgentArgs(phase, env, "", true, nil)
+	// Find --mcp-config in args
+	found := false
+	for i, a := range args {
+		if a == "--mcp-config" && i+1 < len(args) {
+			if args[i+1] != "/art/mcp.json" {
+				t.Fatalf("--mcp-config value = %q, want /art/mcp.json", args[i+1])
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("--mcp-config not found in args: %v", args)
+	}
+}
+
+func TestBuildAgentArgs_MCPConfigEmpty(t *testing.T) {
+	phase := config.Phase{Model: "opus", Effort: "high"}
+	env := &Environment{
+		ProjectRoot:  "/proj",
+		WorkDir:      "/work",
+		ArtifactsDir: "/art",
+		Ticket:       "T-1",
+	}
+	args := buildAgentArgs(phase, env, "", true, nil)
+	for _, a := range args {
+		if a == "--mcp-config" {
+			t.Fatalf("--mcp-config should not appear when MCPConfig is empty; args: %v", args)
+		}
 	}
 }
 

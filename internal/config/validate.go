@@ -145,6 +145,10 @@ func Validate(cfg *Config, projectRoot string) error {
 			}
 		}
 
+		if p.MCPConfig != "" && p.Type != "agent" {
+			return fmt.Errorf("config: phase %q: 'mcp-config' is only valid on agent phases", p.Name)
+		}
+
 		if !validModels[p.Model] {
 			return fmt.Errorf("config: phase %q: unknown model %q (must be opus, sonnet, or haiku)", p.Name, p.Model)
 		}
