@@ -32,7 +32,7 @@ func main() {
 			&cli.BoolFlag{Name: "no-color", Usage: "Disable colored output"},
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
-			if cmd.Bool("no-color") || os.Getenv("NO_COLOR") != "" || !ux.IsTerminal(os.Stdout.Fd()) {
+			if cmd.Bool("no-color") || os.Getenv("NO_COLOR") != "" || !ux.IsTerminal(os.Stdout) {
 				ux.DisableColor()
 			}
 			return ctx, nil
