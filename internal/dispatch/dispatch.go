@@ -83,6 +83,7 @@ type Result struct {
 	CacheCreationInputTokens int
 	CacheReadInputTokens     int
 	Turns                    int
+	SessionID                string // agent session ID for --resume
 }
 
 // BuildEnv returns the environment variables for child processes.

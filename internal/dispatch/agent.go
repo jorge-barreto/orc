@@ -181,7 +181,7 @@ func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 	if tr.Stream != nil {
 		output = tr.Stream.Text
 	}
-	res := &Result{ExitCode: tr.ExitCode, Output: output, Turns: 1}
+	res := &Result{ExitCode: tr.ExitCode, Output: output, Turns: 1, SessionID: sessionID}
 	if ctx.Err() == context.DeadlineExceeded {
 		res.TimedOut = true
 	}
@@ -196,8 +196,8 @@ func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 }
 
 // RunAgentWithPrompt invokes claude with an explicit prompt string (for output re-prompting).
-// Uses a new session with no steering.
-func RunAgentWithPrompt(ctx context.Context, phase config.Phase, env *Environment, prompt string) (*Result, error) {
+// If sessionID is non-empty, resumes that session so the agent retains prior context.
+func RunAgentWithPrompt(ctx context.Context, phase config.Phase, env *Environment, prompt, sessionID string) (*Result, error) {
 	if phase.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(phase.Timeout)*time.Minute)
@@ -219,7 +219,7 @@ func RunAgentWithPrompt(ctx context.Context, phase config.Phase, env *Environmen
 		defer rawLog.Close()
 	}
 
-	tr, err := runAgentTurn(ctx, phase, env, prompt, "", false, logFile, rawLog, nil)
+	tr, err := runAgentTurn(ctx, phase, env, prompt, sessionID, false, logFile, rawLog, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -342,6 +342,7 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 		CacheCreationInputTokens: totalCacheCreation,
 		CacheReadInputTokens:     totalCacheRead,
 		Turns:                    turns,
+		SessionID:                sessionID,
 	}, nil
 }
 

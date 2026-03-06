@@ -255,14 +255,20 @@ func (r *Runner) Run(ctx context.Context) error {
 		if len(phase.Outputs) > 0 {
 			missing := state.CheckOutputs(r.Env.ArtifactsDir, phase.Outputs)
 			if len(missing) > 0 && phase.Type == "agent" {
-				// Re-invoke agent once for missing outputs
+				// Resume the agent session once for missing outputs
+				var paths []string
 				for _, m := range missing {
-					prompt := fmt.Sprintf(
-						"You did not produce the expected artifact at %q. Please produce it now.",
-						filepath.Join(r.Env.ArtifactsDir, m))
-					if _, err := dispatch.RunAgentWithPrompt(ctx, phase, r.Env, prompt); err != nil {
-						fmt.Fprintf(os.Stderr, "warning: re-prompt for missing output failed: %v\n", err)
-					}
+					paths = append(paths, filepath.Join(r.Env.ArtifactsDir, m))
+				}
+				prompt := fmt.Sprintf(
+					"The following expected output files are missing:\n%s\nPlease produce them now.",
+					strings.Join(paths, "\n"))
+				sessionID := ""
+				if result != nil {
+					sessionID = result.SessionID
+				}
+				if _, err := dispatch.RunAgentWithPrompt(ctx, phase, r.Env, prompt, sessionID); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: re-prompt for missing outputs failed: %v\n", err)
 				}
 				missing = state.CheckOutputs(r.Env.ArtifactsDir, phase.Outputs)
 			}
