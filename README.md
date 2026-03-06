@@ -216,6 +216,7 @@ Workflows are defined in `.orc/config.yaml`.
 | `max-cost` | float | — | Per-phase cost budget in USD (agent only). Workflow stops if phase cost exceeds this. |
 | `outputs` | list | — | Expected output filenames in artifacts dir |
 | `allow-tools` | list | — | Additional tools to approve for this agent phase, merged with `default-allow-tools` and built-in defaults |
+| `mcp-config` | string | — | Path to MCP server config file (agent only). Supports variable expansion. Passed as `--mcp-config` to `claude -p`. File need not exist at config load time. |
 | `condition` | string | — | Shell command; phase is skipped if exit code is non-zero |
 | `parallel-with` | string | — | Name of another phase to run concurrently |
 | `loop` | object | — | Convergent loop: `goto` (phase name), `min` (default 1), `max` (required), optional `check` (shell command for pass/fail), optional `on-exhaust` |
@@ -225,7 +226,7 @@ Workflows are defined in `.orc/config.yaml`.
 
 **script** — Executes a shell command via `bash -c`. The `run` field supports variable substitution. Child processes inherit the parent environment plus `ORC_*` variables.
 
-**agent** — Reads a prompt template file, expands variables, and invokes `claude -p`. Output is streamed to the terminal and saved to `.orc/artifacts/<ticket>/logs/`. The following tools are always approved by default: Read, Edit, Write, Glob, Grep, Task, WebFetch, WebSearch. Add more via `default-allow-tools` (all agents) or `allow-tools` (per phase). If outputs are declared and missing after the agent finishes, orc re-invokes the agent once to produce them.
+**agent** — Reads a prompt template file, expands variables, and invokes `claude -p`. Output is streamed to the terminal and saved to `.orc/artifacts/<ticket>/logs/`. The following tools are always approved by default: Read, Edit, Write, Glob, Grep, Task, WebFetch, WebSearch. Add more via `default-allow-tools` (all agents) or `allow-tools` (per phase). If outputs are declared and missing after the agent finishes, orc re-invokes the agent once to produce them. Use `mcp-config` to connect agents to MCP servers with a dynamically-generated config file.
 
 **gate** — Prompts the operator for approval. The operator can type `y` to continue, or any other text to request a revision — the text is captured as feedback in the phase log. Skipped automatically when using `--auto`.
 

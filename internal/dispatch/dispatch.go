@@ -91,9 +91,15 @@ type Result struct {
 // The base environment is snapshotted once per Environment and reused across calls.
 func BuildEnv(env *Environment) []string {
 	if env.filteredEnv == nil {
+		// Strip vars we'll re-add with correct values: ORC_*, CLAUDECODE*, and
+		// the unprefixed built-in aliases (TICKET, ARTIFACTS_DIR, etc.).
+		overridden := map[string]bool{
+			"TICKET": true, "ARTIFACTS_DIR": true,
+			"WORK_DIR": true, "PROJECT_ROOT": true,
+		}
 		for _, e := range os.Environ() {
 			key := strings.SplitN(e, "=", 2)[0]
-			if strings.HasPrefix(key, "CLAUDECODE") || strings.HasPrefix(key, "ORC_") {
+			if strings.HasPrefix(key, "CLAUDECODE") || strings.HasPrefix(key, "ORC_") || overridden[key] {
 				continue
 			}
 			env.filteredEnv = append(env.filteredEnv, e)
