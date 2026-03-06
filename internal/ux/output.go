@@ -3,13 +3,14 @@ package ux
 import (
 	"fmt"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/jorge-barreto/orc/internal/config"
 )
 
 // ANSI color helpers
-const (
+var (
 	Reset     = "\033[0m"
 	Bold      = "\033[1m"
 	Dim       = "\033[2m"
@@ -23,6 +24,28 @@ const (
 	BoldBlue  = "\033[1;34m"
 	BoldGreen = "\033[1;32m"
 )
+
+// IsTerminal reports whether the given file descriptor is a terminal.
+func IsTerminal(fd uintptr) bool {
+	_, _, err := syscall.Syscall(syscall.SYS_IOCTL, fd, syscall.TIOCGWINSZ, 0)
+	return err == 0
+}
+
+// DisableColor sets all color variables to empty strings, disabling ANSI output globally.
+func DisableColor() {
+	Reset = ""
+	Bold = ""
+	Dim = ""
+	Red = ""
+	Green = ""
+	Yellow = ""
+	Cyan = ""
+	Magenta = ""
+	Blue = ""
+	BoldCyan = ""
+	BoldBlue = ""
+	BoldGreen = ""
+}
 
 func timestamp() string {
 	return time.Now().Format("15:04:05")
