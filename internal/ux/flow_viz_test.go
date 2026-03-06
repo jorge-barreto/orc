@@ -119,6 +119,105 @@ func TestFlowViz_NestedLoops(t *testing.T) {
 	}
 }
 
+func TestFlowViz_ComplexMultiPhase(t *testing.T) {
+	cfg := &config.Config{
+		Name: "acme-service",
+		Phases: []config.Phase{
+			{Name: "env-check", Type: "script", Run: "check", Description: "Verify Docker and PostgreSQL are running"},
+			{Name: "create-epic", Type: "agent", Model: "sonnet", Effort: "high",
+				Outputs: []string{"epic-id.txt"}, Description: "Create an epic bead for the Jira ticket"},
+			{Name: "plan", Type: "agent", Model: "opus", Effort: "high",
+				Outputs: []string{"plan.md", "classification.txt"}, Description: "Thoroughly analyze the ticket and plan implementation"},
+			{Name: "review-plan", Type: "agent", Model: "opus", Effort: "high",
+				Outputs: []string{"plan-review.md"}, Description: "Adversarial review of the plan",
+				Loop: &config.Loop{Goto: "plan", Min: 1, Max: 3, Check: "grep -q APPROVED $ARTIFACTS_DIR/plan-approved.txt"}},
+			{Name: "plan-gate", Type: "gate", Description: "Human reviews the plan — bad plans are fatal",
+				Loop: &config.Loop{Goto: "plan", Min: 1, Max: 3}},
+			{Name: "create-beads", Type: "agent", Model: "sonnet", Effort: "high",
+				Outputs: []string{"bead-ids.txt"}, Description: "Break the plan into ordered beads with dependencies"},
+			{Name: "pick-bead", Type: "script", Run: "pick", Description: "Select the next ready bead via bdv next"},
+			{Name: "plan-bead", Type: "agent", Model: "sonnet", Effort: "high",
+				Outputs: []string{"bead-plan.md"}, Description: "Plan implementation for the current bead"},
+			{Name: "implement", Type: "agent", Model: "opus", Effort: "high",
+				Description: "Implement changes for the current bead"},
+			{Name: "migration-gate", Type: "script", Run: "migrate", Description: "Apply pending migrations"},
+			{Name: "auto-fix", Type: "script", Run: "fix", Description: "Auto-fix formatting and lint issues"},
+			{Name: "lint", Type: "script", Run: "lint", Description: "Compile and lint",
+				Loop: &config.Loop{Goto: "implement", Min: 1, Max: 5}},
+			{Name: "smoke-test", Type: "script", Run: "smoke", Description: "Verify API server boots cleanly",
+				Loop: &config.Loop{Goto: "implement", Min: 1, Max: 5}},
+			{Name: "test", Type: "script", Run: "test", Description: "Run unit and integration tests",
+				Outputs: []string{"test-result.txt"},
+				Loop:    &config.Loop{Goto: "implement", Min: 1, Max: 5}},
+			{Name: "bead-review", Type: "agent", Model: "sonnet", Effort: "high",
+				Outputs: []string{"bead-review-result.txt"}, Description: "Lightweight review of bead plan compliance",
+				Loop: &config.Loop{Goto: "implement", Min: 1, Max: 2, Check: "grep -q PASS $ARTIFACTS_DIR/bead-review-result.txt"}},
+			{Name: "wrap-up", Type: "agent", Model: "sonnet", Effort: "high",
+				Description: "Commit changes, close bead, note discovered issues"},
+			{Name: "check-remaining", Type: "script", Run: "check", Description: "Loop back if incomplete beads remain",
+				Loop: &config.Loop{Goto: "pick-bead", Min: 1, Max: 20}},
+			{Name: "final-review", Type: "agent", Model: "opus", Effort: "high",
+				Outputs: []string{"final-review-result.txt"}, Description: "Adaptive expert panel code review"},
+			{Name: "summary", Type: "agent", Model: "sonnet", Effort: "high",
+				Outputs: []string{"summary.md"}, Description: "Generate final summary report for human review"},
+		},
+	}
+
+	var output string
+	withPlainColors(func() {
+		output = captureOutput(func() { FlowViz(cfg) })
+	})
+
+	lines := strings.Split(output, "\n")
+
+	// Bug 1: No extra │ on the spacing line immediately before ╭─ implement loop
+	for i, line := range lines {
+		if strings.Contains(line, "╭─") && strings.Contains(line, "implement loop") {
+			// The spacing line just before should have exactly one │ (pick-bead), not two
+			if i > 0 {
+				spacingLine := lines[i-1]
+				barCount := strings.Count(spacingLine, "│")
+				if barCount > 1 {
+					t.Errorf("spacing line before implement loop ╭─ has %d │ bars (expected 1):\n  spacing: %q\n  header:  %q\nfull output:\n%s",
+						barCount, spacingLine, line, output)
+				}
+			}
+			break
+		}
+	}
+
+	// Bug 2: │ continuation on the blank line between ╰─ and the next phase in an outer loop
+	for i, line := range lines {
+		if strings.Contains(line, "╰─") && !strings.Contains(line, "│") {
+			// This is an innermost ╰─ with no parent gutter — skip
+			continue
+		}
+		if strings.Contains(line, "╰─") && strings.Contains(line, "│") {
+			// The line after ╰─ should also have │ from the still-active outer loop
+			if i+1 < len(lines) {
+				nextLine := lines[i+1]
+				if strings.TrimSpace(nextLine) == "" {
+					t.Errorf("blank line after ╰─ should have outer │ gutter:\n  close: %q\n  blank: %q\nfull output:\n%s",
+						line, nextLine, output)
+				}
+			}
+			break
+		}
+	}
+
+	// Structural: wrap-up (after implement loop closes) should have exactly one │
+	for _, line := range lines {
+		if strings.Contains(line, "wrap-up") && strings.Contains(line, "◆") {
+			barCount := strings.Count(line, "│")
+			if barCount != 1 {
+				t.Errorf("wrap-up should have exactly 1 │ (pick-bead only), got %d: %q\nfull output:\n%s",
+					barCount, line, output)
+			}
+			break
+		}
+	}
+}
+
 func TestFlowViz_NoColor(t *testing.T) {
 	cfg := &config.Config{
 		Name: "simple",
