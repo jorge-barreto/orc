@@ -2,8 +2,8 @@ package ux
 
 import (
 	"fmt"
+	"os"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/jorge-barreto/orc/internal/config"
@@ -25,10 +25,13 @@ var (
 	BoldGreen = "\033[1;32m"
 )
 
-// IsTerminal reports whether the given file descriptor is a terminal.
-func IsTerminal(fd uintptr) bool {
-	_, _, err := syscall.Syscall(syscall.SYS_IOCTL, fd, syscall.TIOCGWINSZ, 0)
-	return err == 0
+// IsTerminal reports whether the given file is a terminal.
+func IsTerminal(f *os.File) bool {
+	fi, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
 }
 
 // DisableColor sets all color variables to empty strings, disabling ANSI output globally.
