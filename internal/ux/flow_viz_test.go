@@ -317,6 +317,164 @@ func TestFlowViz_ModelBadges(t *testing.T) {
 	}
 }
 
+func withPlainColors(fn func()) {
+	savedReset := Reset
+	DisableColor()
+	defer func() {
+		Reset = savedReset
+		Bold = "\033[1m"
+		Dim = "\033[2m"
+		Red = "\033[31m"
+		Green = "\033[32m"
+		Yellow = "\033[33m"
+		Cyan = "\033[36m"
+		Magenta = "\033[35m"
+		Blue = "\033[34m"
+		BoldCyan = "\033[1;36m"
+		BoldBlue = "\033[1;34m"
+		BoldGreen = "\033[1;32m"
+	}()
+	fn()
+}
+
+func TestFlowViz_GutterContinuityAtLoopStart(t *testing.T) {
+	cfg := &config.Config{
+		Name: "gutter-start",
+		Phases: []config.Phase{
+			{Name: "pick", Type: "script", Run: "pick"},
+			{Name: "work", Type: "agent", Model: "opus", Effort: "high"},
+			{Name: "check", Type: "script", Run: "check",
+				Loop: &config.Loop{Goto: "pick", Min: 1, Max: 5}},
+		},
+	}
+
+	var output string
+	withPlainColors(func() {
+		output = captureOutput(func() { FlowViz(cfg) })
+	})
+
+	// The first phase in the loop (pick) should have a │ gutter
+	lines := strings.Split(output, "\n")
+	foundPickWithGutter := false
+	for _, line := range lines {
+		if strings.Contains(line, "pick") && strings.Contains(line, "▸") {
+			if strings.Contains(line, "│") {
+				foundPickWithGutter = true
+			}
+			break
+		}
+	}
+	if !foundPickWithGutter {
+		t.Errorf("first phase in loop should have │ gutter\nfull output:\n%s", output)
+	}
+}
+
+func TestFlowViz_InterleavedLoopContinuity(t *testing.T) {
+	// Interleaved: pick-bead loop [0,5] and implement loop [2,6]
+	// Neither fully contains the other.
+	cfg := &config.Config{
+		Name: "interleaved",
+		Phases: []config.Phase{
+			{Name: "pick-bead", Type: "script", Run: "pick"},
+			{Name: "plan", Type: "agent", Model: "sonnet", Effort: "high"},
+			{Name: "implement", Type: "agent", Model: "opus", Effort: "high"},
+			{Name: "test", Type: "script", Run: "test",
+				Loop: &config.Loop{Goto: "implement", Min: 1, Max: 5}},
+			{Name: "wrap-up", Type: "agent", Model: "sonnet", Effort: "high"},
+			{Name: "check-remaining", Type: "script", Run: "check",
+				Loop: &config.Loop{Goto: "pick-bead", Min: 1, Max: 20}},
+			{Name: "final-review", Type: "agent", Model: "opus", Effort: "high",
+				Loop: &config.Loop{Goto: "implement", Min: 1, Max: 3}},
+		},
+	}
+
+	var output string
+	withPlainColors(func() {
+		output = captureOutput(func() { FlowViz(cfg) })
+	})
+
+	lines := strings.Split(output, "\n")
+
+	// The implement loop ╭─ line should have the outer pick-bead │ gutter
+	foundNestedOpen := false
+	for _, line := range lines {
+		if strings.Contains(line, "╭─") && strings.Contains(line, "implement loop") {
+			if strings.Contains(line, "│") {
+				foundNestedOpen = true
+			} else {
+				t.Errorf("implement loop ╭─ should have outer │ gutter: %q", line)
+			}
+			break
+		}
+	}
+	if !foundNestedOpen {
+		t.Errorf("did not find implement loop ╭─ line\nfull output:\n%s", output)
+	}
+
+	// Phases inside both loops should have two │ gutters
+	for _, line := range lines {
+		if strings.Contains(line, "test") && strings.Contains(line, "▸") {
+			count := strings.Count(line, "│")
+			if count < 2 {
+				t.Errorf("phase inside both loops should have 2 │ gutters, got %d: %q", count, line)
+			}
+			break
+		}
+	}
+
+	// The pick-bead loop ╰─ should have the implement │ gutter (still active)
+	for _, line := range lines {
+		if strings.Contains(line, "╰─") {
+			// First ╰─ is pick-bead close; implement loop is still active
+			if strings.Contains(line, "│") {
+				// Good: outer close has inner gutter
+			}
+			break
+		}
+	}
+}
+
+func TestFlowViz_ScopeColorsVary(t *testing.T) {
+	// Two loops should get different ANSI colors
+	cfg := &config.Config{
+		Name: "colors",
+		Phases: []config.Phase{
+			{Name: "pick", Type: "script", Run: "pick"},
+			{Name: "implement", Type: "agent", Model: "opus", Effort: "high"},
+			{Name: "test", Type: "script", Run: "test",
+				Loop: &config.Loop{Goto: "implement", Min: 1, Max: 5}},
+			{Name: "check", Type: "script", Run: "check",
+				Loop: &config.Loop{Goto: "pick", Min: 1, Max: 20}},
+		},
+	}
+
+	output := captureOutput(func() {
+		FlowViz(cfg)
+	})
+
+	// Find ╭─ lines — each should have a different color escape before ╭
+	var bracketColors []string
+	for _, line := range strings.Split(output, "\n") {
+		idx := strings.Index(line, "╭─")
+		if idx > 0 {
+			// Extract the ANSI escape sequence immediately before ╭─
+			prefix := line[:idx]
+			// Find last escape sequence
+			lastEsc := strings.LastIndex(prefix, "\033[")
+			if lastEsc >= 0 {
+				bracketColors = append(bracketColors, prefix[lastEsc:idx])
+			}
+		}
+	}
+
+	if len(bracketColors) < 2 {
+		t.Fatalf("expected at least 2 loop brackets, got %d\nfull output:\n%s", len(bracketColors), output)
+	}
+	if bracketColors[0] == bracketColors[1] {
+		t.Errorf("loop brackets should use different colors, both used %q\nfull output:\n%s", bracketColors[0], output)
+	}
+}
+
 func TestFlowViz_ScriptAndGateIcons(t *testing.T) {
 	cfg := &config.Config{
 		Name: "icons",

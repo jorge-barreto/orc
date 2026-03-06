@@ -15,8 +15,7 @@ type flowColors struct {
 	gateIcon    string
 	modelBadge  string
 	modelQual   string
-	loopBracket string
-	loopLabel   string
+	scopeColors []string
 	outputs     string
 	loopBack    string
 	loopCond    string
@@ -30,6 +29,13 @@ type flowColors struct {
 	dim         string
 }
 
+func (c flowColors) scopeColor(idx int) string {
+	if len(c.scopeColors) == 0 {
+		return ""
+	}
+	return c.scopeColors[idx%len(c.scopeColors)]
+}
+
 func newFlowColors() flowColors {
 	return flowColors{
 		phaseName:   BoldCyan,
@@ -38,8 +44,7 @@ func newFlowColors() flowColors {
 		gateIcon:    Red,
 		modelBadge:  Blue,
 		modelQual:   BoldBlue,
-		loopBracket: Magenta,
-		loopLabel:   Magenta,
+		scopeColors: []string{Magenta, Cyan, Yellow, Blue, Green},
 		outputs:     Green,
 		loopBack:    Yellow,
 		loopCond:    Dim,
@@ -104,35 +109,22 @@ func computeVizScopes(cfg *config.Config) []vizScope {
 
 func buildGutter(scopes []vizScope, phaseIdx int, c flowColors) string {
 	var parts []string
-	for _, s := range scopes {
+	for si, s := range scopes {
 		if phaseIdx >= s.startIdx && phaseIdx <= s.endIdx {
-			if phaseIdx > s.startIdx {
-				parts = append(parts, c.loopBracket+"│"+c.reset+"  ")
-			} else {
-				parts = append(parts, "   ")
-			}
+			parts = append(parts, c.scopeColor(si)+"│"+c.reset+"  ")
 		}
 	}
 	return strings.Join(parts, "")
 }
 
-func buildParentGutter(scopes []vizScope, scopeIdx int, c flowColors) string {
-	s := scopes[scopeIdx]
+func buildOtherGutter(scopes []vizScope, excludeIdx int, phaseIdx int, c flowColors) string {
 	var parts []string
-	for _, outer := range scopes {
-		if outer.startIdx < s.startIdx && outer.endIdx >= s.endIdx {
-			parts = append(parts, c.loopBracket+"│"+c.reset+"  ")
+	for si, s := range scopes {
+		if si == excludeIdx {
+			continue
 		}
-	}
-	return strings.Join(parts, "")
-}
-
-func buildCloseParentGutter(scopes []vizScope, scopeIdx int, c flowColors) string {
-	s := scopes[scopeIdx]
-	var parts []string
-	for _, outer := range scopes {
-		if outer.startIdx <= s.startIdx && outer.endIdx > s.endIdx {
-			parts = append(parts, c.loopBracket+"│"+c.reset+"  ")
+		if phaseIdx >= s.startIdx && phaseIdx <= s.endIdx {
+			parts = append(parts, c.scopeColor(si)+"│"+c.reset+"  ")
 		}
 	}
 	return strings.Join(parts, "")
@@ -218,9 +210,10 @@ func FlowViz(cfg *config.Config) {
 		// Bracket open lines: check if any scope starts at this index
 		for si, s := range scopes {
 			if s.startIdx == i {
-				pg := buildParentGutter(scopes, si, c)
-				fmt.Printf("  %s%s╭─%s %s%s%s\n", pg, c.loopBracket, c.reset, c.loopLabel, s.label, c.reset)
-				fmt.Printf("  %s%s│%s\n", pg, c.loopBracket, c.reset)
+				sc := c.scopeColor(si)
+				pg := buildOtherGutter(scopes, si, s.startIdx, c)
+				fmt.Printf("  %s%s╭─%s %s%s%s\n", pg, sc, c.reset, sc, s.label, c.reset)
+				fmt.Printf("  %s%s│%s\n", pg, sc, c.reset)
 			}
 		}
 
@@ -284,9 +277,10 @@ func FlowViz(cfg *config.Config) {
 		for si := len(scopes) - 1; si >= 0; si-- {
 			s := scopes[si]
 			if s.endIdx == i {
-				pg := buildCloseParentGutter(scopes, si, c)
-				fmt.Printf("  %s%s│%s\n", pg, c.loopBracket, c.reset)
-				fmt.Printf("  %s%s╰─%s\n", pg, c.loopBracket, c.reset)
+				sc := c.scopeColor(si)
+				pg := buildOtherGutter(scopes, si, s.endIdx, c)
+				fmt.Printf("  %s%s│%s\n", pg, sc, c.reset)
+				fmt.Printf("  %s%s╰─%s\n", pg, sc, c.reset)
 				fmt.Println()
 			}
 		}
