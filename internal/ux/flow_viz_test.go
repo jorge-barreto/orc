@@ -18,7 +18,7 @@ func TestFlowViz_Simple(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		FlowViz(cfg, false)
+		FlowViz(cfg)
 	})
 
 	mustContain := []string{
@@ -57,7 +57,7 @@ func TestFlowViz_WithLoop(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		FlowViz(cfg, false)
+		FlowViz(cfg)
 	})
 
 	mustContain := []string{
@@ -91,7 +91,7 @@ func TestFlowViz_NestedLoops(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		FlowViz(cfg, false)
+		FlowViz(cfg)
 	})
 
 	mustContain := []string{
@@ -129,8 +129,26 @@ func TestFlowViz_NoColor(t *testing.T) {
 		},
 	}
 
+	// Save and restore color state
+	savedReset := Reset
+	DisableColor()
+	defer func() {
+		Reset = savedReset
+		Bold = "\033[1m"
+		Dim = "\033[2m"
+		Red = "\033[31m"
+		Green = "\033[32m"
+		Yellow = "\033[33m"
+		Cyan = "\033[36m"
+		Magenta = "\033[35m"
+		Blue = "\033[34m"
+		BoldCyan = "\033[1;36m"
+		BoldBlue = "\033[1;34m"
+		BoldGreen = "\033[1;32m"
+	}()
+
 	output := captureOutput(func() {
-		FlowViz(cfg, true)
+		FlowViz(cfg)
 	})
 
 	if strings.Contains(output, "\033[") {
@@ -184,7 +202,7 @@ func TestFlowViz_ComplexWorkflow(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		FlowViz(cfg, false)
+		FlowViz(cfg)
 	})
 
 	// All 11 phase names
@@ -237,7 +255,7 @@ func TestFlowViz_Descriptions(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		FlowViz(cfg, false)
+		FlowViz(cfg)
 	})
 
 	if !strings.Contains(output, "Analyze the ticket thoroughly") {
@@ -255,7 +273,7 @@ func TestFlowViz_Outputs(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		FlowViz(cfg, false)
+		FlowViz(cfg)
 	})
 
 	mustContain := []string{"→", "plan.md", "notes.txt"}
@@ -277,7 +295,7 @@ func TestFlowViz_ModelBadges(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		FlowViz(cfg, false)
+		FlowViz(cfg)
 	})
 
 	mustContain := []string{"opus", "sonnet", "haiku", "⚡"}
@@ -310,7 +328,7 @@ func TestFlowViz_ScriptAndGateIcons(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		FlowViz(cfg, false)
+		FlowViz(cfg)
 	})
 
 	mustContain := []string{"▸", "⏸", "◆"}

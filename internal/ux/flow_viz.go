@@ -167,9 +167,9 @@ func isInAnyScope(scopes []vizScope, idx int) bool {
 }
 
 // FlowViz renders a rich, colored visualization of the workflow config.
-func FlowViz(cfg *config.Config, noColor bool) {
+func FlowViz(cfg *config.Config) {
 	c := newFlowColors()
-	if noColor {
+	if Reset == "" {
 		c = newFlowColorsPlain()
 	}
 

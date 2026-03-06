@@ -14,9 +14,6 @@ func flowCmd() *cli.Command {
 	return &cli.Command{
 		Name:  "flow",
 		Usage: "Visualize the workflow as a flow diagram",
-		Flags: []cli.Flag{
-			&cli.BoolFlag{Name: "no-color", Usage: "Disable colored output"},
-		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			projectRoot, err := findProjectRoot()
 			if err != nil {
@@ -27,7 +24,7 @@ func flowCmd() *cli.Command {
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
-			ux.FlowViz(cfg, cmd.Bool("no-color"))
+			ux.FlowViz(cfg)
 			return nil
 		},
 	}

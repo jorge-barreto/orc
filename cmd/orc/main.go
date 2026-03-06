@@ -28,6 +28,15 @@ func main() {
 		Name:        "orc",
 		Usage:       "Deterministic agent orchestrator",
 		Description: "Run 'orc docs' for documentation on config syntax, variables, phases, and more.",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{Name: "no-color", Usage: "Disable colored output"},
+		},
+		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+			if cmd.Bool("no-color") || os.Getenv("NO_COLOR") != "" || !ux.IsTerminal(os.Stdout.Fd()) {
+				ux.DisableColor()
+			}
+			return ctx, nil
+		},
 		Commands: []*cli.Command{
 			initCmd(),
 			runCmd(),
