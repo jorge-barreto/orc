@@ -13,9 +13,10 @@ rm -f "$ARTIFACTS_DIR/plan-approved.txt"
 ## Step 1: Read Context
 
 1. Read `$ARTIFACTS_DIR/plan.md` — the plan under review.
-2. Read `$PROJECT_ROOT/ROADMAP.md` — find the section for $TICKET. Compare the plan against the roadmap item's requirements.
-3. Read `$PROJECT_ROOT/CLAUDE.md` — project conventions.
-4. If `$ARTIFACTS_DIR/plan-review.md` exists from a previous review, read it to see what was previously flagged.
+2. **Always** read the bead for full context — run `bd show $TICKET` if the ticket starts with `orc-`, otherwise search for it with `bd search "$TICKET"` and then `bd show <bead-id>` on the result. Compare the plan against the bead's requirements.
+3. If $TICKET matches `R-\d+` (a roadmap item), also read `$PROJECT_ROOT/ROADMAP.md` — find the section for $TICKET. Compare the plan against the roadmap item's requirements.
+4. Read `$PROJECT_ROOT/CLAUDE.md` — project conventions.
+5. If `$ARTIFACTS_DIR/plan-review.md` exists from a previous review, read it to see what was previously flagged.
 
 ## Step 2: Determine Iteration
 
@@ -43,7 +44,7 @@ Do NOT skip this step. Do NOT trust the plan's descriptions without checking the
 ## Step 4: Evaluate the Plan
 
 ### A. Completeness
-- Does the plan cover ALL acceptance criteria from the roadmap item?
+- Does the plan cover ALL acceptance criteria from the work item (bead description and/or roadmap)?
 - Are all files that need changes listed in the "Files to Modify" table?
 - Is the test strategy concrete (specific test names, specific test files, specific patterns to follow)?
 - Are there missing steps that an implementer would have to figure out on their own?
@@ -63,8 +64,8 @@ Do NOT skip this step. Do NOT trust the plan's descriptions without checking the
 - Do the implementation steps assume behavior or interfaces that don't exist in the source?
 
 ### D. Scope
-- Does the plan include work NOT in the roadmap item? (Over-engineering)
-- Is the plan missing work that IS in the roadmap item? (Under-scoping)
+- Does the plan include work NOT in the work item? (Over-engineering)
+- Is the plan missing work that IS in the work item? (Under-scoping)
 
 ### E. Feasibility
 - Can each implementation step be executed as described? Are there steps that are vague enough that the implementer would have to make design decisions?
@@ -135,7 +136,7 @@ Err on the side of blocking. If you're uncertain whether something is blocking o
 ## What is NOT Blocking (classify as suggestion only)
 
 - Style preferences and alternative approaches when the current approach is valid.
-- Scope beyond what the roadmap item requires.
+- Scope beyond what the work item requires.
 - Wording or formatting in the plan document itself.
 
 ## Rules
@@ -147,4 +148,4 @@ Err on the side of blocking. If you're uncertain whether something is blocking o
 - **Verify before claiming.** If you assert a file doesn't exist, a function is named wrong, or behavior doesn't match — you must have read the source code to confirm. Do not make unverified claims.
 - **Converge on later iterations.** On iterations 2+, focus on: (1) verifying that previously flagged blocking issues are resolved, and (2) checking for NEW blocking issues introduced by the plan agent's revisions.
 - **Don't move goalposts.** If a finding was a suggestion on iteration 1, do not escalate it to blocking on iteration 2 unless the plan agent's changes created a new problem in that area.
-- Do NOT add scope beyond what the roadmap item requires.
+- Do NOT add scope beyond what the work item requires.

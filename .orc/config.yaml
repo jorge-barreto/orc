@@ -1,5 +1,5 @@
 name: orc
-ticket-pattern: 'R-\d+'
+ticket-pattern: 'R-\d+|orc-.+?'
 model: opus
 effort: high
 
@@ -11,9 +11,7 @@ phases:
   - name: bead-claim
     type: script
     description: Mark the ticket's bead as in-progress
-    run: |
-      bd search "$TICKET" | grep " - $TICKET:" | head -1 | cut -d' ' -f1 | xargs -r -I{} bd update {} --status=in_progress
-      exit 0
+    run: .orc/scripts/bead-claim.sh
     timeout: 1
 
   - name: plan
@@ -72,22 +70,11 @@ phases:
   - name: commit
     type: script
     description: Stage and commit the changes
-    run: |
-      cd $PROJECT_ROOT
-      git add -A
-      git diff --cached --quiet && { echo "No changes to commit"; exit 0; }
-      git commit -m "$(cat <<EOF
-      $TICKET: $(head -1 $ARTIFACTS_DIR/plan.md | sed 's/^#* *//')
-
-      Co-Authored-By: orc <noreply@jorgebarreto.dev>
-      EOF
-      )"
+    run: .orc/scripts/commit.sh
     timeout: 1
 
   - name: bead-close
     type: script
     description: Close the ticket's bead after successful commit
-    run: |
-      bd search "$TICKET" | grep " - $TICKET:" | head -1 | cut -d' ' -f1 | xargs -r -I{} bd close {}
-      exit 0
+    run: .orc/scripts/bead-close.sh
     timeout: 1
