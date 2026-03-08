@@ -95,6 +95,7 @@ orc run PROJ-123 --retry 3           # retry from phase 3
 orc run PROJ-123 --from implement    # start from the "implement" phase
 orc run PROJ-123 --from 2            # still works with numbers
 orc run PROJ-123 --verbose     # save raw stream-json output
+orc run PROJ-123 --resume      # resume interrupted agent session
 ```
 
 | Flag | Description |
@@ -104,8 +105,9 @@ orc run PROJ-123 --verbose     # save raw stream-json output
 | `--retry <phase>` | Retry from phase (number or name), resets loop counts |
 | `--from <phase>` | Start from phase (number or name), resets loop counts |
 | `--verbose`, `-v` | Save raw stream-json output to `.stream.jsonl` files in the logs directory |
+| `--resume` | Resume an interrupted agent phase using saved Claude session ID |
 
-`--retry` and `--from` are mutually exclusive.
+`--retry`, `--from`, and `--resume` are mutually exclusive.
 
 **Attended vs auto mode**: By default, orc runs in attended mode — you can type follow-up instructions to steer agent phases, if an agent attempts a tool that wasn't pre-approved, orc prompts you to approve it, and if the agent asks a question (via AskUserQuestion), orc displays it and collects your answer. With `--auto`, orc runs fully unattended with no stdin interaction.
 

@@ -83,8 +83,13 @@ func PhaseFail(index int, phaseName, errMsg string) {
 }
 
 // ResumeHint prints a resume command hint.
-func ResumeHint(ticket string) {
-	fmt.Printf("\n%sResume:%s orc run %s\n", Yellow, Reset, ticket)
+// If sessionResumable is true, suggests --resume to continue the interrupted agent session.
+func ResumeHint(ticket string, sessionResumable bool) {
+	if sessionResumable {
+		fmt.Printf("\n%sResume:%s orc run %s --resume\n", Yellow, Reset, ticket)
+	} else {
+		fmt.Printf("\n%sResume:%s orc run %s\n", Yellow, Reset, ticket)
+	}
 }
 
 // LoopBack prints a loop-back message for loop iterations.

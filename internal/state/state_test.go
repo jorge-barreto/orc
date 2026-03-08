@@ -77,6 +77,64 @@ func TestSetPhase(t *testing.T) {
 	}
 }
 
+func TestSaveAndLoad_RoundTrip_WithSessionID(t *testing.T) {
+	dir := t.TempDir()
+	original := &State{
+		PhaseIndex:     2,
+		Ticket:         "ABC-123",
+		Status:         StatusInterrupted,
+		PhaseSessionID: "session-uuid-1234",
+	}
+	if err := original.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.PhaseSessionID != "session-uuid-1234" {
+		t.Fatalf("PhaseSessionID = %q, want %q", loaded.PhaseSessionID, "session-uuid-1234")
+	}
+}
+
+func TestAdvance_ClearsSessionID(t *testing.T) {
+	s := &State{PhaseIndex: 2, PhaseSessionID: "session-123"}
+	s.Advance()
+	if s.PhaseSessionID != "" {
+		t.Fatalf("PhaseSessionID = %q after Advance, want empty", s.PhaseSessionID)
+	}
+	if s.PhaseIndex != 3 {
+		t.Fatalf("PhaseIndex = %d, want 3", s.PhaseIndex)
+	}
+}
+
+func TestSetPhase_ClearsSessionID(t *testing.T) {
+	s := &State{PhaseIndex: 5, PhaseSessionID: "session-456"}
+	s.SetPhase(1)
+	if s.PhaseSessionID != "" {
+		t.Fatalf("PhaseSessionID = %q after SetPhase, want empty", s.PhaseSessionID)
+	}
+	if s.PhaseIndex != 1 {
+		t.Fatalf("PhaseIndex = %d, want 1", s.PhaseIndex)
+	}
+}
+
+func TestLoad_BackwardsCompatible_NoSessionID(t *testing.T) {
+	dir := t.TempDir()
+	// Write a state.json without phase_session_id (old format)
+	data := []byte(`{"phase_index":1,"ticket":"T-1","status":"interrupted"}`)
+	if err := os.WriteFile(filepath.Join(dir, "state.json"), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.PhaseSessionID != "" {
+		t.Fatalf("PhaseSessionID = %q, want empty for old format", st.PhaseSessionID)
+	}
+}
+
 func TestListTickets_Empty(t *testing.T) {
 	dir := t.TempDir()
 	tickets, err := ListTickets(dir, "")

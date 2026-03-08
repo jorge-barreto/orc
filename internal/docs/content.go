@@ -81,6 +81,7 @@ CLI Flags
   orc run <ticket> --dry-run    Preview phase plan
   orc run <ticket> --retry <phase>    Retry from phase (number or name)
   orc run <ticket> --from <phase>     Start from phase (number or name)
+  orc run <ticket> --resume        Resume interrupted agent phase session
   orc flow                        Visualize workflow as a flow diagram
   orc --no-color flow             Flow diagram without color (flag works on any command)
   orc cancel <ticket>           Cancel run and remove all artifacts
@@ -96,6 +97,10 @@ CLI Flags
 
 --retry and --from accept a 1-indexed phase number or a phase name.
 They are mutually exclusive. Both reset loop counts.
+
+--resume uses the saved Claude session ID to continue an interrupted agent
+phase. Mutually exclusive with --retry and --from. If the session has expired,
+falls back to a fresh start automatically.
 `
 
 const topicConfig = `Configuration Reference
@@ -554,6 +559,22 @@ resume point:
 
 Both flags reset loop counts.
 
+Agent Session Resume
+~~~~~~~~~~~~~~~~~~~~
+
+When an agent phase is interrupted, orc saves its Claude session ID to
+state.json. Use --resume to continue the interrupted session:
+
+  orc run TICKET --resume
+
+This invokes claude -p --resume <session-id>, recovering in-progress work.
+If the saved session has expired, orc automatically falls back to a fresh
+start. --resume is mutually exclusive with --retry and --from, and does not
+reset loop counts.
+
+The session ID is cleared when a phase completes successfully or when
+using --retry/--from.
+
 Cancelling
 ----------
 
@@ -600,9 +621,10 @@ Directory Structure
 state.json
 ----------
 
-Tracks the current phase index, ticket identifier, and workflow status
-(running, completed, failed, interrupted). Written atomically after every
-phase.
+Tracks the current phase index, ticket identifier, workflow status
+(running, completed, failed, interrupted), and the Claude session ID
+for interrupted agent phases (used by --resume). Written atomically
+after every phase.
 
 timing.json
 -----------

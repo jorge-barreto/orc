@@ -148,9 +148,28 @@ func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 		defer cancel()
 	}
 
-	rendered, err := RenderAndSavePrompt(phase, env)
-	if err != nil {
-		return nil, err
+	var rendered string
+	var sessionID string
+	var isFirst bool
+	resuming := env.ResumeSessionID != ""
+
+	if resuming {
+		// Resuming an interrupted session — use continuation prompt
+		sessionID = env.ResumeSessionID
+		rendered = "The previous session was interrupted. Continue from where you left off and complete the remaining work."
+		isFirst = false
+		// Save continuation prompt for observability
+		if err := os.WriteFile(state.PromptPath(env.ArtifactsDir, env.PhaseIndex), []byte(rendered), 0644); err != nil {
+			return nil, err
+		}
+	} else {
+		var err error
+		rendered, err = RenderAndSavePrompt(phase, env)
+		if err != nil {
+			return nil, err
+		}
+		sessionID = uuid.New().String()
+		isFirst = true
 	}
 
 	logFile, err := os.OpenFile(state.LogPath(env.ArtifactsDir, env.PhaseIndex), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
@@ -168,8 +187,13 @@ func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 		defer rawLog.Close()
 	}
 
-	sessionID := uuid.New().String()
-	tr, err := runAgentTurn(ctx, phase, env, rendered, sessionID, true, logFile, rawLog, nil)
+	tr, err := runAgentTurn(ctx, phase, env, rendered, sessionID, isFirst, logFile, rawLog, nil)
+	if resuming && err != nil {
+		fmt.Fprintf(os.Stderr, "  warning: resume failed (%v), falling back to fresh start\n", err)
+		envFresh := env.Clone()
+		envFresh.ResumeSessionID = ""
+		return RunAgent(ctx, phase, envFresh)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -267,9 +291,27 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 		defer cancel()
 	}
 
-	rendered, err := RenderAndSavePrompt(phase, env)
-	if err != nil {
-		return nil, err
+	resuming := env.ResumeSessionID != ""
+
+	var prompt string
+	var sessionID string
+	var isFirst bool
+
+	if resuming {
+		sessionID = env.ResumeSessionID
+		prompt = "The previous session was interrupted. Continue from where you left off and complete the remaining work."
+		isFirst = false
+		if err := os.WriteFile(state.PromptPath(env.ArtifactsDir, env.PhaseIndex), []byte(prompt), 0644); err != nil {
+			return nil, err
+		}
+	} else {
+		var err error
+		prompt, err = RenderAndSavePrompt(phase, env)
+		if err != nil {
+			return nil, err
+		}
+		sessionID = uuid.New().String()
+		isFirst = true
 	}
 
 	logFile, err := os.OpenFile(state.LogPath(env.ArtifactsDir, env.PhaseIndex), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
@@ -287,13 +329,10 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 		defer rawLog.Close()
 	}
 
-	sessionID := uuid.New().String()
 	reader := NewStdinReader(os.Stdin)
 	defer reader.Stop()
 
 	var extraTools []string
-	isFirst := true
-	prompt := rendered
 	var lastTurn *turnResult
 	var totalCost float64
 	var totalInput, totalOutput int
@@ -302,11 +341,18 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 
 	for {
 		tr, err := runAgentTurn(ctx, phase, env, prompt, sessionID, isFirst, logFile, rawLog, extraTools)
+		if resuming && err != nil {
+			fmt.Fprintf(os.Stderr, "  warning: resume failed (%v), falling back to fresh start\n", err)
+			envFresh := env.Clone()
+			envFresh.ResumeSessionID = ""
+			return RunAgentAttended(ctx, phase, envFresh)
+		}
 		if err != nil {
 			return nil, err
 		}
 		lastTurn = tr
 		isFirst = false
+		resuming = false // prevent re-triggering fallback on subsequent loop iterations
 		turns++
 		if tr.Stream != nil {
 			totalCost += tr.Stream.CostUSD

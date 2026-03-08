@@ -16,9 +16,10 @@ const (
 )
 
 type State struct {
-	PhaseIndex int    `json:"phase_index"`
-	Ticket     string `json:"ticket"`
-	Status     string `json:"status"` // running, completed, failed, interrupted
+	PhaseIndex     int    `json:"phase_index"`
+	Ticket         string `json:"ticket"`
+	Status         string `json:"status"` // running, completed, failed, interrupted
+	PhaseSessionID string `json:"phase_session_id,omitempty"`
 }
 
 func statePath(artifactsDir string) string {
@@ -60,11 +61,13 @@ func (s *State) Save(artifactsDir string) error {
 // Advance increments the phase index.
 func (s *State) Advance() {
 	s.PhaseIndex++
+	s.PhaseSessionID = ""
 }
 
 // SetPhase sets the phase index for retry/from/loop jumps.
 func (s *State) SetPhase(idx int) {
 	s.PhaseIndex = idx
+	s.PhaseSessionID = ""
 }
 
 // TicketSummary holds the loaded state and cost data for one ticket.

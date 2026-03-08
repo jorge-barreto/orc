@@ -18,6 +18,7 @@ type Environment struct {
 	PhaseIndex        int
 	AutoMode          bool
 	Verbose           bool
+	ResumeSessionID   string // session ID from interrupted phase for --resume
 	PhaseCount        int
 	DefaultAllowTools []string
 	CustomVars        map[string]string

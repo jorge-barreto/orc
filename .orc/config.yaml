@@ -38,6 +38,7 @@ phases:
     type: agent
     description: Implement the changes following the plan
     prompt: .orc/phases/implement.md
+    model: sonnet
     timeout: 30
 
   - name: test

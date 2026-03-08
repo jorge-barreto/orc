@@ -65,7 +65,7 @@ func (r *Runner) failAndHint(status string, exitCode int, err error) error {
 			fmt.Fprintf(os.Stderr, "warning: failed to flush costs: %v\n", flushErr)
 		}
 	}
-	ux.ResumeHint(r.State.Ticket)
+	ux.ResumeHint(r.State.Ticket, r.State.PhaseSessionID != "")
 	return &ExitError{Code: exitCode, Err: err}
 }
 
@@ -173,6 +173,19 @@ func (r *Runner) Run(ctx context.Context) error {
 		r.Env.PhaseIndex = i
 		start := time.Now()
 		result, err := r.Dispatcher.Dispatch(ctx, phase, r.Env)
+
+		// Persist session ID immediately so it survives interruption.
+		// Must happen before any error handling — if the process dies
+		// during error handling, the session ID is still on disk.
+		if phase.Type == "agent" && result != nil && result.SessionID != "" {
+			r.State.PhaseSessionID = result.SessionID
+			if saveErr := r.State.Save(r.Env.ArtifactsDir); saveErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to save session ID: %v\n", saveErr)
+			}
+		}
+
+		// Clear resume session ID after first dispatch (don't resume again on loop iterations)
+		r.Env.ResumeSessionID = ""
 
 		// Archive every dispatch to audit (before any error/interrupt handling)
 		r.dispatchCount[i]++

@@ -61,13 +61,14 @@ func runCmd() *cli.Command {
 		Name:      "run",
 		Usage:     "Run the workflow for a ticket",
 		ArgsUsage: "<ticket>",
-		UsageText: "orc run PROJ-123\n   orc run PROJ-123 --auto --verbose\n   orc run PROJ-123 --retry implement",
+		UsageText: "orc run PROJ-123\n   orc run PROJ-123 --auto --verbose\n   orc run PROJ-123 --retry implement\n   orc run PROJ-123 --resume",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{Name: "auto", Usage: "Unattended mode — skip gates, no interactive steering"},
 			&cli.StringFlag{Name: "retry", Usage: "Retry from phase number or name"},
 			&cli.StringFlag{Name: "from", Usage: "Start from phase number or name"},
 			&cli.BoolFlag{Name: "dry-run", Usage: "Print phase plan without executing"},
 			&cli.BoolFlag{Name: "verbose", Aliases: []string{"v"}, Usage: "Save raw stream-json output to .stream.jsonl files"},
+			&cli.BoolFlag{Name: "resume", Usage: "Resume an interrupted agent phase using saved session"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfgErr := func(err error) error {
@@ -127,11 +128,15 @@ func runCmd() *cli.Command {
 			st.Ticket = ticket
 			st.Status = state.StatusRunning
 
-			// Handle --retry and --from (mutually exclusive)
+			// Handle --retry, --from, and --resume (mutually exclusive)
 			retryVal := cmd.String("retry")
 			fromVal := cmd.String("from")
+			resumeFlag := cmd.Bool("resume")
 			if retryVal != "" && fromVal != "" {
 				return cfgErr(fmt.Errorf("--retry and --from are mutually exclusive"))
+			}
+			if resumeFlag && (retryVal != "" || fromVal != "") {
+				return cfgErr(fmt.Errorf("--resume is mutually exclusive with --retry and --from"))
 			}
 			if retryVal != "" {
 				idx, err := resolvePhaseRef(retryVal, cfg.Phases)
@@ -156,6 +161,14 @@ func runCmd() *cli.Command {
 				if err := state.SaveLoopCounts(artifactsDir, make(map[string]int)); err != nil {
 					return cfgErr(fmt.Errorf("resetting loop counts: %w", err))
 				}
+			}
+
+			// Handle --resume: validate and thread session ID
+			if resumeFlag {
+				if st.PhaseSessionID == "" {
+					return cfgErr(fmt.Errorf("no interrupted agent session to resume (use --retry to restart the phase)"))
+				}
+				env.ResumeSessionID = st.PhaseSessionID
 			}
 
 			if err := dispatch.Preflight(cfg.Phases); err != nil {

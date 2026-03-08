@@ -81,7 +81,7 @@ func Run(ctx context.Context, projectRoot, artifactsDir string, cfg *config.Conf
 	}
 
 	fmt.Println()
-	ux.ResumeHint(st.Ticket)
+	ux.ResumeHint(st.Ticket, st.PhaseSessionID != "")
 	return nil
 }
 

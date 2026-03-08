@@ -2109,3 +2109,104 @@ func TestRun_ParallelArchivesLogs(t *testing.T) {
 		}
 	}
 }
+
+func TestRun_SavesAndClearsSessionIDOnSuccess(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "impl", Type: "agent", Prompt: "test.md"},
+		},
+	}
+	mock := newMock()
+	mock.results["impl"] = &dispatch.Result{
+		ExitCode:  0,
+		SessionID: "session-abc-123",
+	}
+	r := newTestRunner(t, cfg, mock)
+
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// After successful completion, PhaseSessionID should be cleared by Advance()
+	if r.State.PhaseSessionID != "" {
+		t.Fatalf("PhaseSessionID = %q after success, want empty", r.State.PhaseSessionID)
+	}
+}
+
+func TestRun_PersistsSessionIDOnFailure(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "impl", Type: "agent", Prompt: "test.md"},
+		},
+	}
+	mock := newMock()
+	mock.results["impl"] = &dispatch.Result{
+		ExitCode:  1,
+		SessionID: "session-abc-456",
+	}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	// Load state from disk and verify session ID was persisted
+	st, loadErr := state.Load(r.Env.ArtifactsDir)
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if st.PhaseSessionID != "session-abc-456" {
+		t.Fatalf("PhaseSessionID = %q, want %q", st.PhaseSessionID, "session-abc-456")
+	}
+}
+
+func TestRun_ClearsResumeSessionIDAfterDispatch(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "impl", Type: "agent", Prompt: "test.md"},
+		},
+	}
+	mock := newMock()
+	mock.results["impl"] = &dispatch.Result{
+		ExitCode:  0,
+		SessionID: "session-new",
+	}
+	r := newTestRunner(t, cfg, mock)
+	r.Env.ResumeSessionID = "session-old"
+
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// ResumeSessionID should be cleared after dispatch
+	if r.Env.ResumeSessionID != "" {
+		t.Fatalf("ResumeSessionID = %q after dispatch, want empty", r.Env.ResumeSessionID)
+	}
+}
+
+func TestRun_NoSessionIDForScriptPhase(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "build", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	mock.results["build"] = &dispatch.Result{
+		ExitCode:  0,
+		SessionID: "should-be-ignored",
+	}
+	r := newTestRunner(t, cfg, mock)
+
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if r.State.PhaseSessionID != "" {
+		t.Fatalf("PhaseSessionID = %q for script phase, want empty", r.State.PhaseSessionID)
+	}
+}
