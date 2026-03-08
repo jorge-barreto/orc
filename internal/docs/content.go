@@ -274,6 +274,18 @@ All lists are merged and deduplicated. In attended mode (without --auto),
 if the agent attempts a tool that wasn't pre-approved, orc prompts you
 to approve it for the remainder of that phase.
 
+Agent Questions
+~~~~~~~~~~~~~~~
+
+In attended mode (without --auto), if the agent calls AskUserQuestion,
+orc displays the question and any options in the terminal and waits for
+your answer. You can select a numbered option or type a custom response.
+The answer is forwarded to the agent via --resume, and the agent continues
+with your input.
+
+In unattended mode (--auto), agent questions are logged as warnings but
+not answered — the agent proceeds with Claude Code's internal handling.
+
 MCP Configuration
 ~~~~~~~~~~~~~~~~~
 

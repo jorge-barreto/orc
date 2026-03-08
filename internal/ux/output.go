@@ -123,3 +123,48 @@ func ToolDenied(name, input string) {
 func PermissionPrompt(tools []string) {
 	fmt.Printf("\n  %s⚠ Tools denied: %s%s\n", Yellow, strings.Join(tools, ", "), Reset)
 }
+
+// wrapLines splits text into lines of at most maxWidth characters,
+// breaking at word boundaries.
+func wrapLines(text string, maxWidth int) []string {
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return []string{text}
+	}
+	var lines []string
+	var current strings.Builder
+	for _, word := range words {
+		if current.Len() > 0 && current.Len()+1+len(word) > maxWidth {
+			lines = append(lines, current.String())
+			current.Reset()
+		}
+		if current.Len() > 0 {
+			current.WriteByte(' ')
+		}
+		current.WriteString(word)
+	}
+	if current.Len() > 0 {
+		lines = append(lines, current.String())
+	}
+	return lines
+}
+
+// AgentQuestion displays an AskUserQuestion from the agent with numbered options.
+func AgentQuestion(question string, options []string) {
+	fmt.Printf("\n  %s┌─ Agent Question ─────────────────────────%s\n", BoldCyan, Reset)
+	for _, line := range wrapLines(question, 60) {
+		fmt.Printf("  %s│%s %s\n", BoldCyan, Reset, line)
+	}
+	if len(options) > 0 {
+		fmt.Printf("  %s│%s\n", BoldCyan, Reset)
+		for i, opt := range options {
+			fmt.Printf("  %s│%s  %s%d)%s %s\n", BoldCyan, Reset, Bold, i+1, Reset, opt)
+		}
+	}
+	fmt.Printf("  %s│%s\n", BoldCyan, Reset)
+	if len(options) > 0 {
+		fmt.Printf("  %s│%s [1-%d or type custom answer]: ", BoldCyan, Reset, len(options))
+	} else {
+		fmt.Printf("  %s│%s [type your answer]: ", BoldCyan, Reset)
+	}
+}

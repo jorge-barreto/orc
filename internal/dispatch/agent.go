@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -182,6 +183,13 @@ func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 		fmt.Fprintf(os.Stderr, "  permission denials: %s\n", strings.Join(names, ", "))
 	}
 
+	// In unattended mode, log user questions as warnings
+	if tr.Stream != nil && len(tr.Stream.UserQuestions) > 0 {
+		for _, q := range tr.Stream.UserQuestions {
+			fmt.Fprintf(os.Stderr, "  warning: agent asked %q (unanswered in --auto mode)\n", q.Question)
+		}
+	}
+
 	output := ""
 	if tr.Stream != nil {
 		output = tr.Stream.Text
@@ -314,6 +322,29 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 			if len(approved) > 0 {
 				extraTools = append(extraTools, approved...)
 				prompt = "Continue — the previously denied tools have now been approved."
+				continue
+			}
+		}
+
+		// Handle user questions from AskUserQuestion tool calls
+		if tr.Stream != nil && len(tr.Stream.UserQuestions) > 0 {
+			var lastAnswer string
+			for _, q := range tr.Stream.UserQuestions {
+				ux.AgentQuestion(q.Question, q.Options)
+				if line, ok := reader.ReadLineBlocking(); ok {
+					answer := strings.TrimSpace(line)
+					// If user typed a number, map to the option text
+					if len(q.Options) > 0 {
+						if idx, err := strconv.Atoi(answer); err == nil && idx >= 1 && idx <= len(q.Options) {
+							answer = q.Options[idx-1]
+						}
+					}
+					lastAnswer = answer
+					fmt.Fprintf(logFile, "\n--- user answer to agent question: %s ---\n", answer)
+				}
+			}
+			if lastAnswer != "" {
+				prompt = lastAnswer
 				continue
 			}
 		}
