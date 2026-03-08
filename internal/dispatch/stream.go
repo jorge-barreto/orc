@@ -25,10 +25,17 @@ func (d PermissionDenial) String() string {
 	return d.Tool
 }
 
+// UserQuestion represents an AskUserQuestion tool call from the agent.
+type UserQuestion struct {
+	Question string
+	Options  []string
+}
+
 // StreamResult holds the parsed output from a stream-json claude invocation.
 type StreamResult struct {
 	Text                     string
 	PermissionDenials        []PermissionDenial
+	UserQuestions            []UserQuestion
 	CostUSD                  float64
 	SessionID                string
 	InputTokens              int
@@ -39,9 +46,10 @@ type StreamResult struct {
 
 // streamState tracks tool use accumulation across stream events.
 type streamState struct {
-	toolName string
-	inputBuf strings.Builder
-	hadText  bool
+	toolName      string
+	inputBuf      strings.Builder
+	hadText       bool
+	userQuestions []UserQuestion
 }
 
 // ProcessStream reads stream-json lines from stdout, routes text to display+log,
@@ -94,6 +102,7 @@ func ProcessStream(ctx context.Context, stdout io.Reader, display io.Writer, log
 	}
 
 	result.Text = textBuf.String()
+	result.UserQuestions = ss.userQuestions
 	return &result, nil
 }
 
@@ -189,6 +198,18 @@ func handleStreamEvent(event *streamEvent, textBuf *strings.Builder, ss *streamS
 
 	case "content_block_stop":
 		if ss.toolName != "" {
+			if ss.toolName == "AskUserQuestion" {
+				var input struct {
+					Question string   `json:"question"`
+					Options  []string `json:"options"`
+				}
+				if err := json.Unmarshal([]byte(ss.inputBuf.String()), &input); err == nil && input.Question != "" {
+					ss.userQuestions = append(ss.userQuestions, UserQuestion{
+						Question: input.Question,
+						Options:  input.Options,
+					})
+				}
+			}
 			summary := toolUseSummary(ss.toolName, ss.inputBuf.String())
 			if ss.hadText && display != nil {
 				fmt.Fprint(display, "\n")
@@ -229,6 +250,8 @@ func toolUseSummary(toolName, rawJSON string) string {
 		key = "pattern"
 	case "Task", "TaskCreate":
 		key = "description"
+	case "AskUserQuestion":
+		key = "question"
 	default:
 		// Fall back to first string value.
 		for _, v := range obj {

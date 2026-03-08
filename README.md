@@ -107,7 +107,7 @@ orc run PROJ-123 --verbose     # save raw stream-json output
 
 `--retry` and `--from` are mutually exclusive.
 
-**Attended vs auto mode**: By default, orc runs in attended mode — you can type follow-up instructions to steer agent phases, and if an agent attempts a tool that wasn't pre-approved, orc prompts you to approve it. With `--auto`, orc runs fully unattended with no stdin interaction.
+**Attended vs auto mode**: By default, orc runs in attended mode — you can type follow-up instructions to steer agent phases, if an agent attempts a tool that wasn't pre-approved, orc prompts you to approve it, and if the agent asks a question (via AskUserQuestion), orc displays it and collects your answer. With `--auto`, orc runs fully unattended with no stdin interaction.
 
 ### `orc flow`
 

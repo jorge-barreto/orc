@@ -213,6 +213,100 @@ func TestProcessStream_MultiToolStreaming(t *testing.T) {
 	}
 }
 
+func TestProcessStream_AskUserQuestion(t *testing.T) {
+	input := streamLines(
+		`{"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"tool_use","name":"AskUserQuestion","input":{}}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{\"question\":\"Should I refresh SSO?\",\"options\":[\"Yes\",\"No\",\"Skip\"]}"}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_stop"}}`,
+		`{"type":"result","total_cost_usd":0.01,"session_id":"s1","usage":{"input_tokens":100,"output_tokens":50},"permission_denials":[]}`,
+	)
+
+	result, err := ProcessStream(context.Background(), input, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.UserQuestions) != 1 {
+		t.Fatalf("got %d user questions, want 1", len(result.UserQuestions))
+	}
+	if result.UserQuestions[0].Question != "Should I refresh SSO?" {
+		t.Fatalf("Question = %q", result.UserQuestions[0].Question)
+	}
+	if len(result.UserQuestions[0].Options) != 3 {
+		t.Fatalf("got %d options, want 3", len(result.UserQuestions[0].Options))
+	}
+	if result.UserQuestions[0].Options[0] != "Yes" || result.UserQuestions[0].Options[1] != "No" || result.UserQuestions[0].Options[2] != "Skip" {
+		t.Fatalf("Options = %v", result.UserQuestions[0].Options)
+	}
+}
+
+func TestProcessStream_AskUserQuestionNoOptions(t *testing.T) {
+	input := streamLines(
+		`{"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"tool_use","name":"AskUserQuestion","input":{}}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{\"question\":\"What should I do next?\",\"options\":[]}"}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_stop"}}`,
+		`{"type":"result","total_cost_usd":0.01,"session_id":"s1","usage":{"input_tokens":100,"output_tokens":50},"permission_denials":[]}`,
+	)
+
+	result, err := ProcessStream(context.Background(), input, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.UserQuestions) != 1 {
+		t.Fatalf("got %d user questions, want 1", len(result.UserQuestions))
+	}
+	if result.UserQuestions[0].Question != "What should I do next?" {
+		t.Fatalf("Question = %q", result.UserQuestions[0].Question)
+	}
+	if len(result.UserQuestions[0].Options) != 0 {
+		t.Fatalf("got %d options, want 0", len(result.UserQuestions[0].Options))
+	}
+}
+
+func TestProcessStream_AskUserQuestionMalformedJSON(t *testing.T) {
+	input := streamLines(
+		`{"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"tool_use","name":"AskUserQuestion","input":{}}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{broken json"}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_stop"}}`,
+		`{"type":"result","total_cost_usd":0.01,"session_id":"s1","usage":{"input_tokens":100,"output_tokens":50},"permission_denials":[]}`,
+	)
+
+	result, err := ProcessStream(context.Background(), input, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.UserQuestions) != 0 {
+		t.Fatalf("got %d user questions, want 0 (malformed JSON should be skipped)", len(result.UserQuestions))
+	}
+}
+
+func TestProcessStream_MultipleAskUserQuestions(t *testing.T) {
+	input := streamLines(
+		// First AskUserQuestion
+		`{"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"tool_use","name":"AskUserQuestion","input":{}}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{\"question\":\"First question?\",\"options\":[\"A\",\"B\"]}"}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_stop"}}`,
+		// Second AskUserQuestion
+		`{"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"tool_use","name":"AskUserQuestion","input":{}}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{\"question\":\"Second question?\",\"options\":[]}"}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_stop"}}`,
+		`{"type":"result","total_cost_usd":0.01,"session_id":"s1","usage":{"input_tokens":100,"output_tokens":50},"permission_denials":[]}`,
+	)
+
+	result, err := ProcessStream(context.Background(), input, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.UserQuestions) != 2 {
+		t.Fatalf("got %d user questions, want 2", len(result.UserQuestions))
+	}
+	if result.UserQuestions[0].Question != "First question?" {
+		t.Fatalf("Question[0] = %q", result.UserQuestions[0].Question)
+	}
+	if result.UserQuestions[1].Question != "Second question?" {
+		t.Fatalf("Question[1] = %q", result.UserQuestions[1].Question)
+	}
+}
+
 func TestToolUseSummary(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -228,6 +322,7 @@ func TestToolUseSummary(t *testing.T) {
 		{"Glob pattern", "Glob", `{"pattern":"**/*.go"}`, "**/*.go"},
 		{"Task description", "Task", `{"description":"search code"}`, "search code"},
 		{"TaskCreate description", "TaskCreate", `{"description":"fix bug","subject":"bug"}`, "fix bug"},
+		{"AskUserQuestion question", "AskUserQuestion", `{"question":"Refresh SSO?","options":["Yes","No"]}`, "Refresh SSO?"},
 		{"Unknown tool first string", "WebSearch", `{"query":"golang"}`, "golang"},
 		{"Empty input", "Bash", "", ""},
 		{"Malformed JSON", "Bash", "{broken", "{broken"},
