@@ -552,6 +552,45 @@ func TestReadOrcFiles_WorkflowsOnly(t *testing.T) {
 	}
 }
 
+func TestReadOrcFiles_YmlWorkflow(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755)
+	content := "name: bugfix\nphases:\n  - name: fix\n    type: script\n    run: echo ok\n"
+	os.WriteFile(filepath.Join(dir, ".orc", "workflows", "bugfix.yml"), []byte(content), 0644)
+
+	_, phaseFiles, err := readOrcFiles(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got, ok := phaseFiles[".orc/workflows/bugfix.yml"]
+	if !ok {
+		t.Fatalf("phaseFiles missing .orc/workflows/bugfix.yml, got keys: %v", phaseFiles)
+	}
+	if got != content {
+		t.Fatalf("phaseFiles[.orc/workflows/bugfix.yml] = %q, want %q", got, content)
+	}
+}
+
+func TestReadOrcFiles_YamlAndYml(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755)
+	yamlContent := "name: feature\nphases:\n  - name: plan\n    type: script\n    run: echo ok\n"
+	ymlContent := "name: bugfix\nphases:\n  - name: fix\n    type: script\n    run: echo ok\n"
+	os.WriteFile(filepath.Join(dir, ".orc", "workflows", "feature.yaml"), []byte(yamlContent), 0644)
+	os.WriteFile(filepath.Join(dir, ".orc", "workflows", "bugfix.yml"), []byte(ymlContent), 0644)
+
+	_, phaseFiles, err := readOrcFiles(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := phaseFiles[".orc/workflows/feature.yaml"]; !ok {
+		t.Fatalf("phaseFiles missing .orc/workflows/feature.yaml, got keys: %v", phaseFiles)
+	}
+	if _, ok := phaseFiles[".orc/workflows/bugfix.yml"]; !ok {
+		t.Fatalf("phaseFiles missing .orc/workflows/bugfix.yml, got keys: %v", phaseFiles)
+	}
+}
+
 func TestReadAuditSummary_WorkflowNamespaced(t *testing.T) {
 	dir := t.TempDir()
 	// Create audit/<workflow>/<ticket>/ structure

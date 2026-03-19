@@ -58,6 +58,16 @@ func readOrcFiles(projectRoot string) (configYAML string, phaseFiles map[string]
 		relPath = filepath.ToSlash(relPath)
 		phaseFiles[relPath] = string(content)
 	}
+	wfMatchesYml, _ := filepath.Glob(filepath.Join(projectRoot, ".orc", "workflows", "*.yml"))
+	for _, match := range wfMatchesYml {
+		content, err := os.ReadFile(match)
+		if err != nil {
+			continue
+		}
+		relPath, _ := filepath.Rel(projectRoot, match)
+		relPath = filepath.ToSlash(relPath)
+		phaseFiles[relPath] = string(content)
+	}
 
 	return configYAML, phaseFiles, nil
 }
