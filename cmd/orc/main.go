@@ -316,12 +316,11 @@ func statusCmd() *cli.Command {
 
 			// No argument: show all tickets across all workflows
 			if ticket == "" {
-				// Try to load config for phase name rendering; OK if it fails (multi-workflow without config.yaml)
-				configPath := filepath.Join(projectRoot, ".orc", "config.yaml")
-				cfg, loadErr := config.Load(configPath, projectRoot)
-				if loadErr != nil {
-					cfg = &config.Config{}
-				}
+				// All-tickets view: use empty config so phase display is generic
+				// ("phase N") rather than showing wrong phase names for tickets
+				// from non-default workflows. Full phase names are available
+				// via `orc status <ticket>`.
+				cfg := &config.Config{}
 
 				baseDir := filepath.Join(projectRoot, ".orc", "artifacts")
 				baseAuditDir := state.AuditBaseDir(projectRoot)
@@ -538,10 +537,6 @@ func discoverWorkflows(projectRoot string) []string {
 		}
 	}
 	return names
-}
-
-func isMultiWorkflow(projectRoot string) bool {
-	return len(discoverWorkflows(projectRoot)) > 0
 }
 
 // resolveWorkflow determines which workflow to use.
