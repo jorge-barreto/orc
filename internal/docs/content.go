@@ -90,6 +90,7 @@ CLI Flags
   orc run <ticket> --retry <phase>    Retry from phase (number or name)
   orc run <ticket> --from <phase>     Start from phase (number or name)
   orc run <ticket> --resume        Resume interrupted agent phase session
+  orc run <ticket> --step          Step through phases interactively
   orc flow                        Visualize workflow as a flow diagram
   orc run -w bugfix <ticket>    Run a named workflow (multi-workflow projects)
   orc flow -w bugfix            Flow diagram for a specific workflow
@@ -113,6 +114,9 @@ They are mutually exclusive. Both reset loop counts.
 --resume uses the saved Claude session ID to continue an interrupted agent
 phase. Mutually exclusive with --retry and --from. If the session has expired,
 falls back to a fresh start automatically.
+
+--step pauses after each phase with an interactive prompt (continue,
+rewind, abort, or inspect artifacts). Incompatible with --auto.
 `
 
 const topicConfig = `Configuration Reference
@@ -633,6 +637,36 @@ reset loop counts.
 
 The session ID is cleared when a phase completes successfully or when
 using --retry/--from.
+
+Step-Through Mode
+~~~~~~~~~~~~~~~~~
+
+Use --step to pause after each phase for interactive inspection:
+
+  orc run TICKET --step
+
+After each phase completes, orc shows artifacts written and presents
+a prompt:
+
+  ✓ Phase 2 complete (4m 30s)
+
+  Artifacts written:
+    plan.md (4.2 KB)
+
+  [c]ontinue  [r]ewind to phase  [a]bort  [i]nspect artifact > _
+
+Commands:
+  c, continue            Proceed to the next phase
+  r N, rewind N          Jump back to phase N (1-indexed number)
+  r <name>, rewind name  Jump back to a named phase
+  a, abort               Stop the run, save state as interrupted
+  i <file>, inspect file Print an artifact file to the terminal
+
+Rewind preserves artifacts from completed phases — it only changes
+which phase runs next. Loop counts are not reset.
+
+--step is incompatible with --auto (step-through requires interactive
+input).
 
 Cancelling
 ----------

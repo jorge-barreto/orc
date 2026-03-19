@@ -111,6 +111,7 @@ orc run PROJ-123 --from implement    # start from the "implement" phase
 orc run PROJ-123 --from 2            # still works with numbers
 orc run PROJ-123 --verbose     # save raw stream-json output
 orc run PROJ-123 --resume      # resume interrupted agent session
+orc run PROJ-123 --step        # step through phases interactively
 orc run bugfix PROJ-123         # named workflow (positional)
 orc run -w bugfix PROJ-123      # named workflow (explicit flag)
 ```
@@ -123,11 +124,14 @@ orc run -w bugfix PROJ-123      # named workflow (explicit flag)
 | `--from <phase>` | Start from phase (number or name), resets loop counts |
 | `--verbose`, `-v` | Save raw stream-json output to `.stream.jsonl` files in the logs directory |
 | `--resume` | Resume an interrupted agent phase using saved Claude session ID |
+| `--step` | Step-through mode — pause after each phase for inspection |
 | `--workflow`, `-w` | Select a named workflow from `.orc/workflows/` |
 
 `--retry`, `--from`, and `--resume` are mutually exclusive.
 
 **Attended vs auto mode**: By default, orc runs in attended mode — you can type follow-up instructions to steer agent phases, if an agent attempts a tool that wasn't pre-approved, orc prompts you to approve it, and if the agent asks a question (via AskUserQuestion), orc displays it and collects your answer. With `--auto`, orc runs fully unattended with no stdin interaction.
+
+**Step-through mode**: `--step` pauses after each phase with an interactive prompt. You can continue, rewind to a specific phase, abort, or inspect artifact files. Incompatible with `--auto`.
 
 ### `orc flow`
 
