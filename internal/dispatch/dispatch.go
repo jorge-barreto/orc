@@ -61,6 +61,20 @@ func (e *Environment) Vars() map[string]string {
 	return m
 }
 
+// DryRunVars returns the variable substitution map for dry-run display expansion.
+// Includes both unprefixed (ARTIFACTS_DIR) and ORC_-prefixed (ORC_ARTIFACTS_DIR)
+// keys, matching what BuildEnv provides to child processes at runtime.
+// ORC_PHASE_INDEX and ORC_PHASE_COUNT are omitted — not meaningful in dry-run context.
+func (e *Environment) DryRunVars() map[string]string {
+	m := e.Vars()
+	m["ORC_TICKET"] = e.Ticket
+	m["ORC_WORKFLOW"] = e.Workflow
+	m["ORC_ARTIFACTS_DIR"] = e.ArtifactsDir
+	m["ORC_WORK_DIR"] = e.WorkDir
+	m["ORC_PROJECT_ROOT"] = e.ProjectRoot
+	return m
+}
+
 // PhaseWorkDir returns the working directory for a phase.
 // If the phase has a cwd field, it is expanded using the full vars map.
 // Otherwise, the environment's WorkDir is used.

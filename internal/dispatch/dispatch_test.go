@@ -36,6 +36,48 @@ func TestVars_AllKeys(t *testing.T) {
 	}
 }
 
+func TestDryRunVars_IncludesORCPrefix(t *testing.T) {
+	env := &Environment{
+		ProjectRoot:  "/proj",
+		WorkDir:      "/proj",
+		ArtifactsDir: "/proj/.orc/artifacts/TEST-1",
+		Ticket:       "TEST-1",
+		Workflow:     "default",
+	}
+	vars := env.DryRunVars()
+
+	// Unprefixed keys (from Vars())
+	if vars["ARTIFACTS_DIR"] != "/proj/.orc/artifacts/TEST-1" {
+		t.Errorf("ARTIFACTS_DIR = %q", vars["ARTIFACTS_DIR"])
+	}
+	if vars["TICKET"] != "TEST-1" {
+		t.Errorf("TICKET = %q", vars["TICKET"])
+	}
+	// ORC_-prefixed keys (added by DryRunVars)
+	if vars["ORC_TICKET"] != "TEST-1" {
+		t.Errorf("ORC_TICKET = %q", vars["ORC_TICKET"])
+	}
+	if vars["ORC_WORKFLOW"] != "default" {
+		t.Errorf("ORC_WORKFLOW = %q", vars["ORC_WORKFLOW"])
+	}
+	if vars["ORC_ARTIFACTS_DIR"] != "/proj/.orc/artifacts/TEST-1" {
+		t.Errorf("ORC_ARTIFACTS_DIR = %q", vars["ORC_ARTIFACTS_DIR"])
+	}
+	if vars["ORC_WORK_DIR"] != "/proj" {
+		t.Errorf("ORC_WORK_DIR = %q", vars["ORC_WORK_DIR"])
+	}
+	if vars["ORC_PROJECT_ROOT"] != "/proj" {
+		t.Errorf("ORC_PROJECT_ROOT = %q", vars["ORC_PROJECT_ROOT"])
+	}
+	// ORC_PHASE_INDEX and ORC_PHASE_COUNT must NOT be present
+	if _, ok := vars["ORC_PHASE_INDEX"]; ok {
+		t.Errorf("ORC_PHASE_INDEX should not be present in DryRunVars")
+	}
+	if _, ok := vars["ORC_PHASE_COUNT"]; ok {
+		t.Errorf("ORC_PHASE_COUNT should not be present in DryRunVars")
+	}
+}
+
 func TestBuildEnv_OrcVars(t *testing.T) {
 	env := &Environment{
 		ProjectRoot:  "/proj",
