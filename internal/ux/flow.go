@@ -93,6 +93,22 @@ func FlowDiagram(cfg *config.Config, customVars map[string]string, expandFn func
 			fmt.Printf("  %s  run: %s\n", detailMargin, expanded)
 		}
 
+		// Pre-run / Post-run hooks (all phase types)
+		if p.PreRun != "" {
+			expanded := expandFn(p.PreRun)
+			if len(expanded) > 60 {
+				expanded = expanded[:57] + "..."
+			}
+			fmt.Printf("  %s  pre-run: %s\n", detailMargin, expanded)
+		}
+		if p.PostRun != "" {
+			expanded := expandFn(p.PostRun)
+			if len(expanded) > 60 {
+				expanded = expanded[:57] + "..."
+			}
+			fmt.Printf("  %s  post-run: %s\n", detailMargin, expanded)
+		}
+
 		// Agent: non-default timeout
 		if p.Type == "agent" && p.Timeout != 30 && p.Timeout > 0 {
 			fmt.Printf("  %s  timeout: %dm\n", detailMargin, p.Timeout)

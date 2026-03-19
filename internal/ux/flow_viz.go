@@ -254,6 +254,22 @@ func FlowViz(cfg *config.Config) {
 			fmt.Printf("%s%s%s%s\n", indent, c.description, p.Description, c.reset)
 		}
 
+		// Hook annotations
+		if p.PreRun != "" {
+			pre := p.PreRun
+			if len(pre) > 50 {
+				pre = pre[:47] + "..."
+			}
+			fmt.Printf("%s%s▸ pre: %s%s\n", indent, c.scriptIcon, pre, c.reset)
+		}
+		if p.PostRun != "" {
+			post := p.PostRun
+			if len(post) > 50 {
+				post = post[:47] + "..."
+			}
+			fmt.Printf("%s%s▸ post: %s%s\n", indent, c.scriptIcon, post, c.reset)
+		}
+
 		// Line 3: Outputs
 		if len(p.Outputs) > 0 {
 			fmt.Printf("%s%s→ %s%s\n", indent, c.outputs, strings.Join(p.Outputs, "  "), c.reset)
