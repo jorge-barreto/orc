@@ -360,12 +360,23 @@ func doctorCmd() *cli.Command {
 func initCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "init",
-		Usage:     "Initialize a new .orc/ directory with AI-generated workflow config",
+		Usage:     "Initialize a new .orc/ directory with AI-generated or recipe-based workflow config",
 		ArgsUsage: "[description]",
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "recipe", Usage: "Scaffold from a recipe (simple, standard, full-pipeline, review-loop)"},
+			&cli.BoolFlag{Name: "list-recipes", Usage: "Show available recipes"},
+		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			if cmd.Bool("list-recipes") {
+				scaffold.ListRecipes()
+				return nil
+			}
 			dir, err := os.Getwd()
 			if err != nil {
 				return err
+			}
+			if recipe := cmd.String("recipe"); recipe != "" {
+				return scaffold.InitRecipe(dir, recipe)
 			}
 			userPrompt := cmd.Args().First()
 			return scaffold.Init(ctx, dir, userPrompt)
