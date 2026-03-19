@@ -378,7 +378,7 @@ dispatch succeeded, the phase is marked failed. If dispatch already failed,
 post-run failure is logged as a warning.
 
 Both hooks:
-- Support variable expansion ($TICKET, $ARTIFACTS_DIR, custom vars, etc.)
+- Variables available as environment variables ($TICKET, $ARTIFACTS_DIR, custom vars, etc.)
 - Run in the phase's cwd (or project root if unset)
 - Do NOT run when condition causes a phase skip
 - In loops, run every iteration
@@ -406,8 +406,17 @@ Example:
 const topicVariables = `Template Variables
 ==================
 
-Variables are expanded in agent prompt templates, script run commands,
-phase cwd fields, and pre-run/post-run hooks using $VAR or ${VAR} syntax.
+Variables are available in agent prompt templates, script run commands,
+conditions, loop checks, phase cwd fields, and pre-run/post-run hooks
+using $VAR or ${VAR} syntax.
+
+For agent prompt templates, cwd, and mcp-config fields, variables are
+expanded via Go string substitution before use.
+
+For bash-executed fields (run, condition, loop.check, pre-run, post-run),
+variables are set as environment variables in the child process. This means
+bash quoting rules apply normally — single quotes prevent expansion, double
+quotes allow it, just like any shell script.
 
 Built-in Variables
 ------------------
@@ -418,8 +427,9 @@ Built-in Variables
   $PROJECT_ROOT    Absolute path to the project root (where .orc/ lives).
   $WORKFLOW        Current workflow name (empty for single-config projects).
 
-If a variable is not in the built-in set or custom vars, os.Expand falls
-back to environment variables.
+For Go-expanded fields, if a variable is not in the built-in set or custom
+vars, os.Expand falls back to environment variables. For bash-executed
+fields, the child process inherits the full parent environment.
 
 Custom Variables
 ----------------
@@ -435,7 +445,7 @@ Key behaviors:
 - Expanded at startup in declaration order. Later vars can reference
   earlier ones (e.g., SRC references WORKTREE above).
 - Available everywhere built-ins are: prompt templates, run commands,
-  and cwd fields.
+  condition, loop.check, cwd fields, and pre-run/post-run hooks.
 - Cannot override built-in variables (TICKET, WORKFLOW, ARTIFACTS_DIR, WORK_DIR,
   PROJECT_ROOT). Config validation rejects attempts to do so.
 - No duplicate variable names allowed.
@@ -525,7 +535,7 @@ the output as feedback). Once iteration >= min, the loop breaks and
 the runner advances normally.
 
 Check path: When a phase with loop.check succeeds (exit 0), the check
-command runs with full variable expansion ($ARTIFACTS_DIR, custom vars,
+command runs with all variables available as environment variables ($ARTIFACTS_DIR, custom vars,
 etc.). If the check exits non-zero, orc treats it as a loop failure —
 writing the check output to feedback and looping back. If the check
 exits 0, the normal success path applies. This eliminates the need for

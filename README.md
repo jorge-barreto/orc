@@ -317,7 +317,7 @@ phases:
 
 ## Variable Substitution
 
-Variables are expanded in agent prompt templates, script `run` commands, and `pre-run`/`post-run` hooks using `$VAR` or `${VAR}` syntax.
+Variables are available using `$VAR` or `${VAR}` syntax in agent prompt templates, script `run` commands, conditions, loop checks, and `pre-run`/`post-run` hooks.
 
 | Variable | Description |
 |----------|-------------|
@@ -327,7 +327,7 @@ Variables are expanded in agent prompt templates, script `run` commands, and `pr
 | `$PROJECT_ROOT` | Absolute path to the project root (where `.orc/` lives) |
 | `$WORKFLOW` | Current workflow name (empty for single-config projects) |
 
-If a variable is not in the built-in set or custom vars, `os.Expand` falls back to environment variables.
+For agent prompt templates, `cwd`, and `mcp-config` paths, variables are expanded via Go string substitution (with `os.Expand` falling back to environment variables). For bash-executed fields (`run`, `condition`, `loop.check`, `pre-run`, `post-run`), variables are set as environment variables in the child process — standard bash quoting rules apply.
 
 ### Custom Variables
 
@@ -339,7 +339,7 @@ vars:
   SRC: $WORKTREE/src
 ```
 
-Variables are expanded in declaration order, so later vars can reference earlier ones (`SRC` references `WORKTREE` above). Custom vars are available everywhere built-ins are — prompt templates, `run` commands, `cwd` fields, and `pre-run`/`post-run` hooks.
+Variables are expanded in declaration order, so later vars can reference earlier ones (`SRC` references `WORKTREE` above). Custom vars are available everywhere built-ins are — prompt templates, `run` commands, `condition`, `loop.check`, `cwd` fields, and `pre-run`/`post-run` hooks.
 
 Custom vars cannot override built-in variables (`TICKET`, `WORKFLOW`, `ARTIFACTS_DIR`, `WORK_DIR`, `PROJECT_ROOT`).
 
@@ -403,7 +403,7 @@ loop:
 
 **Success path:** When a phase with `loop` succeeds but the iteration count is less than `loop.min`, orc forces another iteration (writing the output as feedback). Once iteration >= min, the loop breaks normally.
 
-**Check path:** When a phase with `loop.check` succeeds (exit 0), the check command runs. If the check exits non-zero, orc treats it as a loop failure — writing the check output to feedback and looping back. If the check exits 0, the normal success path applies (min enforcement, then advance). Variables (`$ARTIFACTS_DIR`, etc.) are expanded in the check command. This eliminates the need for a separate `*-check` script phase.
+**Check path:** When a phase with `loop.check` succeeds (exit 0), the check command runs. If the check exits non-zero, orc treats it as a loop failure — writing the check output to feedback and looping back. If the check exits 0, the normal success path applies (min enforcement, then advance). Variables (`$ARTIFACTS_DIR`, etc.) are available as environment variables in the check command. This eliminates the need for a separate `*-check` script phase.
 
 **On-exhaust recovery:** When a loop exhausts, if `on-exhaust` is set, the loop counter resets and orc jumps to the on-exhaust target. This enables outer recovery (e.g., re-plan then re-implement). Accepts a string (`on-exhaust: plan`) or object (`on-exhaust: {goto: plan, max: 2}`).
 
