@@ -955,6 +955,37 @@ func TestDryRunPrint_VarsAreSorted(t *testing.T) {
 	}
 }
 
+func TestDryRunPrint_ExpandsORCPrefixedVars(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "check", Type: "script", Run: "echo",
+				Condition: "test -f $ORC_ARTIFACTS_DIR/run-mode.txt"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+
+	// Capture stdout
+	oldStdout := os.Stdout
+	pr, pw, _ := os.Pipe()
+	os.Stdout = pw
+
+	r.DryRunPrint()
+
+	pw.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	io.Copy(&buf, pr)
+	output := buf.String()
+
+	// $ORC_ARTIFACTS_DIR must expand to the real artifacts dir, not empty string.
+	if !strings.Contains(output, r.Env.ArtifactsDir) {
+		t.Errorf("expected expanded ORC_ARTIFACTS_DIR %q in output:\n%s", r.Env.ArtifactsDir, output)
+	}
+}
+
 func TestRun_CostsTrackedForAgentPhases(t *testing.T) {
 	cfg := &config.Config{
 		Name: "test",

@@ -575,7 +575,7 @@ func runLoopCheck(ctx context.Context, check string, phase config.Phase, env *di
 // DryRunPrint prints the phase plan without executing.
 func (r *Runner) DryRunPrint() {
 	expandFn := func(s string) string {
-		return dispatch.ExpandVars(s, r.Env.Vars())
+		return dispatch.ExpandVars(s, r.Env.DryRunVars())
 	}
 	ux.FlowDiagram(r.Config, r.Env.CustomVars, expandFn)
 }
