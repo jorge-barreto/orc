@@ -184,7 +184,10 @@ func initWithAI(ctx context.Context, targetDir, userPrompt string) error {
 	}
 
 	// Write validated files to the target directory
-	written := writeBlocks(targetDir, blocks)
+	written, err := writeBlocks(targetDir, blocks)
+	if err != nil {
+		return fmt.Errorf("writing generated files: %w", err)
+	}
 
 	// Write .gitignore (deterministic, not AI-generated)
 	gitignorePath := filepath.Join(targetDir, ".orc", ".gitignore")
@@ -256,18 +259,22 @@ func generateConfig(ctx context.Context, prompt string) ([]fileblocks.FileBlock,
 }
 
 // writeBlocks writes validated file blocks to the target directory.
-func writeBlocks(targetDir string, blocks []fileblocks.FileBlock) []string {
+func writeBlocks(targetDir string, blocks []fileblocks.FileBlock) ([]string, error) {
 	var written []string
 	for _, b := range blocks {
 		if !strings.HasPrefix(b.Path, ".orc/") {
 			continue
 		}
 		fullPath := filepath.Join(targetDir, b.Path)
-		os.MkdirAll(filepath.Dir(fullPath), 0755)
-		os.WriteFile(fullPath, []byte(b.Content), 0644)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			return written, fmt.Errorf("creating directory for %s: %w", b.Path, err)
+		}
+		if err := os.WriteFile(fullPath, []byte(b.Content), 0644); err != nil {
+			return written, fmt.Errorf("writing %s: %w", b.Path, err)
+		}
 		written = append(written, b.Path)
 	}
-	return written
+	return written, nil
 }
 
 // printSuccess prints the initialization success message and file list.
