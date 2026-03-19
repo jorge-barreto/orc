@@ -72,7 +72,15 @@ Do NOT skip this step. Do NOT trust the plan's descriptions without checking the
 - Does the plan include work NOT in the work item? (Over-engineering)
 - Is the plan missing work that IS in the work item? (Under-scoping)
 
-### E. Feasibility
+### E. Input Validation & Security
+- Does the plan include an "Input Validation & Security" section? If missing entirely, that is a **blocking issue**.
+- For every new or modified function that accepts external input (CLI flags, config fields, file paths, user strings), does the plan specify what validation is needed?
+- **Path traversal**: Does any input flow into `filepath.Join` or file operations? The plan must specify `filepath.Base` / `..` / `.` checks following the `validateTicketPath` pattern.
+- **Config builtins**: Does the change add a new builtin variable (like WORKFLOW)? The plan must include updating the override blocklist in `internal/config/validate.go`.
+- **Completeness**: Are there input surfaces the plan missed? Read the implementation steps and check if any new function parameter could receive untrusted input.
+- If the section says "No external input surfaces", verify this is actually true by checking the implementation steps.
+
+### F. Feasibility
 - Can each implementation step be executed as described? Are there steps that are vague enough that the implementer would have to make design decisions?
 - Does the test strategy test the right things? Are the proposed test cases actually meaningful?
 
@@ -127,6 +135,9 @@ Do NOT write plan-approved.txt. The plan agent will revise based on your finding
 Err on the side of blocking. If you're uncertain whether something is blocking or a suggestion, **classify it as blocking.** The plan agent can address it, and you can downgrade it on the next pass if the fix reveals it was minor. The cost of a false negative (missing a real issue) is much higher than a false positive (flagging something that turns out to be minor).
 
 - **Missing files** in the "Files to Modify" table — always blocking.
+- **Missing or incomplete "Input Validation & Security" section** — always blocking. Every plan must address input surfaces.
+- **Unvalidated external input** — always blocking. If a new function accepts CLI flags, config fields, or file paths and the plan doesn't specify validation, flag it. Path traversal in `filepath.Join` is the most common miss.
+- **Missing config builtins update** — blocking if the change adds a new builtin variable without updating the override blocklist.
 - **Missing or incomplete Documentation section** — always blocking. The plan must explicitly address all four doc surfaces.
 - **Missing doc file updates** in the "Files to Modify" table when the doc surface describes behavior affected by the change — always blocking.
 - **Inconsistent doc updates** across surfaces (e.g., README updated but `orc docs` not, when both describe the same feature) — always blocking.

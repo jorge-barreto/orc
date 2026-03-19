@@ -241,6 +241,8 @@ Workflows are defined in `.orc/config.yaml`.
 | `parallel-with` | string | — | Name of another phase to run concurrently |
 | `loop` | object | — | Convergent loop: `goto` (phase name), `min` (default 1), `max` (required), optional `check` (shell command for pass/fail), optional `on-exhaust` |
 | `cwd` | string | — | Working directory for this phase (expanded with vars). Not supported on gate phases. |
+| `pre-run` | string | — | Shell command to run before dispatch. Non-zero exit skips dispatch and fails the phase. Post-run still runs. |
+| `post-run` | string | — | Shell command to run after dispatch regardless of outcome (cleanup semantics). Failure overrides dispatch success. |
 
 ### Phase types
 
@@ -315,7 +317,7 @@ phases:
 
 ## Variable Substitution
 
-Variables are expanded in agent prompt templates and script `run` commands using `$VAR` or `${VAR}` syntax.
+Variables are expanded in agent prompt templates, script `run` commands, and `pre-run`/`post-run` hooks using `$VAR` or `${VAR}` syntax.
 
 | Variable | Description |
 |----------|-------------|
@@ -337,7 +339,7 @@ vars:
   SRC: $WORKTREE/src
 ```
 
-Variables are expanded in declaration order, so later vars can reference earlier ones (`SRC` references `WORKTREE` above). Custom vars are available everywhere built-ins are — prompt templates, `run` commands, and `cwd` fields.
+Variables are expanded in declaration order, so later vars can reference earlier ones (`SRC` references `WORKTREE` above). Custom vars are available everywhere built-ins are — prompt templates, `run` commands, `cwd` fields, and `pre-run`/`post-run` hooks.
 
 Custom vars cannot override built-in variables (`TICKET`, `WORKFLOW`, `ARTIFACTS_DIR`, `WORK_DIR`, `PROJECT_ROOT`).
 

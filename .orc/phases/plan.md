@@ -35,7 +35,20 @@ internal/doctor/           orc doctor
 
 Don't just read file names — read the actual code. Understand the existing patterns before proposing changes.
 
-## Step 3: Evaluate Documentation Impact
+## Step 3: Identify Input Validation Surfaces
+
+**This step is mandatory.** For every new or modified function in your plan, ask:
+
+1. Does it accept input from CLI flags, config YAML, environment variables, file paths, or user-provided strings?
+2. If yes, what validation is needed? Check for:
+   - **Path traversal**: Does the input end up in `filepath.Join`? Can `../` escape the intended directory? Follow the pattern in `validateTicketPath` (`cmd/orc/main.go`).
+   - **Config completeness**: Does the change add a new builtin variable? It must be added to the override blocklist in `internal/config/validate.go`.
+   - **Pattern injection**: Does the input flow into a regex or shell command?
+3. Read the existing validation functions to find the right pattern to follow.
+
+Include your findings in the "Input Validation & Security" section of the plan. If deep-review feedback mentions input validation issues, this step is where you prevent recurrence.
+
+## Step 4: Evaluate Documentation Impact (mandatory)
 
 **This step is mandatory for every ticket.** Determine whether the change affects any user-visible behavior — CLI commands, flags, config fields, output format, error messages, or workflow behavior. If it does, you MUST read and plan updates for every affected documentation surface:
 
@@ -50,7 +63,7 @@ Read each potentially affected file. If any surface describes behavior that your
 
 If the change is purely internal (no user-visible behavior change), state this explicitly in the Documentation section of the plan with a brief justification.
 
-## Step 4: Write the Plan
+## Step 5: Write the Plan
 
 Write a plan to `$ARTIFACTS_DIR/plan.md` with this structure:
 
@@ -76,6 +89,14 @@ Which doc surfaces need updating and what changes. Must address each surface:
 - `internal/docs/content.go` (`orc docs`): <what changes, or "No change — <reason>">
 - `README.md`: <what changes, or "No change — <reason>">
 - `internal/scaffold/` (`orc init`): <what changes, or "No change — <reason>">
+
+## Input Validation & Security
+For every new or modified function that accepts external input (CLI flags, config fields, ticket names, file paths, user-provided strings), specify:
+- What validation is needed (path traversal, injection, format, bounds)
+- Where the validation goes (which function, before what operation)
+- What existing validation patterns to follow (reference specific functions)
+
+If no functions accept external input, state "No external input surfaces."
 
 ## Test Strategy
 What tests to add or modify. Reference existing test files and patterns.

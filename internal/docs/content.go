@@ -168,6 +168,13 @@ Phase fields
                              produced by a prior phase).
   cwd              string    Working directory for this phase (expanded with vars).
                              Not supported on gate phases.
+  pre-run          string    Shell command to run before dispatch. Non-zero exit
+                             skips dispatch and fails the phase. Post-run still
+                             runs. Supports variable expansion.
+  post-run         string    Shell command to run after dispatch (cleanup semantics).
+                             Runs regardless of dispatch outcome. If post-run fails
+                             and dispatch succeeded, phase is marked failed.
+                             Supports variable expansion.
 
 Custom Variables (vars)
 -----------------------
@@ -351,6 +358,33 @@ Example:
       goto: plan
       max: 3
 
+Hooks (pre-run / post-run)
+--------------------------
+
+Any phase type can have pre-run and post-run hooks — shell commands that
+bracket the main dispatch:
+
+  - name: verify
+    type: agent
+    prompt: .orc/phases/verify.md
+    pre-run: .orc/scripts/start-browser.sh
+    post-run: .orc/scripts/stop-browser.sh
+
+pre-run runs before dispatch. If it exits non-zero, dispatch is skipped
+and the phase fails — but post-run still executes (cleanup semantics).
+
+post-run runs after dispatch regardless of outcome. If post-run fails and
+dispatch succeeded, the phase is marked failed. If dispatch already failed,
+post-run failure is logged as a warning.
+
+Both hooks:
+- Support variable expansion ($TICKET, $ARTIFACTS_DIR, custom vars, etc.)
+- Run in the phase's cwd (or project root if unset)
+- Do NOT run when condition causes a phase skip
+- In loops, run every iteration
+- In parallel-with, wrap each goroutine's dispatch
+- Output is captured in the phase log file
+
 gate
 ----
 
@@ -372,8 +406,8 @@ Example:
 const topicVariables = `Template Variables
 ==================
 
-Variables are expanded in agent prompt templates, script run commands, and
-phase cwd fields using $VAR or ${VAR} syntax.
+Variables are expanded in agent prompt templates, script run commands,
+phase cwd fields, and pre-run/post-run hooks using $VAR or ${VAR} syntax.
 
 Built-in Variables
 ------------------
