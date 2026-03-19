@@ -172,7 +172,7 @@ func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 		isFirst = true
 	}
 
-	logFile, err := os.OpenFile(state.LogPath(env.ArtifactsDir, env.PhaseIndex), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	logFile, err := os.OpenFile(state.LogPath(env.ArtifactsDir, env.PhaseIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +180,7 @@ func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 
 	var rawLog *os.File
 	if env.Verbose {
-		rawLog, err = os.OpenFile(state.StreamLogPath(env.ArtifactsDir, env.PhaseIndex), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		rawLog, err = os.OpenFile(state.StreamLogPath(env.ArtifactsDir, env.PhaseIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			return nil, err
 		}
@@ -314,7 +314,7 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 		isFirst = true
 	}
 
-	logFile, err := os.OpenFile(state.LogPath(env.ArtifactsDir, env.PhaseIndex), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	logFile, err := os.OpenFile(state.LogPath(env.ArtifactsDir, env.PhaseIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, err
 	}
@@ -322,7 +322,7 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 
 	var rawLog *os.File
 	if env.Verbose {
-		rawLog, err = os.OpenFile(state.StreamLogPath(env.ArtifactsDir, env.PhaseIndex), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		rawLog, err = os.OpenFile(state.StreamLogPath(env.ArtifactsDir, env.PhaseIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			return nil, err
 		}

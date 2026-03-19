@@ -32,7 +32,7 @@ func RunScript(ctx context.Context, phase config.Phase, env *Environment) (*Resu
 	}
 	cmd.WaitDelay = 5 * time.Second
 
-	logFile, err := os.Create(state.LogPath(env.ArtifactsDir, env.PhaseIndex))
+	logFile, err := os.OpenFile(state.LogPath(env.ArtifactsDir, env.PhaseIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, err
 	}

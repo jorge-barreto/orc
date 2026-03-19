@@ -17,7 +17,7 @@ import (
 
 // RunGate executes a gate phase, prompting for human approval.
 func RunGate(ctx context.Context, phase config.Phase, env *Environment) (*Result, error) {
-	logFile, err := os.Create(state.LogPath(env.ArtifactsDir, env.PhaseIndex))
+	logFile, err := os.OpenFile(state.LogPath(env.ArtifactsDir, env.PhaseIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, err
 	}
