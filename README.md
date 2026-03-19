@@ -207,6 +207,24 @@ Diagnoses a failed workflow run using AI. Gathers the failed phase's config, log
 orc doctor PROJ-123
 ```
 
+### `orc test <phase> <ticket>`
+
+Runs a single phase in isolation for testing prompts and scripts without running the entire workflow. Sets up the full environment (variables, artifacts dir) as if the workflow were running, dispatches only the specified phase, and does not modify state or advance the workflow.
+
+```bash
+orc test plan KS-42              # run just the "plan" phase
+orc test implement KS-42         # run just "implement"
+orc test 3 KS-42                 # run phase 3 (1-indexed)
+orc test -w bugfix fix KS-42     # test a phase from a named workflow
+```
+
+| Flag | Description |
+|------|-------------|
+| `--auto` | Unattended mode — skip gates, no interactive steering |
+| `--verbose`, `-v` | Save raw stream-json output to `.stream.jsonl` files |
+
+Missing artifacts from prior phases produce a warning listing which files are absent and which earlier phases normally create them.
+
 ## Configuration Reference
 
 Workflows are defined in `.orc/config.yaml`.

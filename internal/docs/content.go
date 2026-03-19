@@ -107,6 +107,7 @@ CLI Flags
   orc docs <topic>              Show a documentation topic
   orc improve "..."             Apply a specific change to the workflow
   orc improve                   Interactive AI-assisted workflow refinement
+  orc test <phase> <ticket>   Run one phase in isolation for testing
 
 --retry and --from accept a 1-indexed phase number or a phase name.
 They are mutually exclusive. Both reset loop counts.
@@ -388,6 +389,18 @@ Both hooks:
 - In loops, run every iteration
 - In parallel-with, wrap each goroutine's dispatch
 - Output is captured in the phase log file
+
+Testing Phases in Isolation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Use orc test to run a single phase without running the full workflow:
+
+  orc test implement KS-42     Run just the "implement" phase
+  orc test 3 KS-42             Run phase 3 (1-indexed)
+
+This sets up the full environment (variables, artifacts dir) but does not
+modify state or advance the workflow. Missing artifacts from prior phases
+produce a warning.
 
 gate
 ----
