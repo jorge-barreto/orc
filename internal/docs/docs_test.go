@@ -73,7 +73,7 @@ func TestDocs_NoBareArtifactPaths(t *testing.T) {
 	for _, topic := range All() {
 		lines := strings.Split(topic.Content, "\n")
 		for i, line := range lines {
-			if strings.Contains(line, ".orc/artifacts/") && !strings.Contains(line, ".orc/artifacts/<ticket>") {
+			if strings.Contains(line, ".orc/artifacts/") && !strings.Contains(line, ".orc/artifacts/<ticket>") && !strings.Contains(line, ".orc/artifacts/<workflow>") {
 				t.Errorf("topic %q line %d has bare .orc/artifacts/ path: %s", topic.Name, i+1, strings.TrimSpace(line))
 			}
 		}

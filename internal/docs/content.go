@@ -43,6 +43,12 @@ var topics = []Topic{
 		Summary: "Writing review prompts that catch real issues",
 		Content: topicQualityLoops,
 	},
+	{
+		Name:    "workflows",
+		Title:   "Multi-Workflow Support",
+		Summary: "Named workflow configs for different task types",
+		Content: topicWorkflows,
+	},
 }
 
 const topicQuickstart = `Quick Start
@@ -85,6 +91,8 @@ CLI Flags
   orc run <ticket> --from <phase>     Start from phase (number or name)
   orc run <ticket> --resume        Resume interrupted agent phase session
   orc flow                        Visualize workflow as a flow diagram
+  orc run -w bugfix <ticket>    Run a named workflow (multi-workflow projects)
+  orc flow -w bugfix            Flow diagram for a specific workflow
   orc --no-color flow             Flow diagram without color (flag works on any command)
   orc cancel <ticket>           Cancel run and remove all artifacts
   orc cancel <ticket> --force   Cancel even if a run appears active
@@ -110,7 +118,8 @@ falls back to a fresh start automatically.
 const topicConfig = `Configuration Reference
 =======================
 
-Workflows are defined in .orc/config.yaml.
+Workflows are defined in .orc/config.yaml, or in named files under
+.orc/workflows/ for multi-workflow projects (see 'orc docs workflows').
 
 Top-level fields
 ----------------
@@ -373,6 +382,7 @@ Built-in Variables
   $ARTIFACTS_DIR   Absolute path to the .orc/artifacts/<ticket>/ directory.
   $WORK_DIR        Absolute path to the working directory (project root).
   $PROJECT_ROOT    Absolute path to the project root (where .orc/ lives).
+  $WORKFLOW        Current workflow name (empty for single-config projects).
 
 If a variable is not in the built-in set or custom vars, os.Expand falls
 back to environment variables.
@@ -392,7 +402,7 @@ Key behaviors:
   earlier ones (e.g., SRC references WORKTREE above).
 - Available everywhere built-ins are: prompt templates, run commands,
   and cwd fields.
-- Cannot override built-in variables (TICKET, ARTIFACTS_DIR, WORK_DIR,
+- Cannot override built-in variables (TICKET, WORKFLOW, ARTIFACTS_DIR, WORK_DIR,
   PROJECT_ROOT). Config validation rejects attempts to do so.
 - No duplicate variable names allowed.
 
@@ -403,6 +413,7 @@ Child processes (scripts and agents) inherit the parent environment with
 these additional ORC_-prefixed variables:
 
   ORC_TICKET           The ticket identifier.
+  ORC_WORKFLOW         Current workflow name (empty for single-config projects).
   ORC_ARTIFACTS_DIR    Absolute path to .orc/artifacts/<ticket>/.
   ORC_WORK_DIR         Working directory.
   ORC_PROJECT_ROOT     Project root directory.
@@ -600,9 +611,10 @@ const topicArtifacts = `Artifacts Directory
 ===================
 
 orc creates a .orc/artifacts/<ticket>/ directory in the project root to store all
-run data. This directory is the primary mechanism for passing context
-between phases — phases read and write files here rather than relying
-on conversational memory.
+run data. In multi-workflow projects, artifacts are namespaced by workflow:
+.orc/artifacts/<workflow>/<ticket>/ (see 'orc docs workflows'). This directory
+is the primary mechanism for passing context between phases — phases read and
+write files here rather than relying on conversational memory.
 
 Directory Structure
 -------------------
@@ -931,6 +943,87 @@ claims             loop iterations on phantom issues.
 No taxonomy        Leaving "blocking vs. suggestion" to judgment means
                    the reviewer either blocks on style (too strict) or
                    passes on bugs (too lenient). Enumerate explicitly.
+`
+
+const topicWorkflows = `Multi-Workflow Support
+=====================
+
+Projects can define multiple named workflows for different task types
+(feature, bugfix, refactor, etc.). Each workflow is a standalone YAML
+config file with its own phases.
+
+File Layout
+-----------
+
+  .orc/
+    config.yaml           Default workflow (backward compatible)
+    workflows/
+      bugfix.yaml         Named workflows
+      refactor.yaml
+    phases/               Shared prompt files (used by any workflow)
+
+Running a Named Workflow
+------------------------
+
+  orc run bugfix TICKET-123          Positional: first arg matches workflow name
+  orc run -w bugfix TICKET-123       Explicit: -w/--workflow flag
+  orc run TICKET-123                  Uses default workflow
+
+Default Workflow Resolution
+---------------------------
+
+When no workflow is specified:
+
+  1. Only config.yaml exists           -> it's the default (flat artifact layout)
+  2. Only workflows/ with one file     -> that's the default
+  3. config.yaml alongside workflows/  -> config.yaml is the default
+  4. Multiple workflows, no config.yaml -> error (lists available workflows)
+
+Artifact Isolation
+------------------
+
+In multi-workflow projects, artifacts and audit data are namespaced by
+workflow name:
+
+  .orc/artifacts/<workflow>/<ticket>/
+  .orc/audit/<workflow>/<ticket>/
+
+This means the same ticket can run through different workflows with
+fully isolated state. Single-config projects keep the flat layout
+(.orc/artifacts/<ticket>/).
+
+Multi-Workflow Commands
+-----------------------
+
+  orc flow                Show flow diagrams for all workflows
+  orc flow -w bugfix      Show flow for one workflow
+  orc validate            Validate all workflow configs
+  orc validate -w bugfix  Validate one workflow
+  orc status              List all tickets across all workflows
+  orc status -w bugfix TICKET  Status for one ticket in a workflow
+
+Adding a Workflow
+-----------------
+
+  orc init --add-workflow bugfix                  Minimal starter workflow
+  orc init --add-workflow bugfix --recipe simple  From a recipe
+
+This creates .orc/workflows/bugfix.yaml. Edit it and create any
+referenced prompt files in .orc/phases/.
+
+Template Variables
+------------------
+
+The $WORKFLOW variable (and ORC_WORKFLOW env var) contain the current
+workflow name. Empty for single-config projects.
+
+Design Principles
+-----------------
+
+- Each workflow YAML is standalone -- no inheritance or composition.
+- Prompt files in .orc/phases/ are shared across workflows.
+- The filesystem is the registry -- no metaconfig file.
+- Backward compatible: single config.yaml projects are unchanged.
 `
 
 // SchemaReference returns the combined config schema, phase types, and

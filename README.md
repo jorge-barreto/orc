@@ -92,6 +92,8 @@ orc init --recipe standard                       # quality-assured pipeline with
 orc init --recipe full-pipeline                  # AI self-review + human gate
 orc init --recipe review-loop                    # convergent AI review loop
 orc init --list-recipes                          # show all available recipes
+orc init --add-workflow bugfix                   # add a named workflow
+orc init --add-workflow bugfix --recipe simple   # add from a recipe
 ```
 
 Recipes are deterministic — no AI generation required. The description argument is ignored when `--recipe` is set.
@@ -109,6 +111,8 @@ orc run PROJ-123 --from implement    # start from the "implement" phase
 orc run PROJ-123 --from 2            # still works with numbers
 orc run PROJ-123 --verbose     # save raw stream-json output
 orc run PROJ-123 --resume      # resume interrupted agent session
+orc run bugfix PROJ-123         # named workflow (positional)
+orc run -w bugfix PROJ-123      # named workflow (explicit flag)
 ```
 
 | Flag | Description |
@@ -119,6 +123,7 @@ orc run PROJ-123 --resume      # resume interrupted agent session
 | `--from <phase>` | Start from phase (number or name), resets loop counts |
 | `--verbose`, `-v` | Save raw stream-json output to `.stream.jsonl` files in the logs directory |
 | `--resume` | Resume an interrupted agent phase using saved Claude session ID |
+| `--workflow`, `-w` | Select a named workflow from `.orc/workflows/` |
 
 `--retry`, `--from`, and `--resume` are mutually exclusive.
 
@@ -157,7 +162,7 @@ orc docs variables     # template variables and custom vars
 orc docs phases        # phase type details
 ```
 
-Topics: `quickstart`, `config`, `phases`, `variables`, `runner`, `artifacts`, `quality-loops`.
+Topics: `quickstart`, `config`, `phases`, `variables`, `runner`, `artifacts`, `quality-loops`, `workflows`.
 
 ### `orc improve [instruction]`
 
@@ -318,6 +323,7 @@ Variables are expanded in agent prompt templates and script `run` commands using
 | `$ARTIFACTS_DIR` | Absolute path to `.orc/artifacts/<ticket>/` |
 | `$WORK_DIR` | Absolute path to the working directory (project root, or `cwd` if set) |
 | `$PROJECT_ROOT` | Absolute path to the project root (where `.orc/` lives) |
+| `$WORKFLOW` | Current workflow name (empty for single-config projects) |
 
 If a variable is not in the built-in set or custom vars, `os.Expand` falls back to environment variables.
 
@@ -333,7 +339,7 @@ vars:
 
 Variables are expanded in declaration order, so later vars can reference earlier ones (`SRC` references `WORKTREE` above). Custom vars are available everywhere built-ins are — prompt templates, `run` commands, and `cwd` fields.
 
-Custom vars cannot override built-in variables (`TICKET`, `ARTIFACTS_DIR`, `WORK_DIR`, `PROJECT_ROOT`).
+Custom vars cannot override built-in variables (`TICKET`, `WORKFLOW`, `ARTIFACTS_DIR`, `WORK_DIR`, `PROJECT_ROOT`).
 
 ## Artifacts Directory
 
@@ -420,6 +426,54 @@ Both phases start at the same time. If either fails, the other is cancelled. Aft
 
 **Constraints**: `parallel-with` and `loop` cannot be combined on the same phase.
 
+## Multi-Workflow Support
+
+Projects can define multiple named workflows for different task types:
+
+```
+.orc/
+  config.yaml           # default workflow
+  workflows/
+    bugfix.yaml         # named workflows
+    refactor.yaml
+  phases/               # shared prompt files
+```
+
+### Running a Named Workflow
+
+```bash
+orc run bugfix TICKET-123           # positional: first arg matches a workflow name
+orc run -w bugfix TICKET-123        # explicit: -w/--workflow flag
+orc run TICKET-123                   # uses default workflow
+```
+
+### Default Workflow Resolution
+
+| Scenario | Default |
+|----------|---------|
+| Only `config.yaml` | It's the default (flat artifact layout, backward compatible) |
+| Only `workflows/` with one file | That sole workflow is the default |
+| `config.yaml` + `workflows/` | `config.yaml` is the default |
+| Multiple in `workflows/`, no `config.yaml` | Must specify (error lists options) |
+
+In multi-workflow projects, artifacts are namespaced: `.orc/artifacts/<workflow>/<ticket>/`.
+
+### Adding a Workflow
+
+```bash
+orc init --add-workflow bugfix                   # minimal starter
+orc init --add-workflow bugfix --recipe simple   # from a recipe
+```
+
+### Multi-Workflow Commands
+
+```bash
+orc flow                   # show all workflows
+orc flow -w bugfix         # one workflow
+orc validate               # validate all
+orc validate -w bugfix     # one workflow
+```
+
 ## Environment Variables
 
 Child processes (scripts and agents) inherit the parent environment with these additional variables:
@@ -427,6 +481,7 @@ Child processes (scripts and agents) inherit the parent environment with these a
 | Variable | Description |
 |----------|-------------|
 | `ORC_TICKET` | The ticket identifier |
+| `ORC_WORKFLOW` | Current workflow name (empty for single-config projects) |
 | `ORC_ARTIFACTS_DIR` | Absolute path to `.orc/artifacts/<ticket>/` |
 | `ORC_WORK_DIR` | Working directory |
 | `ORC_PROJECT_ROOT` | Project root directory |
