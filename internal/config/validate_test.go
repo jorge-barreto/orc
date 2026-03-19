@@ -475,6 +475,39 @@ func TestValidateTicket_UnanchoredFullMatch(t *testing.T) {
 	}
 }
 
+func TestValidateTicket_StartAnchoredOnly(t *testing.T) {
+	// Pattern has ^ but no $: trailing content should be rejected
+	if err := ValidateTicket(`^PROJ-\d+`, "PROJ-123"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	err := ValidateTicket(`^PROJ-\d+`, "PROJ-123-extra-garbage")
+	if err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("expected no-match error, got %v", err)
+	}
+}
+
+func TestValidateTicket_EndAnchoredOnly(t *testing.T) {
+	// Pattern has $ but no ^: leading content should be rejected
+	if err := ValidateTicket(`[A-Z]+-\d+$`, "PROJ-123"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	err := ValidateTicket(`[A-Z]+-\d+$`, "garbage-PROJ-123")
+	if err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("expected no-match error, got %v", err)
+	}
+}
+
+func TestValidateTicket_FullyAnchored(t *testing.T) {
+	// Pattern has both ^ and $: should work unchanged (regression test)
+	if err := ValidateTicket(`^[A-Z]+-\d+$`, "ABC-123"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	err := ValidateTicket(`^[A-Z]+-\d+$`, "ABC-123-extra")
+	if err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("expected no-match error, got %v", err)
+	}
+}
+
 func TestValidate_VarsBuiltinOverride(t *testing.T) {
 	cfg := &Config{
 		Name:   "test",

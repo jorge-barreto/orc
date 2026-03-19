@@ -247,8 +247,15 @@ func ValidateTicket(pattern, ticket string) error {
 	}
 	// Enforce full-match semantics: anchor the pattern if not already anchored.
 	anchored := pattern
-	if !strings.HasPrefix(anchored, "^") {
+	hasStart := strings.HasPrefix(anchored, "^")
+	hasEnd := strings.HasSuffix(anchored, "$")
+	switch {
+	case !hasStart && !hasEnd:
 		anchored = "^(?:" + anchored + ")$"
+	case !hasStart:
+		anchored = "^" + anchored
+	case !hasEnd:
+		anchored = anchored + "$"
 	}
 	re, err := regexp.Compile(anchored)
 	if err != nil {
