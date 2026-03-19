@@ -175,7 +175,7 @@ Custom Variables (vars)
 The vars field is an ordered key-value map at the top level of config.yaml.
 Variables are expanded at startup in declaration order, so later vars can
 reference earlier ones. Custom vars cannot override built-in variables
-(TICKET, ARTIFACTS_DIR, WORK_DIR, PROJECT_ROOT). Duplicate names are not
+(TICKET, WORKFLOW, ARTIFACTS_DIR, WORK_DIR, PROJECT_ROOT). Duplicate names are not
 allowed.
 
 Validation Rules
