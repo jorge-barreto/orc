@@ -1,7 +1,6 @@
 package dispatch
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -17,6 +16,10 @@ import (
 
 // RunGate executes a gate phase, prompting for human approval.
 func RunGate(ctx context.Context, phase config.Phase, env *Environment) (*Result, error) {
+	return runGate(ctx, phase, env, os.Stdin)
+}
+
+func runGate(ctx context.Context, phase config.Phase, env *Environment, stdin io.Reader) (*Result, error) {
 	logFile, err := os.OpenFile(state.LogPath(env.ArtifactsDir, env.PhaseIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, err
@@ -55,17 +58,18 @@ func RunGate(ctx context.Context, phase config.Phase, env *Environment) (*Result
 
 	// Prompt user
 	fmt.Printf("  [y to continue / feedback to revise]: ")
-	reader := bufio.NewReader(os.Stdin)
 
-	// Use a channel to handle context cancellation during read
-	type readResult struct {
-		input string
-		err   error
+	reader := NewStdinReader(stdin)
+	defer reader.Stop()
+
+	type lineResult struct {
+		text string
+		ok   bool
 	}
-	ch := make(chan readResult, 1)
+	lineCh := make(chan lineResult, 1)
 	go func() {
-		line, err := reader.ReadString('\n')
-		ch <- readResult{input: strings.TrimSpace(line), err: err}
+		text, ok := reader.ReadLineBlocking()
+		lineCh <- lineResult{text, ok}
 	}()
 
 	select {
@@ -73,11 +77,11 @@ func RunGate(ctx context.Context, phase config.Phase, env *Environment) (*Result
 		msg := "Gate cancelled\n"
 		logFile.WriteString(msg)
 		return &Result{ExitCode: 1, Output: msg}, nil
-	case r := <-ch:
-		if r.err != nil {
-			return nil, r.err
+	case lr := <-lineCh:
+		if !lr.ok {
+			return nil, io.EOF
 		}
-		input := r.input
+		input := strings.TrimSpace(lr.text)
 		switch strings.ToLower(input) {
 		case "y", "yes":
 			msg := fmt.Sprintf("Gate %q approved\n", phase.Name)
