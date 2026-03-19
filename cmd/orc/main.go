@@ -47,6 +47,7 @@ func main() {
 			doctorCmd(),
 			docsCmd(),
 			improveCmd(),
+			testCmd(),
 		},
 	}
 
