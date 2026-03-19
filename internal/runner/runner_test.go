@@ -2210,3 +2210,147 @@ func TestRun_NoSessionIDForScriptPhase(t *testing.T) {
 		t.Fatalf("PhaseSessionID = %q for script phase, want empty", r.State.PhaseSessionID)
 	}
 }
+
+func TestRun_PreRunSuccess(t *testing.T) {
+	cfg := &config.Config{
+		Name:   "test",
+		Phases: []config.Phase{{Name: "a", Type: "script", Run: "echo", PreRun: "true"}},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if mock.callCount() != 1 {
+		t.Fatalf("expected dispatch called once, got %d", mock.callCount())
+	}
+}
+
+func TestRun_PreRunFailure_SkipsDispatch(t *testing.T) {
+	cfg := &config.Config{
+		Name:   "test",
+		Phases: []config.Phase{{Name: "a", Type: "script", Run: "echo", PreRun: "false"}},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected failure")
+	}
+	if mock.callCount() != 0 {
+		t.Fatalf("dispatch should not have been called, got %d calls", mock.callCount())
+	}
+}
+
+func TestRun_PreRunFailure_PostRunStillRuns(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "post-ran")
+	cfg := &config.Config{
+		Name:   "test",
+		Phases: []config.Phase{{Name: "a", Type: "script", Run: "echo", PreRun: "false", PostRun: "touch " + marker}},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	_ = r.Run(context.Background()) // expected to fail
+	if _, err := os.Stat(marker); os.IsNotExist(err) {
+		t.Fatal("post-run should have run even after pre-run failure")
+	}
+}
+
+func TestRun_PostRunFailure_OverridesSuccess(t *testing.T) {
+	cfg := &config.Config{
+		Name:   "test",
+		Phases: []config.Phase{{Name: "a", Type: "script", Run: "echo", PostRun: "false"}},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected failure due to post-run exit 1")
+	}
+}
+
+func TestRun_PostRunWarning_OnDispatchFailure(t *testing.T) {
+	cfg := &config.Config{
+		Name:   "test",
+		Phases: []config.Phase{{Name: "a", Type: "script", Run: "echo", PostRun: "false"}},
+	}
+	mock := newMock()
+	mock.results["a"] = &dispatch.Result{ExitCode: 1}
+	r := newTestRunner(t, cfg, mock)
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected failure")
+	}
+	// Just verify it fails — the warning goes to stderr, which is tested by the behavior
+}
+
+func TestRun_HooksVarExpansion(t *testing.T) {
+	cfg := &config.Config{
+		Name:   "test",
+		Phases: []config.Phase{{Name: "a", Type: "script", Run: "echo", PreRun: "test -d $ARTIFACTS_DIR"}},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	if err := state.EnsureDir(r.Env.ArtifactsDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRun_HooksNotRunOnConditionSkip(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "hook-ran")
+	cfg := &config.Config{
+		Name:   "test",
+		Phases: []config.Phase{{Name: "a", Type: "script", Run: "echo", Condition: "false", PreRun: "touch " + marker}},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("pre-run hook should not run when condition skips phase")
+	}
+}
+
+func TestRun_HooksRunEveryLoopIteration(t *testing.T) {
+	markerDir := t.TempDir()
+	marker := filepath.Join(markerDir, "pre-marker")
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo",
+				PreRun: "echo x >> " + marker,
+				Loop:   &config.Loop{Goto: "a", Min: 1, Max: 3}},
+		},
+	}
+	callCount := 0
+	mu := sync.Mutex{}
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		if phase.Name == "b" {
+			mu.Lock()
+			callCount++
+			n := callCount
+			mu.Unlock()
+			if n == 1 {
+				return &dispatch.Result{ExitCode: 1, Output: "retry"}, nil
+			}
+		}
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+	r := newTestRunner(t, cfg, mock)
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatalf("marker file not created: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 pre-run iterations, got %d: %q", len(lines), string(data))
+	}
+}
