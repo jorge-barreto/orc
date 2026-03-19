@@ -58,6 +58,8 @@ type Phase struct {
 	OnFail       *OnFail  `yaml:"on-fail"`
 	Loop         *Loop    `yaml:"loop"`
 	Cwd          string   `yaml:"cwd"`
+	PreRun       string   `yaml:"pre-run"`
+	PostRun      string   `yaml:"post-run"`
 }
 
 // VarEntry holds a single key-value pair from the vars map.

@@ -1096,3 +1096,53 @@ func TestValidate_VarsBuiltinOverride_Workflow(t *testing.T) {
 		t.Fatalf("expected built-in override error, got %v", err)
 	}
 }
+
+func TestValidate_HooksOnAllTypes(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "p.md"), []byte("x"), 0644)
+
+	cfg := &Config{
+		Name: "test",
+		Phases: []Phase{
+			{Name: "s", Type: "script", Run: "echo", PreRun: "echo pre", PostRun: "echo post"},
+			{Name: "a", Type: "agent", Prompt: "p.md", PreRun: "echo pre", PostRun: "echo post"},
+			{Name: "g", Type: "gate", PreRun: "echo pre", PostRun: "echo post"},
+		},
+	}
+	if err := Validate(cfg, root); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, p := range cfg.Phases {
+		if p.PreRun != "echo pre" {
+			t.Fatalf("phase %q: PreRun = %q", p.Name, p.PreRun)
+		}
+		if p.PostRun != "echo post" {
+			t.Fatalf("phase %q: PostRun = %q", p.Name, p.PostRun)
+		}
+	}
+}
+
+func TestValidate_HooksYAMLParsing(t *testing.T) {
+	yamlStr := `
+name: test
+phases:
+  - name: a
+    type: script
+    run: echo
+    pre-run: echo before
+    post-run: echo after
+`
+	var cfg Config
+	if err := yaml.Unmarshal([]byte(yamlStr), &cfg); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if err := Validate(&cfg, t.TempDir()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Phases[0].PreRun != "echo before" {
+		t.Fatalf("PreRun = %q", cfg.Phases[0].PreRun)
+	}
+	if cfg.Phases[0].PostRun != "echo after" {
+		t.Fatalf("PostRun = %q", cfg.Phases[0].PostRun)
+	}
+}
