@@ -109,7 +109,7 @@ func BuildEnv(env *Environment) []string {
 			env.filteredEnv = append(env.filteredEnv, e)
 		}
 	}
-	result := make([]string, len(env.filteredEnv), len(env.filteredEnv)+10+2*len(env.CustomVars))
+	result := make([]string, len(env.filteredEnv), len(env.filteredEnv)+12+2*len(env.CustomVars))
 	copy(result, env.filteredEnv)
 	for k, v := range env.CustomVars {
 		result = append(result, "ORC_"+k+"="+v)

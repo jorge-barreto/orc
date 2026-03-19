@@ -13,6 +13,7 @@ func TestVars_AllKeys(t *testing.T) {
 		WorkDir:      "/work",
 		ArtifactsDir: "/art",
 		Ticket:       "T-1",
+		Workflow:     "bugfix",
 	}
 	vars := env.Vars()
 	if vars["TICKET"] != "T-1" {
@@ -27,6 +28,9 @@ func TestVars_AllKeys(t *testing.T) {
 	if vars["PROJECT_ROOT"] != "/proj" {
 		t.Fatalf("PROJECT_ROOT = %q", vars["PROJECT_ROOT"])
 	}
+	if vars["WORKFLOW"] != "bugfix" {
+		t.Fatalf("WORKFLOW = %q", vars["WORKFLOW"])
+	}
 	if len(vars) != 5 {
 		t.Fatalf("expected 5 keys, got %d", len(vars))
 	}
@@ -38,6 +42,7 @@ func TestBuildEnv_OrcVars(t *testing.T) {
 		WorkDir:      "/work",
 		ArtifactsDir: "/art",
 		Ticket:       "T-1",
+		Workflow:     "bugfix",
 		PhaseIndex:   2,
 		PhaseCount:   5,
 	}
@@ -54,6 +59,9 @@ func TestBuildEnv_OrcVars(t *testing.T) {
 
 	if v := find("ORC_TICKET"); v != "T-1" {
 		t.Fatalf("ORC_TICKET = %q", v)
+	}
+	if v := find("ORC_WORKFLOW"); v != "bugfix" {
+		t.Fatalf("ORC_WORKFLOW = %q", v)
 	}
 	if v := find("ORC_ARTIFACTS_DIR"); v != "/art" {
 		t.Fatalf("ORC_ARTIFACTS_DIR = %q", v)
@@ -404,6 +412,7 @@ func TestBuildEnv_UnprefixedVars(t *testing.T) {
 		WorkDir:      "/work",
 		ArtifactsDir: "/art",
 		Ticket:       "T-1",
+		Workflow:     "bugfix",
 	}
 	result := BuildEnv(env)
 
@@ -418,6 +427,9 @@ func TestBuildEnv_UnprefixedVars(t *testing.T) {
 
 	if v := find("TICKET"); v != "T-1" {
 		t.Fatalf("TICKET = %q", v)
+	}
+	if v := find("WORKFLOW"); v != "bugfix" {
+		t.Fatalf("WORKFLOW = %q", v)
 	}
 	if v := find("ARTIFACTS_DIR"); v != "/art" {
 		t.Fatalf("ARTIFACTS_DIR = %q", v)
