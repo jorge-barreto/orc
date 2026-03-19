@@ -2506,3 +2506,79 @@ func TestRun_StepModeInvalidRewindReprompts(t *testing.T) {
 		t.Fatalf("stderr should contain 'invalid rewind target', got: %q", buf.String())
 	}
 }
+
+func TestRun_RePromptRecordsCostAndArchive(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet",
+				Outputs: []string{"result.md"}},
+		},
+	}
+
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		// Write log so archivePhaseFiles can copy it for iter-1
+		logPath := state.LogPath(env.ArtifactsDir, env.PhaseIndex)
+		os.MkdirAll(filepath.Dir(logPath), 0755)
+		os.WriteFile(logPath, []byte("main dispatch"), 0644)
+		// Succeed but do NOT write result.md — triggers re-prompt
+		return &dispatch.Result{
+			ExitCode:     0,
+			CostUSD:      0.10,
+			InputTokens:  1000,
+			OutputTokens: 500,
+			Turns:        1,
+		}, nil
+	}}
+
+	r := newTestRunner(t, cfg, mock)
+	r.RePromptFn = func(ctx context.Context, phase config.Phase, env *dispatch.Environment, prompt, sessionID string) (*dispatch.Result, error) {
+		// Write log so archivePhaseFiles can copy it for iter-2
+		logPath := state.LogPath(env.ArtifactsDir, env.PhaseIndex)
+		os.MkdirAll(filepath.Dir(logPath), 0755)
+		os.WriteFile(logPath, []byte("re-prompt dispatch"), 0644)
+		// Create the missing output file so re-prompt "succeeds"
+		if err := os.WriteFile(filepath.Join(env.ArtifactsDir, "result.md"), []byte("done"), 0644); err != nil {
+			return nil, err
+		}
+		return &dispatch.Result{
+			ExitCode:     0,
+			CostUSD:      0.25,
+			InputTokens:  5000,
+			OutputTokens: 3000,
+			Turns:        1,
+		}, nil
+	}
+
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	auditDir := state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket)
+
+	// Both dispatches should be recorded in costs
+	costs, err := state.LoadCosts(auditDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(costs.Phases) != 2 {
+		t.Fatalf("expected 2 cost entries (main + re-prompt), got %d", len(costs.Phases))
+	}
+	const wantTotal = 0.10 + 0.25
+	if costs.TotalCostUSD != wantTotal {
+		t.Fatalf("TotalCostUSD = %f, want %f", costs.TotalCostUSD, wantTotal)
+	}
+
+	// dispatchCount for phase 0 should be 2
+	if r.dispatchCount[0] != 2 {
+		t.Fatalf("dispatchCount[0] = %d, want 2", r.dispatchCount[0])
+	}
+
+	// Audit log files must exist for both iter-1 and iter-2
+	if _, err := os.Stat(state.AuditLogPath(auditDir, 0, 1)); err != nil {
+		t.Fatalf("audit log iter-1 missing: %v", err)
+	}
+	if _, err := os.Stat(state.AuditLogPath(auditDir, 0, 2)); err != nil {
+		t.Fatalf("audit log iter-2 missing: %v", err)
+	}
+}
