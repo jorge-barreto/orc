@@ -53,6 +53,8 @@ const topicQuickstart = `Quick Start
     cd your-project
     orc init
     orc init "description of desired workflow"
+    orc init --recipe standard              # scaffold from a built-in recipe
+    orc init --list-recipes                 # show available recipes
 
    This analyzes your project and generates .orc/config.yaml and prompt
    files tailored to your codebase. If AI generation fails, a default
@@ -90,6 +92,8 @@ CLI Flags
   orc doctor <ticket>           Diagnose a failed run using AI
   orc init                      Initialize .orc/ directory (AI-powered)
   orc init "description"        Guide AI generation with a description
+  orc init --recipe <name>      Scaffold from a recipe (simple, standard, full-pipeline, review-loop)
+  orc init --list-recipes       Show available recipes with descriptions
   orc docs                      List documentation topics
   orc docs <topic>              Show a documentation topic
   orc improve "..."             Apply a specific change to the workflow

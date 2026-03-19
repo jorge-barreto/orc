@@ -58,6 +58,7 @@ make install  # installs to $GOPATH/bin
 cd your-project
 orc init                                         # auto-detect
 orc init "data pipeline with validation loop"    # or guide with a description
+orc init --recipe standard                       # or start from a built-in recipe
 
 # 2. Edit .orc/config.yaml to define your workflow
 
@@ -82,6 +83,18 @@ orc init "microservice with integration tests"  # guide generation with a descri
 Optionally pass a natural-language description to guide the generated workflow toward a specific shape. The description supplements the auto-detected project context.
 
 Creates `.orc/config.yaml` and one or more `.orc/phases/*.md` prompt templates named after your workflow phases (e.g., `plan.md`, `implement.md`). Also creates `.orc/.gitignore` to exclude the artifacts directory.
+
+Alternatively, scaffold from a built-in recipe for a proven workflow pattern:
+
+```bash
+orc init --recipe simple                         # minimal plan → implement → review
+orc init --recipe standard                       # quality-assured pipeline with test loop
+orc init --recipe full-pipeline                  # AI self-review + human gate
+orc init --recipe review-loop                    # convergent AI review loop
+orc init --list-recipes                          # show all available recipes
+```
+
+Recipes are deterministic — no AI generation required. The description argument is ignored when `--recipe` is set.
 
 ### `orc run <ticket>`
 
