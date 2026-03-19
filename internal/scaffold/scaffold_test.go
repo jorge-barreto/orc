@@ -268,6 +268,22 @@ func TestInitWorkflow_FailsIfAlreadyExists(t *testing.T) {
 	}
 }
 
+func TestInitWorkflow_PathTraversal(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".orc"), 0755)
+
+	cases := []string{"../evil", "../../etc/evil", "foo/bar", "..", "."}
+	for _, name := range cases {
+		err := InitWorkflow(dir, name, "")
+		if err == nil {
+			t.Fatalf("expected error for workflow name %q", name)
+		}
+		if !strings.Contains(err.Error(), "must not contain path separators") {
+			t.Fatalf("for %q: expected path-traversal error, got: %v", name, err)
+		}
+	}
+}
+
 func TestRenderWorkflowSummary_Sequential(t *testing.T) {
 	phases := []config.Phase{
 		{Name: "plan"},

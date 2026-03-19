@@ -76,6 +76,9 @@ func InitRecipe(targetDir, recipeName string) error {
 // If recipe is non-empty, uses that recipe's config; otherwise creates a
 // minimal starter workflow.
 func InitWorkflow(targetDir, name, recipe string) error {
+	if name != filepath.Base(name) || name == ".." || name == "." {
+		return fmt.Errorf("invalid workflow name %q: must not contain path separators", name)
+	}
 	orcDir := filepath.Join(targetDir, ".orc")
 	if _, err := os.Stat(orcDir); os.IsNotExist(err) {
 		return fmt.Errorf("no .orc/ directory found — run 'orc init' first")
