@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/jorge-barreto/orc/internal/config"
+	"github.com/jorge-barreto/orc/internal/fileblocks"
 )
 
 func stubClaude(t *testing.T) {
@@ -319,5 +320,25 @@ func TestRenderWorkflowSummary_Single(t *testing.T) {
 	want := "implement"
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestWriteBlocks_ErrorOnWriteFailure(t *testing.T) {
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	blocks := []fileblocks.FileBlock{
+		{Path: ".orc/config.yaml", Content: "name: test\n"},
+	}
+
+	_, err := writeBlocks(blocker, blocks)
+	if err == nil {
+		t.Fatal("expected error when target dir is a file, got nil")
+	}
+	if !strings.Contains(err.Error(), ".orc/config.yaml") {
+		t.Fatalf("error should reference the failing path, got: %v", err)
 	}
 }
