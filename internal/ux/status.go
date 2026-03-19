@@ -192,13 +192,13 @@ func RenderStatusAll(cfg *config.Config, tickets []state.TicketSummary) {
 		}
 
 		var phase string
-		if t.State.PhaseIndex >= len(cfg.Phases) {
+		if len(cfg.Phases) == 0 {
+			phase = fmt.Sprintf("phase %d", t.State.PhaseIndex+1)
+		} else if t.State.PhaseIndex >= len(cfg.Phases) {
 			phase = fmt.Sprintf("%d/%d", len(cfg.Phases), len(cfg.Phases))
-		} else if len(cfg.Phases) > 0 {
+		} else {
 			p := cfg.Phases[t.State.PhaseIndex]
 			phase = fmt.Sprintf("%d/%d (%s)", t.State.PhaseIndex+1, len(cfg.Phases), p.Name)
-		} else {
-			phase = fmt.Sprintf("phase %d", t.State.PhaseIndex+1)
 		}
 
 		cost := fmt.Sprintf("$%.2f", t.Costs.TotalCostUSD)
