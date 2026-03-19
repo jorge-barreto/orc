@@ -324,6 +324,34 @@ func TestResolveWorkflowByName(t *testing.T) {
 	}
 }
 
+func TestResolveWorkflowByName_PathTraversal(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Create config.yaml so ../config would resolve to a real file without the guard
+	if err := os.WriteFile(filepath.Join(dir, ".orc", "config.yaml"), []byte("phases: []"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".orc", "workflows", "bugfix.yaml"), []byte("phases: []"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []string{"../config", "../../etc", "foo/bar", "..", "."}
+	for _, name := range cases {
+		_, ok := resolveWorkflowByName(dir, name)
+		if ok {
+			t.Fatalf("expected not-found for traversal name %q", name)
+		}
+	}
+
+	// Verify valid name still works
+	_, ok := resolveWorkflowByName(dir, "bugfix")
+	if !ok {
+		t.Fatal("expected to find bugfix workflow")
+	}
+}
+
 func TestResolveWorkflow_PathTraversal(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755); err != nil {

@@ -591,6 +591,9 @@ func resolveWorkflow(projectRoot, flagWorkflow string) (workflowName, configPath
 
 // resolveWorkflowByName looks up a specific workflow name and returns its config path.
 func resolveWorkflowByName(projectRoot, name string) (string, bool) {
+	if name != filepath.Base(name) || name == ".." || name == "." {
+		return "", false
+	}
 	path := filepath.Join(projectRoot, ".orc", "workflows", name+".yaml")
 	if fileExists(path) {
 		return path, true
