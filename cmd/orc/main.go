@@ -366,6 +366,7 @@ func initCmd() *cli.Command {
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "recipe", Usage: "Scaffold from a recipe (simple, standard, full-pipeline, review-loop)"},
 			&cli.BoolFlag{Name: "list-recipes", Usage: "Show available recipes"},
+			&cli.StringFlag{Name: "add-workflow", Usage: "Add a named workflow to an existing .orc/ project"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			if cmd.Bool("list-recipes") {
@@ -375,6 +376,9 @@ func initCmd() *cli.Command {
 			dir, err := os.Getwd()
 			if err != nil {
 				return err
+			}
+			if wfName := cmd.String("add-workflow"); wfName != "" {
+				return scaffold.InitWorkflow(dir, wfName, cmd.String("recipe"))
 			}
 			if recipe := cmd.String("recipe"); recipe != "" {
 				return scaffold.InitRecipe(dir, recipe)

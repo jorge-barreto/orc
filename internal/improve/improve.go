@@ -24,12 +24,19 @@ func readOrcFiles(projectRoot string) (configYAML string, phaseFiles map[string]
 	configPath := filepath.Join(projectRoot, ".orc", "config.yaml")
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return "", nil, fmt.Errorf("no .orc/config.yaml found — run 'orc init' first")
+		// No config.yaml — check for workflows/
+		if _, statErr := os.Stat(filepath.Join(projectRoot, ".orc", "workflows")); statErr != nil {
+			return "", nil, fmt.Errorf("no .orc/config.yaml or .orc/workflows/ found — run 'orc init' first")
+		}
+		configYAML = "" // No default config
+	} else {
+		configYAML = string(data)
 	}
-	configYAML = string(data)
 
+	phaseFiles = make(map[string]string)
+
+	// Read prompt files
 	matches, _ := filepath.Glob(filepath.Join(projectRoot, ".orc", "phases", "*.md"))
-	phaseFiles = make(map[string]string, len(matches))
 	for _, match := range matches {
 		content, err := os.ReadFile(match)
 		if err != nil {
@@ -39,6 +46,19 @@ func readOrcFiles(projectRoot string) (configYAML string, phaseFiles map[string]
 		relPath = filepath.ToSlash(relPath)
 		phaseFiles[relPath] = string(content)
 	}
+
+	// Read workflow configs
+	wfMatches, _ := filepath.Glob(filepath.Join(projectRoot, ".orc", "workflows", "*.yaml"))
+	for _, match := range wfMatches {
+		content, err := os.ReadFile(match)
+		if err != nil {
+			continue
+		}
+		relPath, _ := filepath.Rel(projectRoot, match)
+		relPath = filepath.ToSlash(relPath)
+		phaseFiles[relPath] = string(content)
+	}
+
 	return configYAML, phaseFiles, nil
 }
 
@@ -52,6 +72,7 @@ func readAuditSummary(projectRoot string) string {
 	// Collect directories with their start times for sorting by recency.
 	type auditEntry struct {
 		name  string
+		dir   string
 		start time.Time
 	}
 	var audits []auditEntry
@@ -60,17 +81,49 @@ func readAuditSummary(projectRoot string) string {
 			continue
 		}
 		dir := filepath.Join(auditBase, e.Name())
-		t, tErr := state.LoadTiming(dir)
-		var start time.Time
-		if tErr == nil && len(t.Entries) > 0 {
-			start = t.Entries[0].Start
-		}
-		if start.IsZero() {
-			if info, iErr := e.Info(); iErr == nil {
-				start = info.ModTime()
+
+		// Flat layout: audit/<ticket>/
+		if isTicketAuditDir(dir) {
+			t, tErr := state.LoadTiming(dir)
+			var start time.Time
+			if tErr == nil && len(t.Entries) > 0 {
+				start = t.Entries[0].Start
 			}
+			if start.IsZero() {
+				if info, iErr := e.Info(); iErr == nil {
+					start = info.ModTime()
+				}
+			}
+			audits = append(audits, auditEntry{name: e.Name(), dir: dir, start: start})
+			continue
 		}
-		audits = append(audits, auditEntry{name: e.Name(), start: start})
+
+		// Workflow-namespaced layout: audit/<workflow>/<ticket>/
+		subEntries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, se := range subEntries {
+			if !se.IsDir() {
+				continue
+			}
+			ticketDir := filepath.Join(dir, se.Name())
+			if !isTicketAuditDir(ticketDir) {
+				continue
+			}
+			t, tErr := state.LoadTiming(ticketDir)
+			var start time.Time
+			if tErr == nil && len(t.Entries) > 0 {
+				start = t.Entries[0].Start
+			}
+			if start.IsZero() {
+				if info, iErr := se.Info(); iErr == nil {
+					start = info.ModTime()
+				}
+			}
+			displayName := e.Name() + "/" + se.Name()
+			audits = append(audits, auditEntry{name: displayName, dir: ticketDir, start: start})
+		}
 	}
 	sort.Slice(audits, func(i, j int) bool {
 		return audits[i].start.After(audits[j].start)
@@ -83,7 +136,12 @@ func readAuditSummary(projectRoot string) string {
 	var parts []string
 	for _, a := range audits[:limit] {
 		ticket := a.name
-		auditDir := filepath.Join(auditBase, ticket)
+		auditDir := a.dir
+
+		// Derive artifactsDir: audit/<...> → artifacts/<...>
+		relPath, _ := filepath.Rel(auditBase, auditDir)
+		artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts", relPath)
+
 		var lines []string
 
 		costs, err := state.LoadCosts(auditDir)
@@ -111,7 +169,6 @@ func readAuditSummary(projectRoot string) string {
 			}
 		}
 
-		artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts", ticket)
 		loops, err := state.LoadLoopCounts(artifactsDir)
 		if err == nil && len(loops) > 0 {
 			var loopParts []string
@@ -146,6 +203,17 @@ func readAuditSummary(projectRoot string) string {
 	}
 	return "The following data is from previous workflow runs. Use it to inform your suggestions.\n\n" +
 		strings.Join(parts, "\n\n")
+}
+
+// isTicketAuditDir checks if a directory looks like a ticket audit dir
+// (contains timing.json, costs.json, or state.json).
+func isTicketAuditDir(dir string) bool {
+	for _, f := range []string{"timing.json", "costs.json", "state.json"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func gatherPhaseLogs(auditDir, artifactsDir string) string {

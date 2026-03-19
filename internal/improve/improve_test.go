@@ -534,6 +534,54 @@ func TestGatherRunStatus_NoState(t *testing.T) {
 	}
 }
 
+func TestReadOrcFiles_WorkflowsOnly(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755)
+	os.WriteFile(filepath.Join(dir, ".orc", "workflows", "bugfix.yaml"),
+		[]byte("name: bugfix\nphases:\n  - name: fix\n    type: script\n    run: echo ok\n"), 0644)
+
+	configYAML, phaseFiles, err := readOrcFiles(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if configYAML != "" {
+		t.Fatalf("expected empty configYAML, got: %s", configYAML)
+	}
+	if _, ok := phaseFiles[".orc/workflows/bugfix.yaml"]; !ok {
+		t.Fatalf("phaseFiles missing .orc/workflows/bugfix.yaml, got keys: %v", phaseFiles)
+	}
+}
+
+func TestReadAuditSummary_WorkflowNamespaced(t *testing.T) {
+	dir := t.TempDir()
+	// Create audit/<workflow>/<ticket>/ structure
+	auditDir := filepath.Join(dir, ".orc", "audit", "bugfix", "TEST-2")
+	os.MkdirAll(auditDir, 0755)
+	costsJSON := `{"phases":[],"total_cost_usd":0.50,"total_input_tokens":5,"total_output_tokens":50,"total_cache_creation_input_tokens":0,"total_cache_read_input_tokens":0}`
+	os.WriteFile(filepath.Join(auditDir, "costs.json"), []byte(costsJSON), 0644)
+	timingJSON := `{"entries":[{"phase":"fix","start":"2026-03-01T10:00:00Z","end":"2026-03-01T10:01:00Z","duration":"1m 00s"}]}`
+	os.WriteFile(filepath.Join(auditDir, "timing.json"), []byte(timingJSON), 0644)
+
+	result := readAuditSummary(dir)
+	if !strings.Contains(result, "bugfix/TEST-2") {
+		t.Errorf("result should contain workflow/ticket name, got: %s", result)
+	}
+	if !strings.Contains(result, "$0.50") {
+		t.Errorf("result should contain cost, got: %s", result)
+	}
+}
+
+func TestIsTicketAuditDir(t *testing.T) {
+	dir := t.TempDir()
+	if isTicketAuditDir(dir) {
+		t.Fatal("empty dir should not be a ticket audit dir")
+	}
+	os.WriteFile(filepath.Join(dir, "timing.json"), []byte("{}"), 0644)
+	if !isTicketAuditDir(dir) {
+		t.Fatal("dir with timing.json should be a ticket audit dir")
+	}
+}
+
 func TestCopyOrcDir(t *testing.T) {
 	srcDir := t.TempDir()
 	os.MkdirAll(filepath.Join(srcDir, ".orc", "phases"), 0755)

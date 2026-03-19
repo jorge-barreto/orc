@@ -225,6 +225,49 @@ func TestWriteFallbackConfig(t *testing.T) {
 	}
 }
 
+func TestInitWorkflow_CreatesFile(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".orc"), 0755)
+
+	if err := InitWorkflow(dir, "bugfix", ""); err != nil {
+		t.Fatalf("InitWorkflow failed: %v", err)
+	}
+
+	path := filepath.Join(dir, ".orc", "workflows", "bugfix.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("workflow file not created: %v", err)
+	}
+	if !strings.Contains(string(data), "name: bugfix") {
+		t.Fatalf("workflow content missing name, got: %s", data)
+	}
+}
+
+func TestInitWorkflow_FailsIfNoOrcDir(t *testing.T) {
+	dir := t.TempDir()
+	err := InitWorkflow(dir, "bugfix", "")
+	if err == nil {
+		t.Fatal("expected error when no .orc/ dir")
+	}
+	if !strings.Contains(err.Error(), "orc init") {
+		t.Fatalf("error should mention 'orc init', got: %v", err)
+	}
+}
+
+func TestInitWorkflow_FailsIfAlreadyExists(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755)
+	os.WriteFile(filepath.Join(dir, ".orc", "workflows", "bugfix.yaml"), []byte("existing"), 0644)
+
+	err := InitWorkflow(dir, "bugfix", "")
+	if err == nil {
+		t.Fatal("expected error for existing workflow")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("error should mention 'already exists', got: %v", err)
+	}
+}
+
 func TestRenderWorkflowSummary_Sequential(t *testing.T) {
 	phases := []config.Phase{
 		{Name: "plan"},

@@ -72,6 +72,61 @@ func InitRecipe(targetDir, recipeName string) error {
 	return nil
 }
 
+// InitWorkflow adds a named workflow to an existing .orc/ project.
+// If recipe is non-empty, uses that recipe's config; otherwise creates a
+// minimal starter workflow.
+func InitWorkflow(targetDir, name, recipe string) error {
+	orcDir := filepath.Join(targetDir, ".orc")
+	if _, err := os.Stat(orcDir); os.IsNotExist(err) {
+		return fmt.Errorf("no .orc/ directory found — run 'orc init' first")
+	}
+
+	workflowPath := filepath.Join(orcDir, "workflows", name+".yaml")
+	if _, err := os.Stat(workflowPath); err == nil {
+		return fmt.Errorf("workflow %q already exists at %s", name, workflowPath)
+	}
+
+	if err := os.MkdirAll(filepath.Join(orcDir, "workflows"), 0755); err != nil {
+		return fmt.Errorf("creating workflows dir: %w", err)
+	}
+
+	var content string
+	if recipe != "" {
+		r, err := GetRecipe(recipe)
+		if err != nil {
+			return err
+		}
+		if c, ok := r.Files[".orc/config.yaml"]; ok {
+			content = c
+		} else {
+			return fmt.Errorf("recipe %q has no config.yaml", recipe)
+		}
+	} else {
+		content = fmt.Sprintf(`name: %s
+phases:
+  - name: plan
+    type: agent
+    prompt: .orc/phases/%s-plan.md
+    outputs:
+      - plan.md
+
+  - name: implement
+    type: agent
+    prompt: .orc/phases/%s-implement.md
+    outputs:
+      - summary.md
+`, name, name, name)
+	}
+
+	if err := os.WriteFile(workflowPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("writing workflow: %w", err)
+	}
+
+	fmt.Printf("%s✓ Created workflow %q at %s%s\n", ux.Green, name, workflowPath, ux.Reset)
+	fmt.Printf("  Next: edit %s, then %sorc run %s <ticket>%s\n\n", workflowPath, ux.Cyan, name, ux.Reset)
+	return nil
+}
+
 // ListRecipes prints all available built-in recipes with descriptions.
 func ListRecipes() {
 	recipes := AllRecipes()
