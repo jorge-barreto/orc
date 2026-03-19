@@ -502,8 +502,7 @@ func (r *Runner) handleLoopFailure(i int, phase config.Phase, loopCounts map[str
 
 // runLoopCheck executes the loop.check command and returns the exit code and captured output.
 func runLoopCheck(ctx context.Context, check string, phase config.Phase, env *dispatch.Environment) (int, string) {
-	expanded := dispatch.ExpandVars(check, env.Vars())
-	cmd := exec.CommandContext(ctx, "bash", "-c", expanded)
+	cmd := exec.CommandContext(ctx, "bash", "-c", check)
 	cmd.Dir = dispatch.PhaseWorkDir(phase, env)
 	cmd.Env = dispatch.BuildEnv(env)
 
@@ -745,8 +744,7 @@ func copyFile(src, dst string) {
 
 // evalCondition runs a shell command and returns true if it exits 0.
 func evalCondition(ctx context.Context, phase config.Phase, env *dispatch.Environment) bool {
-	expanded := dispatch.ExpandVars(phase.Condition, env.Vars())
-	cmd := exec.CommandContext(ctx, "bash", "-c", expanded)
+	cmd := exec.CommandContext(ctx, "bash", "-c", phase.Condition)
 	cmd.Dir = dispatch.PhaseWorkDir(phase, env)
 	cmd.Env = dispatch.BuildEnv(env)
 	return cmd.Run() == nil
