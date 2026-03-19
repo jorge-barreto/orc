@@ -14,9 +14,7 @@ import (
 // RunHook executes a hook command (pre-run or post-run) via bash.
 // The caller is responsible for providing logWriter; RunHook does not open any files.
 func RunHook(ctx context.Context, command string, phase config.Phase, env *Environment, logWriter io.Writer) (int, error) {
-	expanded := ExpandVars(command, env.Vars())
-
-	cmd := exec.CommandContext(ctx, "bash", "-c", expanded)
+	cmd := exec.CommandContext(ctx, "bash", "-c", command)
 	cmd.Dir = PhaseWorkDir(phase, env)
 	cmd.Env = BuildEnv(env)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

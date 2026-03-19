@@ -21,9 +21,7 @@ func RunScript(ctx context.Context, phase config.Phase, env *Environment) (*Resu
 		defer cancel()
 	}
 
-	expanded := ExpandVars(phase.Run, env.Vars())
-
-	cmd := exec.CommandContext(ctx, "bash", "-c", expanded)
+	cmd := exec.CommandContext(ctx, "bash", "-c", phase.Run)
 	cmd.Dir = PhaseWorkDir(phase, env)
 	cmd.Env = BuildEnv(env)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
