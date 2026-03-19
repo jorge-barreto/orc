@@ -15,6 +15,7 @@ import (
 	"github.com/jorge-barreto/orc/internal/config"
 	"github.com/jorge-barreto/orc/internal/dispatch"
 	"github.com/jorge-barreto/orc/internal/state"
+	"github.com/jorge-barreto/orc/internal/ux"
 )
 
 // mockDispatcher records calls and returns configurable results.
@@ -2352,5 +2353,156 @@ func TestRun_HooksRunEveryLoopIteration(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
 	if len(lines) != 2 {
 		t.Fatalf("expected 2 pre-run iterations, got %d: %q", len(lines), string(data))
+	}
+}
+
+func TestRun_StepModeContinue(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo"},
+			{Name: "c", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	r.StepMode = true
+	r.StepPromptFn = func(artifactsDir string, phaseIdx int, phaseName string) ux.StepAction {
+		return ux.StepAction{Type: "continue"}
+	}
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.State.Status != state.StatusCompleted {
+		t.Fatalf("status = %q, want completed", r.State.Status)
+	}
+	calls := mock.callNames()
+	if len(calls) != 3 || calls[0] != "a" || calls[1] != "b" || calls[2] != "c" {
+		t.Fatalf("calls = %v, want [a b c]", calls)
+	}
+}
+
+func TestRun_StepModeAbort(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo"},
+			{Name: "c", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	r.StepMode = true
+	r.StepPromptFn = func(artifactsDir string, phaseIdx int, phaseName string) ux.StepAction {
+		if phaseName == "b" {
+			return ux.StepAction{Type: "abort"}
+		}
+		return ux.StepAction{Type: "continue"}
+	}
+
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	assertExitCode(t, err, ExitSignal)
+	if r.State.Status != state.StatusInterrupted {
+		t.Fatalf("status = %q, want interrupted", r.State.Status)
+	}
+	for _, c := range mock.callNames() {
+		if c == "c" {
+			t.Fatal("phase c should not have been dispatched")
+		}
+	}
+}
+
+func TestRun_StepModeRewind(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo"},
+			{Name: "c", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	r.StepMode = true
+	rewound := false
+	r.StepPromptFn = func(artifactsDir string, phaseIdx int, phaseName string) ux.StepAction {
+		if phaseName == "c" && !rewound {
+			rewound = true
+			return ux.StepAction{Type: "rewind", Target: "2"}
+		}
+		return ux.StepAction{Type: "continue"}
+	}
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.State.Status != state.StatusCompleted {
+		t.Fatalf("status = %q, want completed", r.State.Status)
+	}
+	calls := mock.callNames()
+	want := []string{"a", "b", "c", "b", "c"}
+	if len(calls) != len(want) {
+		t.Fatalf("calls = %v, want %v", calls, want)
+	}
+	for i, c := range calls {
+		if c != want[i] {
+			t.Fatalf("calls[%d] = %q, want %q (calls=%v)", i, c, want[i], calls)
+		}
+	}
+}
+
+func TestRun_StepModeInvalidRewindReprompts(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo"},
+			{Name: "c", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	r.StepMode = true
+	firstCall := true
+	r.StepPromptFn = func(artifactsDir string, phaseIdx int, phaseName string) ux.StepAction {
+		if phaseName == "a" && firstCall {
+			firstCall = false
+			return ux.StepAction{Type: "rewind", Target: "nonexistent"}
+		}
+		return ux.StepAction{Type: "continue"}
+	}
+
+	// Capture stderr to verify error message
+	oldStderr := os.Stderr
+	pr, pw, _ := os.Pipe()
+	os.Stderr = pw
+
+	err := r.Run(context.Background())
+
+	pw.Close()
+	var buf bytes.Buffer
+	io.Copy(&buf, pr)
+	os.Stderr = oldStderr
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.State.Status != state.StatusCompleted {
+		t.Fatalf("status = %q, want completed", r.State.Status)
+	}
+	calls := mock.callNames()
+	if len(calls) != 3 {
+		t.Fatalf("calls = %v, want [a b c]", calls)
+	}
+	if !strings.Contains(buf.String(), "invalid rewind target") {
+		t.Fatalf("stderr should contain 'invalid rewind target', got: %q", buf.String())
 	}
 }

@@ -27,6 +27,8 @@ type Runner struct {
 	Dispatcher    dispatch.Dispatcher
 	Timing        *state.Timing
 	Costs         *state.CostData
+	StepMode      bool
+	StepPromptFn  func(artifactsDir string, phaseIdx int, phaseName string) ux.StepAction
 	skipped       map[string]bool
 	auditDir      string
 	dispatchCount map[int]int // tracks how many times each phase has been dispatched
@@ -119,6 +121,7 @@ func (r *Runner) Run(ctx context.Context) error {
 
 	total := len(r.Config.Phases)
 
+mainLoop:
 	for r.State.PhaseIndex < total {
 		i := r.State.PhaseIndex
 		phase := r.Config.Phases[i]
@@ -376,6 +379,37 @@ func (r *Runner) Run(ctx context.Context) error {
 			return fmt.Errorf("saving state after phase advance: %w", err)
 		}
 		ux.PhaseComplete(i, duration)
+
+		// Step-through pause
+		if r.StepMode {
+			promptFn := r.StepPromptFn
+			if promptFn == nil {
+				promptFn = ux.StepPrompt
+			}
+			for {
+				action := promptFn(r.Env.ArtifactsDir, i, phase.Name)
+				switch action.Type {
+				case "abort":
+					r.printRunSummary(-1)
+					return r.failAndHint(state.StatusInterrupted, ExitSignal,
+						fmt.Errorf("aborted by user in step-through mode"))
+				case "rewind":
+					idx, err := config.ResolvePhaseRef(action.Target, r.Config.Phases)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "  invalid rewind target: %v\n", err)
+						continue
+					}
+					r.State.SetPhase(idx)
+					if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
+						return fmt.Errorf("saving state after rewind: %w", err)
+					}
+					continue mainLoop
+				case "continue":
+					// fall through to next phase
+				}
+				break
+			}
+		}
 	}
 
 	r.State.Status = state.StatusCompleted
@@ -683,6 +717,35 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 	}
 	if err := r.Costs.Flush(r.auditDir); err != nil {
 		return fmt.Errorf("flushing costs after parallel: %w", err)
+	}
+	if r.StepMode {
+		promptFn := r.StepPromptFn
+		if promptFn == nil {
+			promptFn = ux.StepPrompt
+		}
+		for {
+			action := promptFn(r.Env.ArtifactsDir, idx1, phase1.Name+" + "+phase2.Name)
+			switch action.Type {
+			case "abort":
+				r.printRunSummary(-1)
+				return r.failAndHint(state.StatusInterrupted, ExitSignal,
+					fmt.Errorf("aborted by user in step-through mode"))
+			case "rewind":
+				idx, err := config.ResolvePhaseRef(action.Target, r.Config.Phases)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "  invalid rewind target: %v\n", err)
+					continue
+				}
+				r.State.SetPhase(idx)
+				if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
+					return fmt.Errorf("saving state after rewind: %w", err)
+				}
+				return nil
+			case "continue":
+				// fall through
+			}
+			break
+		}
 	}
 	return nil
 }
