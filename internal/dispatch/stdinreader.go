@@ -32,6 +32,7 @@ func (sr *StdinReader) readLoop(r io.Reader) {
 		default:
 		}
 		if !scanner.Scan() {
+			close(sr.lines) // signal EOF; buffered items drain first (Go spec)
 			return
 		}
 		line := scanner.Text()
@@ -50,7 +51,10 @@ func (sr *StdinReader) readLoop(r io.Reader) {
 // Returns the line and true if input is available, or ("", false) otherwise.
 func (sr *StdinReader) ReadLine() (string, bool) {
 	select {
-	case line := <-sr.lines:
+	case line, ok := <-sr.lines:
+		if !ok {
+			return "", false
+		}
 		return line, true
 	default:
 		return "", false
@@ -61,8 +65,8 @@ func (sr *StdinReader) ReadLine() (string, bool) {
 // Returns ("", false) if the reader is stopped before input arrives.
 func (sr *StdinReader) ReadLineBlocking() (string, bool) {
 	select {
-	case line := <-sr.lines:
-		return line, true
+	case line, ok := <-sr.lines:
+		return line, ok // ok==false means EOF (channel closed, all buffered items consumed)
 	case <-sr.done:
 		return "", false
 	}
