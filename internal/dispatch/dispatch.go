@@ -15,6 +15,7 @@ type Environment struct {
 	WorkDir           string
 	ArtifactsDir      string
 	Ticket            string
+	Workflow          string
 	PhaseIndex        int
 	AutoMode          bool
 	Verbose           bool
@@ -48,11 +49,12 @@ func (e *Environment) Clone() *Environment {
 // Vars returns the variable substitution map for prompts and commands.
 // Custom vars are included first; built-ins always win (defense in depth).
 func (e *Environment) Vars() map[string]string {
-	m := make(map[string]string, 4+len(e.CustomVars))
+	m := make(map[string]string, 5+len(e.CustomVars))
 	for k, v := range e.CustomVars {
 		m[k] = v
 	}
 	m["TICKET"] = e.Ticket
+	m["WORKFLOW"] = e.Workflow
 	m["ARTIFACTS_DIR"] = e.ArtifactsDir
 	m["WORK_DIR"] = e.WorkDir
 	m["PROJECT_ROOT"] = e.ProjectRoot
@@ -97,6 +99,7 @@ func BuildEnv(env *Environment) []string {
 		overridden := map[string]bool{
 			"TICKET": true, "ARTIFACTS_DIR": true,
 			"WORK_DIR": true, "PROJECT_ROOT": true,
+			"WORKFLOW": true,
 		}
 		for _, e := range os.Environ() {
 			key := strings.SplitN(e, "=", 2)[0]
@@ -114,6 +117,7 @@ func BuildEnv(env *Environment) []string {
 	}
 	result = append(result,
 		"ORC_TICKET="+env.Ticket,
+		"ORC_WORKFLOW="+env.Workflow,
 		"ORC_ARTIFACTS_DIR="+env.ArtifactsDir,
 		"ORC_WORK_DIR="+env.WorkDir,
 		"ORC_PROJECT_ROOT="+env.ProjectRoot,
@@ -121,6 +125,7 @@ func BuildEnv(env *Environment) []string {
 		fmt.Sprintf("ORC_PHASE_COUNT=%d", env.PhaseCount),
 		// Unprefixed aliases so external scripts can use $ARTIFACTS_DIR etc.
 		"TICKET="+env.Ticket,
+		"WORKFLOW="+env.Workflow,
 		"ARTIFACTS_DIR="+env.ArtifactsDir,
 		"WORK_DIR="+env.WorkDir,
 		"PROJECT_ROOT="+env.ProjectRoot,

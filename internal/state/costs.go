@@ -23,13 +23,13 @@ type CostEntry struct {
 
 // CostData holds aggregate cost data for the entire run.
 type CostData struct {
-	mu                           sync.Mutex
-	Phases                       []CostEntry `json:"phases"`
-	TotalCostUSD                 float64     `json:"total_cost_usd"`
-	TotalInputTokens             int         `json:"total_input_tokens"`
-	TotalOutputTokens            int         `json:"total_output_tokens"`
-	TotalCacheCreationInputTokens int        `json:"total_cache_creation_input_tokens"`
-	TotalCacheReadInputTokens    int         `json:"total_cache_read_input_tokens"`
+	mu                            sync.Mutex
+	Phases                        []CostEntry `json:"phases"`
+	TotalCostUSD                  float64     `json:"total_cost_usd"`
+	TotalInputTokens              int         `json:"total_input_tokens"`
+	TotalOutputTokens             int         `json:"total_output_tokens"`
+	TotalCacheCreationInputTokens int         `json:"total_cache_creation_input_tokens"`
+	TotalCacheReadInputTokens     int         `json:"total_cache_read_input_tokens"`
 }
 
 func costsPath(artifactsDir string) string {

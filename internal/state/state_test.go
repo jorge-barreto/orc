@@ -202,3 +202,146 @@ func TestListTickets_SkipDirWithoutState(t *testing.T) {
 		t.Fatalf("tickets[0].Ticket = %q, want T-001", tickets[0].Ticket)
 	}
 }
+
+// --- New tests for multi-workflow support ---
+
+func TestListTickets_WorkflowNamespaced(t *testing.T) {
+	base := t.TempDir()
+
+	// Create artifacts/bugfix/T-001/state.json
+	ticketDir := filepath.Join(base, "bugfix", "T-001")
+	os.MkdirAll(ticketDir, 0755)
+	st := &State{PhaseIndex: 1, Ticket: "T-001", Workflow: "bugfix", Status: StatusCompleted}
+	st.Save(ticketDir)
+
+	tickets, err := ListTickets(base, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tickets) != 1 {
+		t.Fatalf("expected 1 ticket, got %d", len(tickets))
+	}
+	if tickets[0].Ticket != "T-001" {
+		t.Fatalf("Ticket = %q, want T-001", tickets[0].Ticket)
+	}
+	if tickets[0].State.Workflow != "bugfix" {
+		t.Fatalf("Workflow = %q, want bugfix", tickets[0].State.Workflow)
+	}
+}
+
+func TestListTickets_WorkflowNamespaced_InfersWorkflow(t *testing.T) {
+	// State file has no workflow field — ListTickets infers it from the dir name
+	base := t.TempDir()
+
+	ticketDir := filepath.Join(base, "refactor", "T-002")
+	os.MkdirAll(ticketDir, 0755)
+	// Save state WITHOUT workflow field set
+	st := &State{PhaseIndex: 0, Ticket: "T-002", Status: StatusRunning}
+	st.Save(ticketDir)
+
+	tickets, err := ListTickets(base, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tickets) != 1 {
+		t.Fatalf("expected 1 ticket, got %d", len(tickets))
+	}
+	if tickets[0].State.Workflow != "refactor" {
+		t.Fatalf("Workflow = %q, want refactor (inferred from dir name)", tickets[0].State.Workflow)
+	}
+}
+
+func TestListTickets_Mixed(t *testing.T) {
+	// Flat ticket T-001 and workflow-namespaced bugfix/T-002 coexist
+	base := t.TempDir()
+
+	// Flat
+	flatDir := filepath.Join(base, "T-001")
+	os.MkdirAll(flatDir, 0755)
+	stFlat := &State{PhaseIndex: 2, Ticket: "T-001", Status: StatusCompleted}
+	stFlat.Save(flatDir)
+
+	// Namespaced
+	nsDir := filepath.Join(base, "bugfix", "T-002")
+	os.MkdirAll(nsDir, 0755)
+	stNS := &State{PhaseIndex: 1, Ticket: "T-002", Workflow: "bugfix", Status: StatusRunning}
+	stNS.Save(nsDir)
+
+	tickets, err := ListTickets(base, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tickets) != 2 {
+		t.Fatalf("expected 2 tickets, got %d", len(tickets))
+	}
+
+	// Find each by ticket name (order may vary)
+	byName := make(map[string]TicketSummary)
+	for _, ts := range tickets {
+		byName[ts.Ticket] = ts
+	}
+
+	t1, ok := byName["T-001"]
+	if !ok {
+		t.Fatal("T-001 not found in results")
+	}
+	if t1.State.Workflow != "" {
+		t.Fatalf("T-001 Workflow = %q, want empty (flat layout)", t1.State.Workflow)
+	}
+
+	t2, ok := byName["T-002"]
+	if !ok {
+		t.Fatal("T-002 not found in results")
+	}
+	if t2.State.Workflow != "bugfix" {
+		t.Fatalf("T-002 Workflow = %q, want bugfix", t2.State.Workflow)
+	}
+}
+
+func TestArtifactsDirForWorkflow_Empty(t *testing.T) {
+	got := ArtifactsDirForWorkflow("/proj", "", "T-001")
+	want := "/proj/.orc/artifacts/T-001"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestArtifactsDirForWorkflow_Named(t *testing.T) {
+	got := ArtifactsDirForWorkflow("/proj", "bugfix", "T-001")
+	want := "/proj/.orc/artifacts/bugfix/T-001"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestAuditDirForWorkflow_Empty(t *testing.T) {
+	got := AuditDirForWorkflow("/proj", "", "T-001")
+	want := "/proj/.orc/audit/T-001"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestAuditDirForWorkflow_Named(t *testing.T) {
+	got := AuditDirForWorkflow("/proj", "bugfix", "T-001")
+	want := "/proj/.orc/audit/bugfix/T-001"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestAuditBaseDirForWorkflow_Empty(t *testing.T) {
+	got := AuditBaseDirForWorkflow("/proj", "")
+	want := "/proj/.orc/audit"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestAuditBaseDirForWorkflow_Named(t *testing.T) {
+	got := AuditBaseDirForWorkflow("/proj", "bugfix")
+	want := "/proj/.orc/audit/bugfix"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}

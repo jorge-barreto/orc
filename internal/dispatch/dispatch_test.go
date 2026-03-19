@@ -27,8 +27,8 @@ func TestVars_AllKeys(t *testing.T) {
 	if vars["PROJECT_ROOT"] != "/proj" {
 		t.Fatalf("PROJECT_ROOT = %q", vars["PROJECT_ROOT"])
 	}
-	if len(vars) != 4 {
-		t.Fatalf("expected 4 keys, got %d", len(vars))
+	if len(vars) != 5 {
+		t.Fatalf("expected 5 keys, got %d", len(vars))
 	}
 }
 
@@ -88,8 +88,8 @@ func TestVars_IncludesCustomVars(t *testing.T) {
 	if vars["TICKET"] != "T-1" {
 		t.Fatalf("TICKET = %q", vars["TICKET"])
 	}
-	if len(vars) != 5 {
-		t.Fatalf("expected 5 keys, got %d", len(vars))
+	if len(vars) != 6 {
+		t.Fatalf("expected 6 keys, got %d", len(vars))
 	}
 }
 

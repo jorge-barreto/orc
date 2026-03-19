@@ -215,6 +215,33 @@ func AuditDir(projectRoot, ticket string) string {
 	return filepath.Join(projectRoot, ".orc", "audit", ticket)
 }
 
+// ArtifactsDirForWorkflow returns the artifacts directory for a ticket,
+// namespaced by workflow when non-empty. Empty workflow → flat layout (backward compat).
+func ArtifactsDirForWorkflow(projectRoot, workflow, ticket string) string {
+	if workflow == "" {
+		return filepath.Join(projectRoot, ".orc", "artifacts", ticket)
+	}
+	return filepath.Join(projectRoot, ".orc", "artifacts", workflow, ticket)
+}
+
+// AuditDirForWorkflow returns the audit directory for a ticket,
+// namespaced by workflow when non-empty.
+func AuditDirForWorkflow(projectRoot, workflow, ticket string) string {
+	if workflow == "" {
+		return filepath.Join(projectRoot, ".orc", "audit", ticket)
+	}
+	return filepath.Join(projectRoot, ".orc", "audit", workflow, ticket)
+}
+
+// AuditBaseDirForWorkflow returns the base audit directory, namespaced by
+// workflow when non-empty.
+func AuditBaseDirForWorkflow(projectRoot, workflow string) string {
+	if workflow == "" {
+		return filepath.Join(projectRoot, ".orc", "audit")
+	}
+	return filepath.Join(projectRoot, ".orc", "audit", workflow)
+}
+
 // AuditStreamLogPath returns the path for an archived stream log in the audit dir.
 func AuditStreamLogPath(auditDir string, phaseIdx, iteration int) string {
 	return filepath.Join(auditDir, "logs", fmt.Sprintf("phase-%d.iter-%d.stream.jsonl", phaseIdx+1, iteration))

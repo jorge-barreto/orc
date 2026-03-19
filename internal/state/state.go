@@ -18,6 +18,7 @@ const (
 type State struct {
 	PhaseIndex     int    `json:"phase_index"`
 	Ticket         string `json:"ticket"`
+	Workflow       string `json:"workflow,omitempty"`
 	Status         string `json:"status"` // running, completed, failed, interrupted
 	PhaseSessionID string `json:"phase_session_id,omitempty"`
 }
@@ -79,10 +80,33 @@ type TicketSummary struct {
 	Timing       *Timing
 }
 
+func loadTicketSummary(st *State, artifactsDir, auditDir string) TicketSummary {
+	costs, err := LoadCosts(auditDir)
+	if err != nil {
+		costs, err = LoadCosts(artifactsDir)
+		if err != nil {
+			costs = &CostData{}
+		}
+	}
+	timing, err := LoadTiming(auditDir)
+	if err != nil {
+		timing, _ = LoadTiming(artifactsDir)
+	}
+	return TicketSummary{
+		Ticket:       st.Ticket,
+		ArtifactsDir: artifactsDir,
+		State:        st,
+		Costs:        costs,
+		Timing:       timing,
+	}
+}
+
 // ListTickets reads all ticket subdirectories under baseArtifactsDir,
 // loads each ticket's state and costs, and returns them sorted by directory name.
 // Costs are loaded from baseAuditDir first, falling back to baseArtifactsDir.
-// Directories that lack a state.json are skipped.
+// Directories that lack a state.json are skipped. Supports both flat layout
+// (artifacts/<ticket>/state.json) and workflow-namespaced layout
+// (artifacts/<workflow>/<ticket>/state.json).
 func ListTickets(baseArtifactsDir, baseAuditDir string) ([]TicketSummary, error) {
 	entries, err := os.ReadDir(baseArtifactsDir)
 	if err != nil {
@@ -99,41 +123,46 @@ func ListTickets(baseArtifactsDir, baseAuditDir string) ([]TicketSummary, error)
 		}
 		ad := filepath.Join(baseArtifactsDir, e.Name())
 
-		// Skip directories without a state.json
-		if _, err := os.Stat(statePath(ad)); err != nil {
-			continue
-		}
-
-		st, err := Load(ad)
-		if err != nil {
-			continue
-		}
-		if st.Ticket == "" {
-			st.Ticket = e.Name()
-		}
-
-		// Try audit dir first for costs/timing, fall back to artifacts dir
-		auditDir := filepath.Join(baseAuditDir, e.Name())
-		costs, err := LoadCosts(auditDir)
-		if err != nil {
-			costs, err = LoadCosts(ad)
+		// Flat layout: artifacts/<ticket>/state.json
+		if _, err := os.Stat(statePath(ad)); err == nil {
+			st, err := Load(ad)
 			if err != nil {
-				costs = &CostData{}
+				continue
 			}
+			if st.Ticket == "" {
+				st.Ticket = e.Name()
+			}
+			auditDir := filepath.Join(baseAuditDir, e.Name())
+			tickets = append(tickets, loadTicketSummary(st, ad, auditDir))
+			continue
 		}
 
-		timing, err := LoadTiming(auditDir)
+		// Workflow-namespaced layout: artifacts/<workflow>/<ticket>/state.json
+		subEntries, err := os.ReadDir(ad)
 		if err != nil {
-			timing, _ = LoadTiming(ad)
+			continue
 		}
-
-		tickets = append(tickets, TicketSummary{
-			Ticket:       st.Ticket,
-			ArtifactsDir: ad,
-			State:        st,
-			Costs:        costs,
-			Timing:       timing,
-		})
+		for _, se := range subEntries {
+			if !se.IsDir() {
+				continue
+			}
+			ticketDir := filepath.Join(ad, se.Name())
+			if _, err := os.Stat(statePath(ticketDir)); err != nil {
+				continue
+			}
+			st, err := Load(ticketDir)
+			if err != nil {
+				continue
+			}
+			if st.Ticket == "" {
+				st.Ticket = se.Name()
+			}
+			if st.Workflow == "" {
+				st.Workflow = e.Name()
+			}
+			auditDir := filepath.Join(baseAuditDir, e.Name(), se.Name())
+			tickets = append(tickets, loadTicketSummary(st, ticketDir, auditDir))
+		}
 	}
 	return tickets, nil
 }

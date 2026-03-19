@@ -88,7 +88,7 @@ func (r *Runner) Run(ctx context.Context) error {
 	}
 
 	// Initialize audit dir for costs, timing, and log archives
-	r.auditDir = state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket)
+	r.auditDir = state.AuditDirForWorkflow(r.Env.ProjectRoot, r.Env.Workflow, r.Env.Ticket)
 	if err := os.MkdirAll(r.auditDir, 0755); err != nil {
 		return setupErr(fmt.Errorf("creating audit dir: %w", err))
 	}
