@@ -81,7 +81,31 @@ func runCmd() *cli.Command {
 				return cfgErr(fmt.Errorf("orc cannot run inside Claude Code (CLAUDECODE env var is set). Run from a regular terminal"))
 			}
 
-			ticket := cmd.Args().First()
+			projectRoot, err := findProjectRoot()
+			if err != nil {
+				return cfgErr(err)
+			}
+
+			flagWorkflow := cmd.Root().String("workflow")
+			args := cmd.Args().Slice()
+			if len(args) == 0 {
+				return cfgErr(fmt.Errorf("ticket argument is required"))
+			}
+
+			// Positional disambiguation: if first arg matches a workflow name and
+			// there's a second arg, treat first as workflow name.
+			var ticket string
+			if len(args) >= 2 && flagWorkflow == "" {
+				if _, found := resolveWorkflowByName(projectRoot, args[0]); found {
+					flagWorkflow = args[0]
+					ticket = args[1]
+				} else {
+					ticket = args[0]
+				}
+			} else {
+				ticket = args[0]
+			}
+
 			if ticket == "" {
 				return cfgErr(fmt.Errorf("ticket argument is required"))
 			}
@@ -89,12 +113,11 @@ func runCmd() *cli.Command {
 				return cfgErr(err)
 			}
 
-			projectRoot, err := findProjectRoot()
+			workflowName, configPath, err := resolveWorkflow(projectRoot, flagWorkflow)
 			if err != nil {
 				return cfgErr(err)
 			}
 
-			configPath := filepath.Join(projectRoot, ".orc", "config.yaml")
 			cfg, err := config.Load(configPath, projectRoot)
 			if err != nil {
 				return cfgErr(fmt.Errorf("loading config: %w", err))
@@ -104,13 +127,14 @@ func runCmd() *cli.Command {
 				return cfgErr(err)
 			}
 
-			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts", ticket)
+			artifactsDir := state.ArtifactsDirForWorkflow(projectRoot, workflowName, ticket)
 
 			env := &dispatch.Environment{
 				ProjectRoot:       projectRoot,
 				WorkDir:           projectRoot,
 				ArtifactsDir:      artifactsDir,
 				Ticket:            ticket,
+				Workflow:          workflowName,
 				AutoMode:          cmd.Bool("auto"),
 				Verbose:           cmd.Bool("verbose"),
 				PhaseCount:        len(cfg.Phases),
@@ -127,6 +151,7 @@ func runCmd() *cli.Command {
 				return cfgErr(fmt.Errorf("loading state: %w", err))
 			}
 			st.Ticket = ticket
+			st.Workflow = workflowName
 			st.Status = state.StatusRunning
 
 			// Handle --retry, --from, and --resume (mutually exclusive)
@@ -228,7 +253,13 @@ func cancelCmd() *cli.Command {
 				return err
 			}
 
-			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts", ticket)
+			flagWorkflow := cmd.Root().String("workflow")
+			workflowName, _, err := resolveWorkflow(projectRoot, flagWorkflow)
+			if err != nil {
+				return err
+			}
+
+			artifactsDir := state.ArtifactsDirForWorkflow(projectRoot, workflowName, ticket)
 
 			// Check if artifacts directory exists
 			if _, err := os.Stat(artifactsDir); os.IsNotExist(err) {
@@ -255,10 +286,10 @@ func cancelCmd() *cli.Command {
 			}
 
 			// Rotate audit dir so it's preserved but distinguishable from future runs
-			auditDir := state.AuditDir(projectRoot, ticket)
+			auditDir := state.AuditDirForWorkflow(projectRoot, workflowName, ticket)
 			if _, err := os.Stat(auditDir); err == nil {
 				ts := time.Now().Format("060102-150405")
-				rotated := filepath.Join(state.AuditBaseDir(projectRoot), fmt.Sprintf("%s-%s", ticket, ts))
+				rotated := filepath.Join(state.AuditBaseDirForWorkflow(projectRoot, workflowName), fmt.Sprintf("%s-%s", ticket, ts))
 				if err := os.Rename(auditDir, rotated); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: failed to rotate audit dir: %v\n", err)
 				}
@@ -281,16 +312,17 @@ func statusCmd() *cli.Command {
 				return err
 			}
 
-			configPath := filepath.Join(projectRoot, ".orc", "config.yaml")
-			cfg, err := config.Load(configPath, projectRoot)
-			if err != nil {
-				return fmt.Errorf("loading config: %w", err)
-			}
-
 			ticket := cmd.Args().First()
 
-			// No argument: show all tickets
+			// No argument: show all tickets across all workflows
 			if ticket == "" {
+				// Try to load config for phase name rendering; OK if it fails (multi-workflow without config.yaml)
+				configPath := filepath.Join(projectRoot, ".orc", "config.yaml")
+				cfg, loadErr := config.Load(configPath, projectRoot)
+				if loadErr != nil {
+					cfg = &config.Config{}
+				}
+
 				baseDir := filepath.Join(projectRoot, ".orc", "artifacts")
 				baseAuditDir := state.AuditBaseDir(projectRoot)
 				tickets, err := state.ListTickets(baseDir, baseAuditDir)
@@ -301,12 +333,23 @@ func statusCmd() *cli.Command {
 				return nil
 			}
 
-			// With argument: single-ticket detail view
+			// Single ticket view
 			if err := validateTicketPath(ticket); err != nil {
 				return err
 			}
 
-			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts", ticket)
+			flagWorkflow := cmd.Root().String("workflow")
+			workflowName, configPath, err := resolveWorkflow(projectRoot, flagWorkflow)
+			if err != nil {
+				return err
+			}
+
+			cfg, err := config.Load(configPath, projectRoot)
+			if err != nil {
+				return fmt.Errorf("loading config: %w", err)
+			}
+
+			artifactsDir := state.ArtifactsDirForWorkflow(projectRoot, workflowName, ticket)
 			if !state.HasState(artifactsDir) {
 				return fmt.Errorf("no run found for ticket %s", ticket)
 			}
@@ -315,7 +358,7 @@ func statusCmd() *cli.Command {
 				return fmt.Errorf("loading state: %w", err)
 			}
 
-			auditDir := state.AuditDir(projectRoot, ticket)
+			auditDir := state.AuditDirForWorkflow(projectRoot, workflowName, ticket)
 			ux.RenderStatus(cfg, st, artifactsDir, auditDir)
 			return nil
 		},
@@ -341,13 +384,18 @@ func doctorCmd() *cli.Command {
 				return err
 			}
 
-			configPath := filepath.Join(projectRoot, ".orc", "config.yaml")
+			flagWorkflow := cmd.Root().String("workflow")
+			workflowName, configPath, err := resolveWorkflow(projectRoot, flagWorkflow)
+			if err != nil {
+				return err
+			}
+
 			cfg, err := config.Load(configPath, projectRoot)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
 
-			artifactsDir := filepath.Join(projectRoot, ".orc", "artifacts", ticket)
+			artifactsDir := state.ArtifactsDirForWorkflow(projectRoot, workflowName, ticket)
 			st, err := state.Load(artifactsDir)
 			if err != nil {
 				return fmt.Errorf("loading state: %w", err)
