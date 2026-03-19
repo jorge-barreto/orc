@@ -15,14 +15,16 @@ You are wrapping up work on a bead.
    - Stage relevant files with `git add <specific files>` — stage Go files, test files, markdown, yaml, and shell scripts that are part of this bead's work. Never use `git add .` or `git add -A`.
    - Read the bead ID from $ARTIFACTS_DIR/current-bead.txt.
    - Read the bead detail from $ARTIFACTS_DIR/current-bead-detail.txt to get the bead title.
-   - Commit with the **bead ID only** (not the parent ticket):
+   - Get the parent work item title: `bd show $(cat "$ARTIFACTS_DIR/epic-id.txt")` — extract the title.
+   - Commit with the **bead ID** in the subject and **parent title** in the body:
      ```
-     git commit -m "<bead-id>: <short description of what this bead accomplished>
+     git commit -m "<bead-id>: <short description>
+
+     Part of: <parent-title>
 
      Co-Authored-By: orc <orc@jorgebarreto.dev>"
      ```
-     Example: `orc-4ho.3.4: Update docs with recipe documentation`
-     NOT: `orc-4ho.3: orc-4ho.3.4: Update docs...` (do not duplicate IDs)
+     Do NOT put the parent bead ID in the subject line — only the current bead ID.
 
 4. **Close the bead:**
    ```bash
