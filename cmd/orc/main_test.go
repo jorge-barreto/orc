@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -123,5 +125,226 @@ func TestResolvePhaseRef_NegativeNumber(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "out of range") {
 		t.Fatalf("expected 'out of range' in error, got: %v", err)
+	}
+}
+
+func TestDiscoverWorkflows_None(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".orc"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".orc", "config.yaml"), []byte("phases: []"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := discoverWorkflows(dir)
+	if got != nil {
+		t.Fatalf("expected nil, got %v", got)
+	}
+}
+
+func TestDiscoverWorkflows_WithWorkflows(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".orc", "workflows", "bugfix.yaml"), []byte("phases: []"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".orc", "workflows", "refactor.yaml"), []byte("phases: []"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := discoverWorkflows(dir)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 workflows, got %d: %v", len(got), got)
+	}
+	found := map[string]bool{"bugfix": false, "refactor": false}
+	for _, name := range got {
+		found[name] = true
+	}
+	for name, ok := range found {
+		if !ok {
+			t.Fatalf("expected workflow %q in results, got %v", name, got)
+		}
+	}
+}
+
+func TestResolveWorkflow_SingleConfig(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".orc"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(dir, ".orc", "config.yaml")
+	if err := os.WriteFile(configPath, []byte("phases: []"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	name, path, err := resolveWorkflow(dir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != "" {
+		t.Fatalf("expected empty workflowName, got %q", name)
+	}
+	if path != configPath {
+		t.Fatalf("expected %q, got %q", configPath, path)
+	}
+}
+
+func TestResolveWorkflow_ExplicitFlag(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	wfPath := filepath.Join(dir, ".orc", "workflows", "bugfix.yaml")
+	if err := os.WriteFile(wfPath, []byte("phases: []"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	name, path, err := resolveWorkflow(dir, "bugfix")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != "bugfix" {
+		t.Fatalf("expected workflowName %q, got %q", "bugfix", name)
+	}
+	if path != wfPath {
+		t.Fatalf("expected %q, got %q", wfPath, path)
+	}
+}
+
+func TestResolveWorkflow_DefaultWithConfig(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(dir, ".orc", "config.yaml")
+	if err := os.WriteFile(configPath, []byte("phases: []"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".orc", "workflows", "bugfix.yaml"), []byte("phases: []"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	name, path, err := resolveWorkflow(dir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != "default" {
+		t.Fatalf("expected workflowName %q, got %q", "default", name)
+	}
+	if path != configPath {
+		t.Fatalf("expected %q, got %q", configPath, path)
+	}
+}
+
+func TestResolveWorkflow_SoleWorkflow(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	wfPath := filepath.Join(dir, ".orc", "workflows", "bugfix.yaml")
+	if err := os.WriteFile(wfPath, []byte("phases: []"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	name, path, err := resolveWorkflow(dir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != "bugfix" {
+		t.Fatalf("expected workflowName %q, got %q", "bugfix", name)
+	}
+	if path != wfPath {
+		t.Fatalf("expected %q, got %q", wfPath, path)
+	}
+}
+
+func TestResolveWorkflow_MultipleNoDefault(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".orc", "workflows", "bugfix.yaml"), []byte("phases: []"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".orc", "workflows", "refactor.yaml"), []byte("phases: []"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err := resolveWorkflow(dir, "")
+	if err == nil {
+		t.Fatal("expected error for multiple workflows with no default")
+	}
+	if !strings.Contains(err.Error(), "specify one with -w") {
+		t.Fatalf("expected 'specify one with -w' in error, got: %v", err)
+	}
+}
+
+func TestResolveWorkflow_UnknownName(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".orc", "workflows", "bugfix.yaml"), []byte("phases: []"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err := resolveWorkflow(dir, "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for unknown workflow name")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected 'not found' in error, got: %v", err)
+	}
+}
+
+func TestResolveWorkflowByName(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	wfPath := filepath.Join(dir, ".orc", "workflows", "bugfix.yaml")
+	if err := os.WriteFile(wfPath, []byte("phases: []"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	path, ok := resolveWorkflowByName(dir, "bugfix")
+	if !ok {
+		t.Fatal("expected to find bugfix workflow")
+	}
+	if path != wfPath {
+		t.Fatalf("expected %q, got %q", wfPath, path)
+	}
+
+	_, ok = resolveWorkflowByName(dir, "missing")
+	if ok {
+		t.Fatal("expected not to find missing workflow")
+	}
+}
+
+func TestFindProjectRoot_WorkflowsDir(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(orig) //nolint:errcheck
+
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := findProjectRoot()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != dir {
+		t.Fatalf("expected %q, got %q", dir, got)
 	}
 }

@@ -30,6 +30,7 @@ func main() {
 		Description: "Run 'orc docs' for documentation on config syntax, variables, phases, and more.",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{Name: "no-color", Usage: "Disable colored output"},
+			&cli.StringFlag{Name: "workflow", Aliases: []string{"w"}, Usage: "Select a named workflow from .orc/workflows/"},
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			if cmd.Bool("no-color") || os.Getenv("NO_COLOR") != "" || !ux.IsTerminal(os.Stdout) {
@@ -436,23 +437,128 @@ func validateTicketPath(ticket string) error {
 	return nil
 }
 
-// findProjectRoot walks up from cwd looking for .orc/config.yaml.
+// findProjectRoot walks up from cwd looking for .orc/config.yaml or .orc/workflows/.
 func findProjectRoot() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
 	for {
+		// Check for config.yaml (standard)
 		configPath := filepath.Join(dir, ".orc", "config.yaml")
 		if _, err := os.Stat(configPath); err == nil {
 			return dir, nil
 		}
+		// Check for workflows/ directory (multi-workflow without config.yaml)
+		workflowsDir := filepath.Join(dir, ".orc", "workflows")
+		if info, err := os.Stat(workflowsDir); err == nil && info.IsDir() {
+			return dir, nil
+		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", fmt.Errorf("no .orc/config.yaml found (searched from cwd to root)")
+			return "", fmt.Errorf("no .orc/ project found (searched from cwd to root)")
 		}
 		dir = parent
 	}
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// discoverWorkflows returns workflow names from .orc/workflows/*.yaml/*.yml.
+// Returns nil if the directory doesn't exist (single-config mode).
+func discoverWorkflows(projectRoot string) []string {
+	workflowsDir := filepath.Join(projectRoot, ".orc", "workflows")
+	entries, err := os.ReadDir(workflowsDir)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml") {
+			names = append(names, strings.TrimSuffix(strings.TrimSuffix(name, ".yaml"), ".yml"))
+		}
+	}
+	return names
+}
+
+func isMultiWorkflow(projectRoot string) bool {
+	return len(discoverWorkflows(projectRoot)) > 0
+}
+
+// resolveWorkflow determines which workflow to use.
+// Returns (workflowName, configPath, error).
+// workflowName is empty for single-config flat layout.
+func resolveWorkflow(projectRoot, flagWorkflow string) (workflowName, configPath string, err error) {
+	configYAML := filepath.Join(projectRoot, ".orc", "config.yaml")
+	hasConfig := fileExists(configYAML)
+	workflows := discoverWorkflows(projectRoot)
+
+	if len(workflows) == 0 {
+		if flagWorkflow != "" {
+			return "", "", fmt.Errorf("--workflow specified but no .orc/workflows/ directory found")
+		}
+		if !hasConfig {
+			return "", "", fmt.Errorf("no .orc/config.yaml or .orc/workflows/ found")
+		}
+		return "", configYAML, nil
+	}
+
+	// Multi-workflow mode
+	if flagWorkflow != "" {
+		path := filepath.Join(projectRoot, ".orc", "workflows", flagWorkflow+".yaml")
+		if !fileExists(path) {
+			path = filepath.Join(projectRoot, ".orc", "workflows", flagWorkflow+".yml")
+			if !fileExists(path) {
+				return "", "", fmt.Errorf("workflow %q not found — available: %s", flagWorkflow, formatWorkflowList(hasConfig, workflows))
+			}
+		}
+		return flagWorkflow, path, nil
+	}
+
+	// No explicit workflow — resolve default
+	if !hasConfig && len(workflows) == 1 {
+		name := workflows[0]
+		path := filepath.Join(projectRoot, ".orc", "workflows", name+".yaml")
+		if !fileExists(path) {
+			path = filepath.Join(projectRoot, ".orc", "workflows", name+".yml")
+		}
+		return name, path, nil
+	}
+
+	if hasConfig {
+		return "default", configYAML, nil
+	}
+
+	return "", "", fmt.Errorf("multiple workflows found, specify one with -w: %s", strings.Join(workflows, ", "))
+}
+
+// resolveWorkflowByName looks up a specific workflow name and returns its config path.
+func resolveWorkflowByName(projectRoot, name string) (string, bool) {
+	path := filepath.Join(projectRoot, ".orc", "workflows", name+".yaml")
+	if fileExists(path) {
+		return path, true
+	}
+	path = filepath.Join(projectRoot, ".orc", "workflows", name+".yml")
+	if fileExists(path) {
+		return path, true
+	}
+	return "", false
+}
+
+func formatWorkflowList(hasConfig bool, workflows []string) string {
+	var all []string
+	if hasConfig {
+		all = append(all, "default (config.yaml)")
+	}
+	all = append(all, workflows...)
+	return strings.Join(all, ", ")
 }
 
 // resolvePhaseRef resolves a --from/--retry value to a 0-based phase index.
