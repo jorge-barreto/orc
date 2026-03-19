@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -165,14 +164,14 @@ func runCmd() *cli.Command {
 				return cfgErr(fmt.Errorf("--resume is mutually exclusive with --retry and --from"))
 			}
 			if retryVal != "" {
-				idx, err := resolvePhaseRef(retryVal, cfg.Phases)
+				idx, err := config.ResolvePhaseRef(retryVal, cfg.Phases)
 				if err != nil {
 					return cfgErr(fmt.Errorf("--retry: %w", err))
 				}
 				st.SetPhase(idx)
 			}
 			if fromVal != "" {
-				idx, err := resolvePhaseRef(fromVal, cfg.Phases)
+				idx, err := config.ResolvePhaseRef(fromVal, cfg.Phases)
 				if err != nil {
 					return cfgErr(fmt.Errorf("--from: %w", err))
 				}
@@ -612,33 +611,4 @@ func formatWorkflowList(hasConfig bool, workflows []string) string {
 	}
 	all = append(all, workflows...)
 	return strings.Join(all, ", ")
-}
-
-// resolvePhaseRef resolves a --from/--retry value to a 0-based phase index.
-// It accepts a 1-indexed number (e.g., "3") or a phase name (e.g., "implement").
-// Numbers take precedence over names — a phase literally named "3" would be
-// resolved as numeric index 3, not as a name lookup.
-// Returns the 0-based index, or an error if the value is invalid.
-func resolvePhaseRef(value string, phases []config.Phase) (int, error) {
-	// Try as a number first (numbers take precedence over names)
-	if n, err := strconv.Atoi(value); err == nil {
-		if n < 1 || n > len(phases) {
-			return 0, fmt.Errorf("%d is out of range (1-%d)", n, len(phases))
-		}
-		return n - 1, nil
-	}
-
-	// Try as a phase name
-	for i, p := range phases {
-		if p.Name == value {
-			return i, nil
-		}
-	}
-
-	// Unknown name — list available phases
-	names := make([]string, len(phases))
-	for i, p := range phases {
-		names[i] = p.Name
-	}
-	return 0, fmt.Errorf("unknown phase %q — available phases: %s", value, strings.Join(names, ", "))
 }

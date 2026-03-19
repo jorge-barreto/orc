@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -129,4 +131,26 @@ func (c *Config) PhaseIndex(name string) int {
 		}
 	}
 	return -1
+}
+
+// ResolvePhaseRef resolves a phase reference (1-indexed number or name) to a 0-based index.
+// Numbers take precedence over names — a phase literally named "3" would be
+// resolved as numeric index 3, not as a name lookup.
+func ResolvePhaseRef(value string, phases []Phase) (int, error) {
+	if n, err := strconv.Atoi(value); err == nil {
+		if n < 1 || n > len(phases) {
+			return 0, fmt.Errorf("%d is out of range (1-%d)", n, len(phases))
+		}
+		return n - 1, nil
+	}
+	for i, p := range phases {
+		if p.Name == value {
+			return i, nil
+		}
+	}
+	names := make([]string, len(phases))
+	for i, p := range phases {
+		names[i] = p.Name
+	}
+	return 0, fmt.Errorf("unknown phase %q — available phases: %s", value, strings.Join(names, ", "))
 }
