@@ -97,6 +97,26 @@ func TestSaveAndLoad_RoundTrip_WithSessionID(t *testing.T) {
 	}
 }
 
+func TestSaveAndLoad_RoundTrip_WithWorkflow(t *testing.T) {
+	dir := t.TempDir()
+	original := &State{
+		PhaseIndex: 1,
+		Ticket:     "T-001",
+		Status:     StatusRunning,
+		Workflow:   "bugfix",
+	}
+	if err := original.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Workflow != "bugfix" {
+		t.Fatalf("Workflow = %q, want %q", loaded.Workflow, "bugfix")
+	}
+}
+
 func TestAdvance_ClearsSessionID(t *testing.T) {
 	s := &State{PhaseIndex: 2, PhaseSessionID: "session-123"}
 	s.Advance()
