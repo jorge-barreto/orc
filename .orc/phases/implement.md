@@ -1,53 +1,45 @@
-You are a senior Go engineer implementing a planned change for **orc**.
+You are implementing changes for a single work item.
 
-## Your Task
+## Context
 
-Follow the implementation plan exactly. Write code, write tests, and verify everything compiles and passes.
+- Bead plan: read $ARTIFACTS_DIR/bead-plan.md
+- Bead detail: read $ARTIFACTS_DIR/current-bead-detail.txt
+- Current work item: read $ARTIFACTS_DIR/current-ticket.txt (use for commit context)
+- Review feedback (if looping): check $ARTIFACTS_DIR/quick-review-findings.md
+- Project root: $PROJECT_ROOT
 
-## Step 1: Read Context
+## Instructions
 
-1. Read `$ARTIFACTS_DIR/plan.md` — this is your specification. Follow it precisely.
-2. Read `$PROJECT_ROOT/CLAUDE.md` — project conventions.
-3. Check `$ARTIFACTS_DIR/feedback/` for feedback from previous attempts:
-   - If feedback exists from **test** failures: read the error output carefully. The test suite failed. Fix the specific failures.
-   - If feedback exists from **review-check**: read the review findings. The reviewer found issues with your implementation. Address every blocking issue — the reviewer may have flagged issues beyond the plan's scope (bugs, regressions, security issues). These are legitimate and must be fixed.
-   - If no feedback exists: this is the first attempt. Follow the plan from scratch.
+1. Read the bead plan at $ARTIFACTS_DIR/bead-plan.md. This is your SOLE specification.
+2. If $ARTIFACTS_DIR/quick-review-findings.md exists and contains "Issues Found", read it and address every issue listed.
+3. Check `$ARTIFACTS_DIR/feedback/` for feedback from previous attempts (test failures, build errors). If feedback exists, read it and fix the specific failures.
+4. Read `$PROJECT_ROOT/CLAUDE.md` — project conventions.
+5. Implement the changes described in the bead plan.
+6. Write or update tests as specified in the bead plan.
+7. Run `make build` to verify compilation.
+8. Run `make test` to verify no regressions.
+9. If any test fails, fix it before finishing. Do NOT leave failing tests.
 
-## Step 2: Implement
+## Scope Rules
 
-Follow the plan's "Implementation Steps" section in order. For each step:
+Your ONLY task is what is described in `$ARTIFACTS_DIR/bead-plan.md`. Nothing else.
 
-1. Read the file(s) mentioned in the plan before modifying them.
-2. Make the changes described.
-3. Use the Edit tool for targeted changes — don't rewrite entire files unless the plan calls for a new file.
+- **Do NOT read `$ARTIFACTS_DIR/plan.md`** unless the bead plan explicitly tells you to consult it for context on a specific point. The overall plan contains work for OTHER beads that is NOT your responsibility.
+- **Do NOT implement work belonging to other beads.** If the bead plan says "add field X to struct Y", add field X. Do not also add fields A, B, C that you think will be needed later.
+- **Do NOT modify files outside the bead plan's scope.** The only exception is updating imports or fixing compile errors directly caused by your changes.
+- **If you discover something that needs to be done but is NOT in the bead plan:**
+  1. Note it in stdout so the wrap-up phase can capture it as a new bead.
+  2. Do NOT implement it.
+- **Do NOT add abstractions, utilities, or helpers** that the bead plan does not call for.
+- **Do NOT refactor adjacent code** unless the bead plan explicitly says to.
 
-## Step 3: Update Documentation
+## Quality Rules
 
-If the plan's "Documentation" section lists any doc surfaces that need updating, implement those changes now. For each doc file listed in the "Files to Modify" table that is a documentation surface (`README.md`, `internal/docs/content.go`, `cmd/orc/main.go` help text, `internal/scaffold/`):
-
-1. Read the file to understand the existing format and conventions.
-2. Make the changes described in the plan's Documentation section.
-3. Ensure consistency across all doc surfaces — the same feature should be described the same way in `orc --help`, `orc docs`, and the README.
-
-If the Documentation section says "No change" for all surfaces, skip this step.
-
-## Step 4: Test
-
-1. Run `make build` to verify compilation.
-2. Run the specific test commands from the plan's "Test Strategy" section.
-3. Run `make test` to verify no regressions.
-4. If any test fails, fix it before finishing. Do NOT leave failing tests.
-
-## Step 5: Verify Acceptance Criteria
-
-Go through each acceptance criterion in the plan. For each one, verify it's met — either by reading the code you wrote or by running a command. If any criterion isn't met, go back and implement it.
-
-## Rules
-
-- Follow the plan. Don't add features, refactor code, or make improvements beyond what the plan describes.
 - Follow existing code patterns. Read neighboring code before writing new code.
 - Keep dependencies minimal — only `gopkg.in/yaml.v3`, `github.com/urfave/cli/v3`, and `github.com/google/uuid` beyond stdlib.
 - Wrap errors with `%w` for error chains.
 - State files use atomic writes (write to `.tmp`, fsync, rename).
 - Every new exported function needs a test. Follow the testing patterns in the package's existing `_test.go` file.
-- Run `make test` as your final action. If it fails, fix it. Do not finish with failing tests.
+- Use the Edit tool for targeted changes — don't rewrite entire files unless the plan calls for a new file.
+- Match the existing code style in each file you touch.
+- Run `make test` as your final action. If it fails, fix it.

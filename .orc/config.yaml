@@ -16,7 +16,7 @@ phases:
 
   - name: plan
     type: agent
-    description: Read the roadmap item and produce an implementation plan
+    description: Read the work item and produce an implementation plan
     prompt: .orc/phases/plan.md
     timeout: 15
     outputs:
@@ -34,48 +34,156 @@ phases:
       max: 3
       check: test -f $ARTIFACTS_DIR/plan-approved.txt
 
+  - name: create-beads
+    type: agent
+    description: Decompose the plan into ordered child beads
+    prompt: .orc/phases/create-beads.md
+    model: sonnet
+    timeout: 5
+    allow-tools:
+      - Bash
+      - Read
+    outputs:
+      - bead-ids.txt
+
+  # ── Bead Implementation Loop ─────────────────────────────
+
+  - name: pick-bead
+    type: script
+    description: Select the next ready bead
+    run: .orc/scripts/pick-bead.sh
+    timeout: 1
+
+  - name: plan-bead
+    type: agent
+    description: Write a focused implementation plan for the current bead
+    prompt: .orc/phases/plan-bead.md
+    model: sonnet
+    timeout: 10
+    outputs:
+      - bead-plan.md
+
   - name: implement
     type: agent
-    description: Implement the changes following the plan
+    description: Implement changes for the current bead
     prompt: .orc/phases/implement.md
     model: sonnet
     timeout: 30
 
+  - name: auto-fix
+    type: script
+    description: Run gofmt on all Go files
+    run: .orc/scripts/auto-fix.sh
+    timeout: 2
+
+  - name: build
+    type: script
+    description: Verify compilation and vet checks
+    run: cd $PROJECT_ROOT && make build && go vet ./...
+    timeout: 2
+    loop:
+      goto: implement
+      max: 3
+
   - name: test
     type: script
-    description: Run the test suite
+    description: Run the full test suite
     run: cd $PROJECT_ROOT && make test
     timeout: 5
     loop:
       goto: implement
       max: 5
-      on-exhaust:
-        goto: plan
-        max: 2
 
-  - name: review
+  - name: quick-review
     type: agent
-    description: Review the implementation against the plan
-    prompt: .orc/phases/review.md
+    description: Fast review — plan compliance and obvious bugs
+    prompt: .orc/phases/quick-review.md
+    model: sonnet
+    timeout: 10
+    outputs:
+      - quick-review-findings.md
+    loop:
+      goto: implement
+      max: 2
+      check: test -f $ARTIFACTS_DIR/quick-review-pass.txt
+
+  - name: wrap-up
+    type: agent
+    description: Commit changes, close bead, note discovered issues
+    prompt: .orc/phases/wrap-up.md
+    model: sonnet
+    timeout: 5
+
+  - name: check-remaining
+    type: script
+    description: Loop back if incomplete beads remain
+    run: .orc/scripts/check-remaining.sh
+    loop:
+      goto: pick-bead
+      max: 10
+
+  # ── Post-Loop Final Review ───────────────────────────────
+
+  - name: deep-review
+    type: agent
+    description: Thorough review — correctness, edge cases, conventions
+    prompt: .orc/phases/deep-review.md
     timeout: 15
     outputs:
       - review-findings.md
+    allow-tools:
+      - Agent
     loop:
-      goto: implement
-      max: 3
-      check: test -f $ARTIFACTS_DIR/review-pass.txt
-      on-exhaust:
-        goto: plan
-        max: 2
+      goto: plan
+      max: 10
+      check: test -f $ARTIFACTS_DIR/deep-review-pass.txt
 
-  - name: commit
+  - name: summary
     type: script
-    description: Stage and commit the changes
-    run: .orc/scripts/commit.sh
+    description: Generate a run summary report
+    run: .orc/scripts/summary.sh
     timeout: 1
 
   - name: bead-close
     type: script
-    description: Close the ticket's bead after successful commit
+    description: Close the parent bead after all work is complete
     run: .orc/scripts/bead-close.sh
     timeout: 1
+
+  - name: check-backlog
+    type: script
+    description: Loop back to work the next backlog item if any remain
+    run: .orc/scripts/check-backlog.sh
+    loop:
+      goto: bead-claim
+      max: 20
+
+  # ── Wave Wrap-Up (only in wave mode) ───────────────────
+
+  - name: wave-review
+    type: agent
+    description: Holistic review of all wave changes
+    prompt: .orc/phases/wave-review.md
+    timeout: 15
+    condition: '[ "$(cat "$ORC_ARTIFACTS_DIR/run-mode.txt" 2>/dev/null)" = "wave" ]'
+    outputs:
+      - wave-review-findings.md
+    allow-tools:
+      - Agent
+
+  - name: triage
+    type: agent
+    description: Triage wave review findings into beads
+    prompt: .orc/phases/triage.md
+    model: sonnet
+    timeout: 5
+    condition: '[ "$(cat "$ORC_ARTIFACTS_DIR/run-mode.txt" 2>/dev/null)" = "wave" ]'
+    outputs:
+      - triage-results.md
+
+  - name: wave-summary
+    type: script
+    description: Final wave summary report
+    run: .orc/scripts/wave-summary.sh
+    timeout: 1
+    condition: '[ "$(cat "$ORC_ARTIFACTS_DIR/run-mode.txt" 2>/dev/null)" = "wave" ]'

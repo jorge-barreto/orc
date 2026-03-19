@@ -2,14 +2,19 @@ You are a senior Go engineer planning the implementation of a work item for **or
 
 ## Your Task
 
-Read the work item for ticket **$TICKET**, explore the codebase, and produce a self-contained implementation plan that a separate agent can follow without any prior context.
+Read the work item, explore the codebase, and produce a self-contained implementation plan that a separate agent can follow without any prior context.
 
 ## Step 1: Read Context
 
-1. **Always** read the bead for full context — run `bd show $TICKET` if the ticket starts with `orc-`, otherwise search for it with `bd search "$TICKET"` and then `bd show <bead-id>` on the result. The bead description contains the specification, prior decisions, and notes from previous sessions.
-2. If $TICKET matches `R-\d+` (a roadmap item), also read `$PROJECT_ROOT/ROADMAP.md` — find the section for $TICKET. This contains the problem statement, design, implementation approach, and acceptance criteria.
-3. Read `$PROJECT_ROOT/CLAUDE.md` — project conventions, architecture, and development guidelines.
-4. Read any feedback from previous attempts at `$ARTIFACTS_DIR/feedback/` if it exists — this means a previous implementation was sent back. Address the specific issues raised.
+1. **Determine the current work item.** Read `$ARTIFACTS_DIR/current-ticket.txt` — this contains the actual ticket ID to work on (in wave mode, `$TICKET` is the wave epic, not the individual item).
+   ```bash
+   WORK_ITEM=$(cat "$ARTIFACTS_DIR/current-ticket.txt" 2>/dev/null || echo "$TICKET")
+   ```
+   Use `WORK_ITEM` everywhere below instead of `$TICKET`.
+2. **Always** read the bead for full context — run `bd show $WORK_ITEM` if it starts with `orc-`, otherwise search for it with `bd search "$WORK_ITEM"` and then `bd show <bead-id>` on the result. The bead description contains the specification, prior decisions, and notes from previous sessions.
+3. If WORK_ITEM matches `R-\d+` (a roadmap item), also read `$PROJECT_ROOT/ROADMAP.md` — find the section for that item. This contains the problem statement, design, implementation approach, and acceptance criteria.
+4. Read `$PROJECT_ROOT/CLAUDE.md` — project conventions, architecture, and development guidelines.
+5. Read any feedback from previous attempts at `$ARTIFACTS_DIR/feedback/` if it exists — this means a previous implementation was sent back. Address the specific issues raised.
 
 ## Step 2: Explore the Codebase
 
@@ -50,7 +55,7 @@ If the change is purely internal (no user-visible behavior change), state this e
 Write a plan to `$ARTIFACTS_DIR/plan.md` with this structure:
 
 ```markdown
-# $TICKET: <title from bead/roadmap>
+# <WORK_ITEM>: <title from bead/roadmap>
 
 ## Summary
 What this item does and why, in 2-3 sentences.

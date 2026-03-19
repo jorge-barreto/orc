@@ -13,10 +13,15 @@ rm -f "$ARTIFACTS_DIR/plan-approved.txt"
 ## Step 1: Read Context
 
 1. Read `$ARTIFACTS_DIR/plan.md` — the plan under review.
-2. **Always** read the bead for full context — run `bd show $TICKET` if the ticket starts with `orc-`, otherwise search for it with `bd search "$TICKET"` and then `bd show <bead-id>` on the result. Compare the plan against the bead's requirements.
-3. If $TICKET matches `R-\d+` (a roadmap item), also read `$PROJECT_ROOT/ROADMAP.md` — find the section for $TICKET. Compare the plan against the roadmap item's requirements.
-4. Read `$PROJECT_ROOT/CLAUDE.md` — project conventions.
-5. If `$ARTIFACTS_DIR/plan-review.md` exists from a previous review, read it to see what was previously flagged.
+2. **Determine the current work item:**
+   ```bash
+   WORK_ITEM=$(cat "$ARTIFACTS_DIR/current-ticket.txt" 2>/dev/null || echo "$TICKET")
+   ```
+   Use `WORK_ITEM` everywhere below instead of `$TICKET`.
+3. **Always** read the bead for full context — run `bd show $WORK_ITEM` if it starts with `orc-`, otherwise search for it with `bd search "$WORK_ITEM"` and then `bd show <bead-id>` on the result. Compare the plan against the bead's requirements.
+4. If WORK_ITEM matches `R-\d+` (a roadmap item), also read `$PROJECT_ROOT/ROADMAP.md` — find the section for that item. Compare the plan against the roadmap item's requirements.
+5. Read `$PROJECT_ROOT/CLAUDE.md` — project conventions.
+6. If `$ARTIFACTS_DIR/plan-review.md` exists from a previous review, read it to see what was previously flagged.
 
 ## Step 2: Determine Iteration
 
@@ -26,7 +31,7 @@ Check the loop counter to determine which review pass this is:
 cat "$ARTIFACTS_DIR/loop-counts.json" 2>/dev/null || echo "first review"
 ```
 
-- **First review** (no loop-counts.json or review-plan count is absent): Apply **maximum scrutiny**. Examine every file reference, every implementation step, every acceptance criterion. You MUST find blocking issues — a non-trivial implementation plan invariably has gaps, wrong assumptions, or missing files on first inspection.
+- **First review** (no loop-counts.json or review-plan count is absent): Apply **maximum scrutiny**. Examine every file reference, every implementation step, every acceptance criterion. If there are genuine blocking issues, flag them. If the plan is ready, approve it.
 - **Second review** (review-plan count is 1): Verify previous blocking issues are resolved. Apply **fresh scrutiny** to areas changed by the plan agent — revisions often introduce new problems. You should still expect to find issues unless the revisions were flawless.
 - **Third review and beyond** (review-plan count >= 2): You may now pass if zero blocking issues remain. Apply the **convergence rule** — don't hold the plan hostage over minor preferences.
 
@@ -76,7 +81,7 @@ Do NOT skip this step. Do NOT trust the plan's descriptions without checking the
 Write your review to `$ARTIFACTS_DIR/plan-review.md`:
 
 ```markdown
-# Plan Review: $TICKET
+# Plan Review: $WORK_ITEM
 
 ## Blocking Issues
 
