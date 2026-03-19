@@ -85,6 +85,8 @@ func (t *Timing) Flush(artifactsDir string) error {
 
 // TotalElapsed returns the sum of all completed timing entry durations.
 func (t *Timing) TotalElapsed() time.Duration {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	var total time.Duration
 	for _, e := range t.Entries {
 		if !e.End.IsZero() {
