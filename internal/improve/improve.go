@@ -154,7 +154,9 @@ func gatherPhaseLogs(auditDir, artifactsDir string) string {
 	// Final iteration logs in current artifacts dir
 	artifactMatches, _ := filepath.Glob(filepath.Join(artifactsDir, "logs", "phase-*.log"))
 
-	all := append(auditMatches, artifactMatches...)
+	all := make([]string, 0, len(auditMatches)+len(artifactMatches))
+	all = append(all, auditMatches...)
+	all = append(all, artifactMatches...)
 	sort.Strings(all)
 
 	var entries []string
@@ -176,7 +178,9 @@ func gatherFeedback(auditDir, artifactsDir string) string {
 	auditMatches, _ := filepath.Glob(filepath.Join(auditDir, "feedback", "*.md"))
 	artifactMatches, _ := filepath.Glob(filepath.Join(artifactsDir, "feedback", "*.md"))
 
-	all := append(auditMatches, artifactMatches...)
+	all := make([]string, 0, len(auditMatches)+len(artifactMatches))
+	all = append(all, auditMatches...)
+	all = append(all, artifactMatches...)
 	sort.Strings(all)
 
 	var entries []string

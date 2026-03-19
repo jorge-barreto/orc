@@ -422,6 +422,28 @@ func TestGatherPhaseLogs_Empty(t *testing.T) {
 	}
 }
 
+func TestGatherPhaseLogs_NoAliasing(t *testing.T) {
+	dir := t.TempDir()
+	auditDir := filepath.Join(dir, "audit")
+	artifactsDir := filepath.Join(dir, "artifacts")
+
+	os.MkdirAll(filepath.Join(auditDir, "logs"), 0755)
+	os.WriteFile(filepath.Join(auditDir, "logs", "phase-1.iter-1.log"), []byte("audit log"), 0644)
+
+	os.MkdirAll(filepath.Join(artifactsDir, "logs"), 0755)
+	os.WriteFile(filepath.Join(artifactsDir, "logs", "phase-1.log"), []byte("artifact log"), 0644)
+
+	result1 := gatherPhaseLogs(auditDir, artifactsDir)
+	result2 := gatherPhaseLogs(auditDir, artifactsDir)
+
+	if result1 != result2 {
+		t.Errorf("gatherPhaseLogs returned different results on repeated calls:\nfirst:  %s\nsecond: %s", result1, result2)
+	}
+	if !strings.Contains(result1, "audit log") || !strings.Contains(result1, "artifact log") {
+		t.Errorf("expected both audit and artifact logs, got: %s", result1)
+	}
+}
+
 func TestGatherFeedback(t *testing.T) {
 	dir := t.TempDir()
 	auditDir := filepath.Join(dir, "audit", "TEST-1")
@@ -449,6 +471,28 @@ func TestGatherFeedback_Empty(t *testing.T) {
 	result := gatherFeedback("/nonexistent/audit", "/nonexistent/artifacts")
 	if result != "" {
 		t.Fatalf("expected empty string, got: %q", result)
+	}
+}
+
+func TestGatherFeedback_NoAliasing(t *testing.T) {
+	dir := t.TempDir()
+	auditDir := filepath.Join(dir, "audit")
+	artifactsDir := filepath.Join(dir, "artifacts")
+
+	os.MkdirAll(filepath.Join(auditDir, "feedback"), 0755)
+	os.WriteFile(filepath.Join(auditDir, "feedback", "from-review.md"), []byte("audit feedback"), 0644)
+
+	os.MkdirAll(filepath.Join(artifactsDir, "feedback"), 0755)
+	os.WriteFile(filepath.Join(artifactsDir, "feedback", "from-check.md"), []byte("artifact feedback"), 0644)
+
+	result1 := gatherFeedback(auditDir, artifactsDir)
+	result2 := gatherFeedback(auditDir, artifactsDir)
+
+	if result1 != result2 {
+		t.Errorf("gatherFeedback returned different results on repeated calls:\nfirst:  %s\nsecond: %s", result1, result2)
+	}
+	if !strings.Contains(result1, "audit feedback") || !strings.Contains(result1, "artifact feedback") {
+		t.Errorf("expected both audit and artifact feedback, got: %s", result1)
 	}
 }
 
