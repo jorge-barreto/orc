@@ -559,6 +559,9 @@ func resolveWorkflow(projectRoot, flagWorkflow string) (workflowName, configPath
 
 	// Multi-workflow mode
 	if flagWorkflow != "" {
+		if flagWorkflow != filepath.Base(flagWorkflow) || flagWorkflow == ".." || flagWorkflow == "." {
+			return "", "", fmt.Errorf("invalid workflow name %q: must not contain path separators", flagWorkflow)
+		}
 		path := filepath.Join(projectRoot, ".orc", "workflows", flagWorkflow+".yaml")
 		if !fileExists(path) {
 			path = filepath.Join(projectRoot, ".orc", "workflows", flagWorkflow+".yml")

@@ -324,6 +324,45 @@ func TestResolveWorkflowByName(t *testing.T) {
 	}
 }
 
+func TestResolveWorkflow_PathTraversal(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".orc", "workflows", "bugfix.yaml"), []byte("phases: []"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []string{"../evil", "../../etc", "foo/bar", "..", "."}
+	for _, name := range cases {
+		_, _, err := resolveWorkflow(dir, name)
+		if err == nil {
+			t.Fatalf("expected error for workflow name %q", name)
+		}
+		if !strings.Contains(err.Error(), "must not contain path separators") {
+			t.Fatalf("for %q: expected path-traversal error, got: %v", name, err)
+		}
+	}
+}
+
+func TestResolveWorkflow_FlagWithNoWorkflowsDir(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".orc"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".orc", "config.yaml"), []byte("phases: []"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err := resolveWorkflow(dir, "bugfix")
+	if err == nil {
+		t.Fatal("expected error when --workflow specified without workflows dir")
+	}
+	if !strings.Contains(err.Error(), "no .orc/workflows/ directory") {
+		t.Fatalf("expected 'no workflows dir' error, got: %v", err)
+	}
+}
+
 func TestFindProjectRoot_WorkflowsDir(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755); err != nil {
