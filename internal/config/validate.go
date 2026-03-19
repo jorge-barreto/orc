@@ -38,6 +38,7 @@ func Validate(cfg *Config, projectRoot string) error {
 		"TICKET": true, "ARTIFACTS_DIR": true,
 		"WORK_DIR": true, "PROJECT_ROOT": true,
 		"PHASE_INDEX": true, "PHASE_COUNT": true,
+		"WORKFLOW": true,
 	}
 	seenVars := make(map[string]bool)
 	for _, v := range cfg.Vars {

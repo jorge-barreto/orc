@@ -1084,3 +1084,15 @@ func TestValidate_VarsBuiltinOverride_PhaseCount(t *testing.T) {
 		t.Fatalf("expected built-in override error, got %v", err)
 	}
 }
+
+func TestValidate_VarsBuiltinOverride_Workflow(t *testing.T) {
+	cfg := &Config{
+		Name:   "test",
+		Vars:   OrderedVars{{Key: "WORKFLOW", Value: "bad"}},
+		Phases: []Phase{scriptPhase("a")},
+	}
+	err := Validate(cfg, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "overrides a built-in") {
+		t.Fatalf("expected built-in override error, got %v", err)
+	}
+}
