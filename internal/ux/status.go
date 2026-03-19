@@ -163,7 +163,20 @@ func RenderStatusAll(cfg *config.Config, tickets []state.TicketSummary) {
 		return
 	}
 
-	fmt.Printf("%s%-14s%-14s%-17s%-10s%s%s\n", Bold, "TICKET", "STATUS", "PHASE", "COST", "TIME", Reset)
+	// Check if any ticket has a workflow name
+	hasWorkflow := false
+	for _, t := range tickets {
+		if t.State.Workflow != "" {
+			hasWorkflow = true
+			break
+		}
+	}
+
+	if hasWorkflow {
+		fmt.Printf("%s%-14s%-14s%-14s%-17s%-10s%s%s\n", Bold, "TICKET", "WORKFLOW", "STATUS", "PHASE", "COST", "TIME", Reset)
+	} else {
+		fmt.Printf("%s%-14s%-14s%-17s%-10s%s%s\n", Bold, "TICKET", "STATUS", "PHASE", "COST", "TIME", Reset)
+	}
 
 	for _, t := range tickets {
 		statusColor := Dim
@@ -181,9 +194,11 @@ func RenderStatusAll(cfg *config.Config, tickets []state.TicketSummary) {
 		var phase string
 		if t.State.PhaseIndex >= len(cfg.Phases) {
 			phase = fmt.Sprintf("%d/%d", len(cfg.Phases), len(cfg.Phases))
-		} else {
+		} else if len(cfg.Phases) > 0 {
 			p := cfg.Phases[t.State.PhaseIndex]
 			phase = fmt.Sprintf("%d/%d (%s)", t.State.PhaseIndex+1, len(cfg.Phases), p.Name)
+		} else {
+			phase = fmt.Sprintf("phase %d", t.State.PhaseIndex+1)
 		}
 
 		cost := fmt.Sprintf("$%.2f", t.Costs.TotalCostUSD)
@@ -195,10 +210,21 @@ func RenderStatusAll(cfg *config.Config, tickets []state.TicketSummary) {
 			}
 		}
 
-		fmt.Printf("%-14s%s%-14s%s%-17s%-10s%s\n",
-			t.Ticket,
-			statusColor, t.State.Status, Reset,
-			phase, cost, elapsed)
+		if hasWorkflow {
+			wf := t.State.Workflow
+			if wf == "" {
+				wf = "-"
+			}
+			fmt.Printf("%-14s%-14s%s%-14s%s%-17s%-10s%s\n",
+				t.Ticket, wf,
+				statusColor, t.State.Status, Reset,
+				phase, cost, elapsed)
+		} else {
+			fmt.Printf("%-14s%s%-14s%s%-17s%-10s%s\n",
+				t.Ticket,
+				statusColor, t.State.Status, Reset,
+				phase, cost, elapsed)
+		}
 	}
 	fmt.Println()
 }

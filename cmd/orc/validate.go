@@ -64,7 +64,54 @@ func validateCmd() *cli.Command {
 					return cfgErr(err)
 				}
 				projectRoot = root
-				configPath = filepath.Join(projectRoot, ".orc", "config.yaml")
+
+				flagWorkflow := cmd.Root().String("workflow")
+				workflows := discoverWorkflows(projectRoot)
+
+				// If -w flag or single-config, validate one as before
+				if flagWorkflow != "" || len(workflows) == 0 {
+					_, resolvedPath, err := resolveWorkflow(projectRoot, flagWorkflow)
+					if err != nil {
+						return cfgErr(err)
+					}
+					cfg, err := runValidate(resolvedPath, projectRoot)
+					if err != nil {
+						return cfgErr(err)
+					}
+					printConfigSummary(os.Stdout, cfg, projectRoot)
+					return nil
+				}
+
+				// Multi-workflow: validate all
+				hasConfig := fileExists(filepath.Join(projectRoot, ".orc", "config.yaml"))
+				allValid := true
+				if hasConfig {
+					cfg, err := runValidate(filepath.Join(projectRoot, ".orc", "config.yaml"), projectRoot)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "%s\u2717 default (config.yaml): %v%s\n", ux.Red, err, ux.Reset)
+						allValid = false
+					} else {
+						printConfigSummary(os.Stdout, cfg, projectRoot)
+					}
+				}
+				for _, name := range workflows {
+					path := filepath.Join(projectRoot, ".orc", "workflows", name+".yaml")
+					if !fileExists(path) {
+						path = filepath.Join(projectRoot, ".orc", "workflows", name+".yml")
+					}
+					cfg, err := runValidate(path, projectRoot)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "%s\u2717 %s: %v%s\n", ux.Red, name, err, ux.Reset)
+						allValid = false
+					} else {
+						fmt.Printf("\n%s--- Workflow: %s ---%s\n", ux.Bold, name, ux.Reset)
+						printConfigSummary(os.Stdout, cfg, projectRoot)
+					}
+				}
+				if !allValid {
+					return cfgErr(fmt.Errorf("one or more workflows have validation errors"))
+				}
+				return nil
 			}
 
 			cfg, err := runValidate(configPath, projectRoot)
@@ -99,6 +146,7 @@ func printConfigSummary(w io.Writer, cfg *config.Config, projectRoot string) {
 	// Vars section
 	fmt.Fprintf(w, "\n%sVars:%s\n", ux.Bold, ux.Reset)
 	fmt.Fprintf(w, "  %-14s %s(built-in)%s\n", "TICKET", ux.Dim, ux.Reset)
+	fmt.Fprintf(w, "  %-14s %s(built-in)%s\n", "WORKFLOW", ux.Dim, ux.Reset)
 	fmt.Fprintf(w, "  %-14s %s(built-in)%s\n", "ARTIFACTS_DIR", ux.Dim, ux.Reset)
 	fmt.Fprintf(w, "  %-14s %s(built-in)%s\n", "WORK_DIR", ux.Dim, ux.Reset)
 	fmt.Fprintf(w, "  %-14s %s(built-in)%s\n", "PROJECT_ROOT", ux.Dim, ux.Reset)
@@ -107,6 +155,7 @@ func printConfigSummary(w io.Writer, cfg *config.Config, projectRoot string) {
 	if len(cfg.Vars) > 0 {
 		builtins := map[string]string{
 			"TICKET":        "<ticket>",
+			"WORKFLOW":      "<workflow>",
 			"ARTIFACTS_DIR": "<artifacts>",
 			"WORK_DIR":      projectRoot,
 			"PROJECT_ROOT":  projectRoot,

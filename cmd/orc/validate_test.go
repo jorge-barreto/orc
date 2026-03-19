@@ -283,3 +283,43 @@ func TestPrintConfigSummary_AgentPhase(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateMultiWorkflow(t *testing.T) {
+	root := t.TempDir()
+	orcDir := filepath.Join(root, ".orc")
+	wfDir := filepath.Join(orcDir, "workflows")
+	os.MkdirAll(wfDir, 0755)
+
+	validCfg := `name: default-wf
+phases:
+  - name: build
+    type: script
+    run: make build
+`
+	os.WriteFile(filepath.Join(orcDir, "config.yaml"), []byte(validCfg), 0644)
+
+	bugfixCfg := `name: bugfix-wf
+phases:
+  - name: fix
+    type: script
+    run: echo fix
+`
+	os.WriteFile(filepath.Join(wfDir, "bugfix.yaml"), []byte(bugfixCfg), 0644)
+
+	// Both configs should validate independently without error
+	cfg1, err := runValidate(filepath.Join(orcDir, "config.yaml"), root)
+	if err != nil {
+		t.Fatalf("default config validation failed: %v", err)
+	}
+	if cfg1.Name != "default-wf" {
+		t.Errorf("Name = %q, want default-wf", cfg1.Name)
+	}
+
+	cfg2, err := runValidate(filepath.Join(wfDir, "bugfix.yaml"), root)
+	if err != nil {
+		t.Fatalf("bugfix config validation failed: %v", err)
+	}
+	if cfg2.Name != "bugfix-wf" {
+		t.Errorf("Name = %q, want bugfix-wf", cfg2.Name)
+	}
+}
