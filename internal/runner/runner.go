@@ -29,6 +29,7 @@ type Runner struct {
 	Costs         *state.CostData
 	StepMode      bool
 	StepPromptFn  func(artifactsDir string, phaseIdx int, phaseName string) ux.StepAction
+	RePromptFn    func(ctx context.Context, phase config.Phase, env *dispatch.Environment, prompt, sessionID string) (*dispatch.Result, error)
 	skipped       map[string]bool
 	auditDir      string
 	dispatchCount map[int]int // tracks how many times each phase has been dispatched
@@ -283,8 +284,24 @@ mainLoop:
 				if result != nil {
 					sessionID = result.SessionID
 				}
-				if _, err := dispatch.RunAgentWithPrompt(ctx, phase, r.Env, prompt, sessionID); err != nil {
-					fmt.Fprintf(os.Stderr, "warning: re-prompt for missing outputs failed: %v\n", err)
+				rePromptFn := r.RePromptFn
+				if rePromptFn == nil {
+					rePromptFn = dispatch.RunAgentWithPrompt
+				}
+				reResult, reErr := rePromptFn(ctx, phase, r.Env, prompt, sessionID)
+				if reErr != nil {
+					fmt.Fprintf(os.Stderr, "warning: re-prompt for missing outputs failed: %v\n", reErr)
+				}
+				if reResult != nil && r.Costs != nil {
+					r.Costs.Record(phase.Name, i, reResult.CostUSD, reResult.InputTokens, reResult.OutputTokens, reResult.CacheCreationInputTokens, reResult.CacheReadInputTokens, reResult.Turns)
+					if flushErr := r.Costs.Flush(r.auditDir); flushErr != nil {
+						fmt.Fprintf(os.Stderr, "warning: failed to flush costs: %v\n", flushErr)
+					}
+				}
+				r.dispatchCount[i]++
+				archivePhaseFiles(r.Env.ArtifactsDir, r.auditDir, i, r.dispatchCount[i], phase.Outputs)
+				if saveErr := state.SaveDispatchCounts(r.auditDir, r.dispatchCount); saveErr != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to save dispatch counts: %v\n", saveErr)
 				}
 				missing = state.CheckOutputs(r.Env.ArtifactsDir, phase.Outputs)
 			}
