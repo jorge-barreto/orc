@@ -26,6 +26,64 @@ func Init(ctx context.Context, targetDir, userPrompt string) error {
 	return initWithAI(ctx, targetDir, userPrompt)
 }
 
+// InitRecipe scaffolds a .orc/ directory from a named built-in recipe.
+func InitRecipe(targetDir, recipeName string) error {
+	orcDir := filepath.Join(targetDir, ".orc")
+	if _, err := os.Stat(orcDir); err == nil {
+		return fmt.Errorf(".orc directory already exists in %s", targetDir)
+	}
+
+	recipe, err := GetRecipe(recipeName)
+	if err != nil {
+		return err
+	}
+
+	var written []string
+	for relPath, content := range recipe.Files {
+		fullPath := filepath.Join(targetDir, relPath)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			return fmt.Errorf("creating directory for %s: %w", relPath, err)
+		}
+		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+			return fmt.Errorf("writing %s: %w", relPath, err)
+		}
+		written = append(written, relPath)
+	}
+
+	gitignorePath := filepath.Join(targetDir, ".orc", ".gitignore")
+	if err := os.WriteFile(gitignorePath, []byte("artifacts/\n"), 0644); err != nil {
+		return fmt.Errorf("writing .orc/.gitignore: %w", err)
+	}
+	written = append(written, ".orc/.gitignore")
+
+	// Sanity check: embedded config must be valid
+	configPath := filepath.Join(targetDir, ".orc", "config.yaml")
+	if _, err := config.Load(configPath, targetDir); err != nil {
+		return fmt.Errorf("recipe %q produced invalid config: %w", recipeName, err)
+	}
+
+	printSuccess("recipe: "+recipeName, written)
+
+	if cfg, err := config.Load(configPath, targetDir); err == nil {
+		fmt.Printf("\n  Workflow: %s%s%s\n", ux.Bold, renderWorkflowSummary(cfg.Phases), ux.Reset)
+	}
+
+	fmt.Printf("\n  Next: %sorc run <ticket> --dry-run%s\n\n", ux.Cyan, ux.Reset)
+	return nil
+}
+
+// ListRecipes prints all available built-in recipes with descriptions.
+func ListRecipes() {
+	recipes := AllRecipes()
+	fmt.Printf("\nAvailable recipes:\n\n")
+	for _, r := range recipes {
+		fmt.Printf("  %s%-20s%s %s\n", ux.Cyan, r.Name, ux.Reset, r.Description)
+		fmt.Printf("  %s%-20s%s %s\n", ux.Dim, "", ux.Reset, r.Workflow)
+		fmt.Println()
+	}
+	fmt.Printf("  Usage: %sorc init --recipe <name>%s\n\n", ux.Bold, ux.Reset)
+}
+
 // initWithAI gathers project context, calls claude with retries, and writes AI-generated files.
 // Falls back to a default template if all attempts fail.
 func initWithAI(ctx context.Context, targetDir, userPrompt string) error {
