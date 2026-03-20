@@ -108,6 +108,7 @@ CLI Flags
   orc improve "..."             Apply a specific change to the workflow
   orc improve                   Interactive AI-assisted workflow refinement
   orc test <phase> <ticket>   Run one phase in isolation for testing
+  orc debug <phase> [ticket]  Analyze a phase execution
 
 --retry and --from accept a 1-indexed phase number or a phase name.
 They are mutually exclusive. Both reset loop counts.
@@ -401,6 +402,11 @@ Use orc test to run a single phase without running the full workflow:
 This sets up the full environment (variables, artifacts dir) but does not
 modify state or advance the workflow. Missing artifacts from prior phases
 produce a warning.
+
+Use orc debug to analyze what happened during a phase execution:
+
+  orc debug plan KS-42           Show prompt, tool calls, costs, status
+  orc debug 3                    Analyze phase 3 of the most recent ticket
 
 gate
 ----

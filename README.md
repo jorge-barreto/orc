@@ -225,6 +225,19 @@ orc test -w bugfix fix KS-42     # test a phase from a named workflow
 
 Missing artifacts from prior phases produce a warning listing which files are absent and which earlier phases normally create them.
 
+### `orc debug <phase> [ticket]`
+
+Analyzes a phase execution — shows the rendered prompt, tool call sequence, cost/token data, feedback injection, and exit status. Useful for understanding why a phase produced unexpected results without manually reading raw log files.
+
+```bash
+orc debug plan                    # analyze most recent ticket's "plan" phase
+orc debug plan KS-42              # analyze a specific ticket's phase
+orc debug 2                       # analyze phase by index (1-indexed)
+orc debug -w bugfix plan KS-42    # analyze a phase from a named workflow
+```
+
+When no ticket is specified, analyzes the most recently executed ticket.
+
 ## Configuration Reference
 
 Workflows are defined in `.orc/config.yaml`.
