@@ -89,11 +89,9 @@ func TestTailWriter_MultipleWrites(t *testing.T) {
 		t.Fatalf("second Write returned %d, want 6", n2)
 	}
 	got := w.String()
-	if !strings.Contains(got, "world!") {
-		t.Fatalf("String() = %q, expected to contain %q", got, "world!")
-	}
-	if !strings.Contains(got, "[...truncated...]") {
-		t.Fatalf("expected truncation prefix in %q", got)
+	want := "[...truncated...]\nllo world!"
+	if got != want {
+		t.Fatalf("String() = %q, want %q", got, want)
 	}
 }
 
@@ -130,11 +128,38 @@ func TestTailWriter_Empty(t *testing.T) {
 	}
 }
 
+func TestTailWriter_ZeroLengthWrite(t *testing.T) {
+	w := newTailWriter(10)
+	w.Write([]byte("abc")) //nolint:errcheck
+
+	n, err := w.Write(nil)
+	if err != nil {
+		t.Fatalf("Write(nil) error: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("Write(nil) returned %d, want 0", n)
+	}
+
+	n, err = w.Write([]byte{})
+	if err != nil {
+		t.Fatalf("Write([]byte{}) error: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("Write([]byte{}) returned %d, want 0", n)
+	}
+
+	got := w.String()
+	if got != "abc" {
+		t.Fatalf("String() = %q, want %q after zero-length writes", got, "abc")
+	}
+}
+
 func TestTailWriter_LargeOverflow(t *testing.T) {
 	w := newTailWriter(5)
+	// Use distinct byte values to detect content-ordering bugs
 	data := make([]byte, 50)
 	for i := range data {
-		data[i] = 'x'
+		data[i] = byte('a' + i%26)
 	}
 	n, err := w.Write(data)
 	if err != nil {
@@ -144,11 +169,10 @@ func TestTailWriter_LargeOverflow(t *testing.T) {
 		t.Fatalf("Write returned %d, want 50", n)
 	}
 	got := w.String()
-	if !strings.HasSuffix(got, "xxxxx") {
-		t.Fatalf("String() = %q, want last 5 bytes to be 'xxxxx'", got)
-	}
-	if !strings.Contains(got, "[...truncated...]") {
-		t.Fatalf("expected truncation prefix in %q", got)
+	// Last 5 bytes: indices 45-49 → 45%26=19='t', 46%26=20='u', 47%26=21='v', 48%26=22='w', 49%26=23='x'
+	want := "[...truncated...]\ntuvwx"
+	if got != want {
+		t.Fatalf("String() = %q, want %q", got, want)
 	}
 }
 
@@ -166,7 +190,17 @@ func TestTailWriter_ConcurrentWrites(t *testing.T) {
 	}
 	wg.Wait()
 	got := w.String()
-	if got == "" {
-		t.Fatal("String() returned empty, expected non-empty result")
+	prefix := "[...truncated...]\n"
+	if !strings.HasPrefix(got, prefix) {
+		t.Fatalf("expected truncation prefix, got %q", got[:min(len(got), 30)])
+	}
+	data := got[len(prefix):]
+	if len(data) != 100 {
+		t.Fatalf("data portion length = %d, want 100", len(data))
+	}
+	for i, b := range []byte(data) {
+		if b != 'x' {
+			t.Fatalf("data[%d] = %q, want 'x'", i, b)
+		}
 	}
 }
