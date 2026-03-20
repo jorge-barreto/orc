@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jorge-barreto/orc/internal/config"
@@ -235,27 +236,6 @@ func TestClone_DeepCopiesDefaultAllowTools(t *testing.T) {
 	}
 	if len(env.DefaultAllowTools) != 2 {
 		t.Fatalf("original DefaultAllowTools grew: len = %d", len(env.DefaultAllowTools))
-	}
-}
-
-func TestClone_DeepCopiesFilteredEnv(t *testing.T) {
-	env := &Environment{
-		ProjectRoot:  "/proj",
-		WorkDir:      "/work",
-		ArtifactsDir: "/art",
-		Ticket:       "T-1",
-	}
-	// Trigger filteredEnv population
-	BuildEnv(env)
-	if env.filteredEnv == nil {
-		t.Fatal("filteredEnv should be populated after BuildEnv")
-	}
-
-	cp := env.Clone()
-	origLen := len(env.filteredEnv)
-	cp.filteredEnv = append(cp.filteredEnv, "EXTRA=val")
-	if len(env.filteredEnv) != origLen {
-		t.Fatalf("original filteredEnv mutated: len went from %d to %d", origLen, len(env.filteredEnv))
 	}
 }
 
@@ -523,4 +503,27 @@ func TestPhaseWorkDir_NoCwd(t *testing.T) {
 	if dir != "/work" {
 		t.Fatalf("expected /work, got %q", dir)
 	}
+}
+
+func TestBuildEnv_ConcurrentSafe(t *testing.T) {
+	env := &Environment{
+		ProjectRoot:  "/proj",
+		WorkDir:      "/work",
+		ArtifactsDir: "/art",
+		Ticket:       "T-1",
+		Workflow:     "bugfix",
+		PhaseCount:   5,
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			result := BuildEnv(env)
+			if len(result) == 0 {
+				t.Error("BuildEnv returned empty result")
+			}
+		}()
+	}
+	wg.Wait()
 }

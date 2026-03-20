@@ -23,10 +23,9 @@ type Environment struct {
 	PhaseCount        int
 	DefaultAllowTools []string
 	CustomVars        map[string]string
-	filteredEnv       []string // lazily populated base env (os.Environ minus CLAUDECODE)
 }
 
-// Clone returns a deep copy of the Environment, including CustomVars and filteredEnv.
+// Clone returns a deep copy of the Environment, including CustomVars.
 func (e *Environment) Clone() *Environment {
 	cp := *e
 	if e.DefaultAllowTools != nil {
@@ -38,10 +37,6 @@ func (e *Environment) Clone() *Environment {
 		for k, v := range e.CustomVars {
 			cp.CustomVars[k] = v
 		}
-	}
-	if e.filteredEnv != nil {
-		cp.filteredEnv = make([]string, len(e.filteredEnv))
-		copy(cp.filteredEnv, e.filteredEnv)
 	}
 	return &cp
 }
@@ -105,26 +100,24 @@ type Result struct {
 
 // BuildEnv returns the environment variables for child processes.
 // It inherits the current environment, adds ORC_ variables, and strips CLAUDECODE.
-// The base environment is snapshotted once per Environment and reused across calls.
 func BuildEnv(env *Environment) []string {
-	if env.filteredEnv == nil {
-		// Strip vars we'll re-add with correct values: ORC_*, CLAUDECODE*, and
-		// the unprefixed built-in aliases (TICKET, ARTIFACTS_DIR, etc.).
-		overridden := map[string]bool{
-			"TICKET": true, "ARTIFACTS_DIR": true,
-			"WORK_DIR": true, "PROJECT_ROOT": true,
-			"WORKFLOW": true,
-		}
-		for _, e := range os.Environ() {
-			key := strings.SplitN(e, "=", 2)[0]
-			if strings.HasPrefix(key, "CLAUDECODE") || strings.HasPrefix(key, "ORC_") || overridden[key] {
-				continue
-			}
-			env.filteredEnv = append(env.filteredEnv, e)
-		}
+	// Strip vars we'll re-add with correct values: ORC_*, CLAUDECODE*, and
+	// the unprefixed built-in aliases (TICKET, ARTIFACTS_DIR, etc.).
+	overridden := map[string]bool{
+		"TICKET": true, "ARTIFACTS_DIR": true,
+		"WORK_DIR": true, "PROJECT_ROOT": true,
+		"WORKFLOW": true,
 	}
-	result := make([]string, len(env.filteredEnv), len(env.filteredEnv)+12+2*len(env.CustomVars))
-	copy(result, env.filteredEnv)
+	var filtered []string
+	for _, e := range os.Environ() {
+		key := strings.SplitN(e, "=", 2)[0]
+		if strings.HasPrefix(key, "CLAUDECODE") || strings.HasPrefix(key, "ORC_") || overridden[key] {
+			continue
+		}
+		filtered = append(filtered, e)
+	}
+	result := make([]string, len(filtered), len(filtered)+12+2*len(env.CustomVars))
+	copy(result, filtered)
 	for k, v := range env.CustomVars {
 		result = append(result, "ORC_"+k+"="+v)
 		result = append(result, k+"="+v)
