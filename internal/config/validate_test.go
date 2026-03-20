@@ -163,8 +163,30 @@ func TestValidate_NegativeTimeout(t *testing.T) {
 
 func TestValidate_OutputsNoPathSeparators(t *testing.T) {
 	cfg := minimalConfig(Phase{Name: "a", Type: "script", Run: "echo", Outputs: []string{"sub/file.md"}})
-	if err := Validate(cfg, t.TempDir()); err == nil || !strings.Contains(err.Error(), "path separators") {
+	if err := Validate(cfg, t.TempDir()); err == nil || !strings.Contains(err.Error(), "simple filename") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestValidate_OutputsTraversalRejected(t *testing.T) {
+	cases := []struct {
+		name   string
+		output string
+	}{
+		{"dot-dot", ".."},
+		{"dot", "."},
+		{"empty", ""},
+		{"slash-path", "sub/file.md"},
+		{"dot-dot-slash", "../etc/passwd"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := minimalConfig(Phase{Name: "a", Type: "script", Run: "echo", Outputs: []string{tc.output}})
+			err := Validate(cfg, t.TempDir())
+			if err == nil || !strings.Contains(err.Error(), "simple filename") {
+				t.Fatalf("output %q: expected simple filename error, got %v", tc.output, err)
+			}
+		})
 	}
 }
 

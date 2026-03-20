@@ -170,8 +170,8 @@ func Validate(cfg *Config, projectRoot string) error {
 		}
 
 		for _, o := range p.Outputs {
-			if strings.Contains(o, "/") || strings.Contains(o, string(filepath.Separator)) {
-				return fmt.Errorf("config: phase %q: output %q must not contain path separators", p.Name, o)
+			if o != filepath.Base(o) || o == ".." || o == "." {
+				return fmt.Errorf("config: phase %q: output %q must be a simple filename", p.Name, o)
 			}
 		}
 

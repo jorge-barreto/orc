@@ -202,7 +202,7 @@ Validation Rules
 - parallel-with and loop cannot be combined on the same phase.
 - Agent phases require a prompt file that exists on disk.
 - Model must be opus, sonnet, haiku, or empty.
-- Output filenames must not contain path separators.
+- Output filenames must be simple filenames (no path separators, . or ..).
 - mcp-config is only valid on agent phases.
 - Gate phases cannot have a cwd field.
 
@@ -791,7 +791,7 @@ Declared Outputs
 
 Phases can declare expected output files via the outputs field. These
 files are expected to appear directly in the .orc/artifacts/<ticket>/ directory (not
-in subdirectories). Output filenames must not contain path separators.
+in subdirectories). Output filenames must be simple filenames (no path separators, . or ..).
 `
 
 const topicQualityLoops = `Adversarial Quality Loops
