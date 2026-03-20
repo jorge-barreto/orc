@@ -48,6 +48,7 @@ func main() {
 			docsCmd(),
 			improveCmd(),
 			testCmd(),
+			debugCmd(),
 		},
 	}
 
