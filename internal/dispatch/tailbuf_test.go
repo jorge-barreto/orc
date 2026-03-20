@@ -42,6 +42,18 @@ func TestTailWriter_ExactCap(t *testing.T) {
 	}
 }
 
+func TestTailWriter_OverwriteAfterExactFill(t *testing.T) {
+	w := newTailWriter(4)
+	w.Write([]byte("abcd")) // fills exactly: pos wraps to 0, full=true
+	w.Write([]byte("xy"))   // non-wrapping path, overwrites "ab"
+
+	got := w.String()
+	want := "[...truncated...]\ncdxy"
+	if got != want {
+		t.Fatalf("String() = %q, want %q", got, want)
+	}
+}
+
 func TestTailWriter_Overflow(t *testing.T) {
 	w := newTailWriter(5)
 	n, err := w.Write([]byte("hello world"))

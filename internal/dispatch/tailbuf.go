@@ -33,6 +33,9 @@ func (w *tailWriter) Write(p []byte) (int, error) {
 	// How much fits before end of buf
 	space := w.cap - w.pos
 	if n <= space {
+		if w.full {
+			w.overflow = true
+		}
 		copy(w.buf[w.pos:], p)
 		w.pos += n
 		if w.pos == w.cap {
@@ -44,11 +47,8 @@ func (w *tailWriter) Write(p []byte) (int, error) {
 		copy(w.buf[w.pos:], p[:space])
 		copy(w.buf[0:], p[space:])
 		w.pos = n - space
-		if w.full {
-			w.overflow = true
-		}
 		w.full = true
-		w.overflow = true // wrapping always discards old data
+		w.overflow = true
 	}
 	return n, nil
 }
