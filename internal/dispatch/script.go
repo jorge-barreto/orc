@@ -1,7 +1,6 @@
 package dispatch
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"os"
@@ -36,9 +35,9 @@ func RunScript(ctx context.Context, phase config.Phase, env *Environment) (*Resu
 	}
 	defer logFile.Close()
 
-	var captured bytes.Buffer
-	cmd.Stdout = io.MultiWriter(os.Stdout, logFile, &captured)
-	cmd.Stderr = io.MultiWriter(os.Stderr, logFile, &captured)
+	captured := newTailWriter(1 << 20) // 1 MB tail buffer
+	cmd.Stdout = io.MultiWriter(os.Stdout, logFile, captured)
+	cmd.Stderr = io.MultiWriter(os.Stderr, logFile, captured)
 
 	code, err := exitCode(cmd.Run())
 	if err != nil {
