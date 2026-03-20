@@ -14,6 +14,13 @@ import (
 	"github.com/jorge-barreto/orc/internal/state"
 )
 
+// logMsg writes msg to w. If the write fails, it logs a warning to stderr.
+func logMsg(w io.Writer, msg string) {
+	if _, err := io.WriteString(w, msg); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: log write failed: %v\n", err)
+	}
+}
+
 // RunGate executes a gate phase, prompting for human approval.
 func RunGate(ctx context.Context, phase config.Phase, env *Environment) (*Result, error) {
 	return runGate(ctx, phase, env, os.Stdin)
@@ -30,7 +37,7 @@ func runGate(ctx context.Context, phase config.Phase, env *Environment, stdin io
 	if env.AutoMode {
 		msg := fmt.Sprintf("Gate %q auto-approved (--auto mode)\n", phase.Name)
 		fmt.Print(msg)
-		logFile.WriteString(msg)
+		logMsg(logFile, msg)
 		return &Result{ExitCode: 0, Output: msg}, nil
 	}
 
@@ -47,7 +54,7 @@ func runGate(ctx context.Context, phase config.Phase, env *Environment, stdin io
 		cmd.Stdout = io.MultiWriter(os.Stdout, logFile)
 		cmd.Stderr = io.MultiWriter(os.Stderr, logFile)
 		if err := cmd.Run(); err != nil {
-			logFile.WriteString(fmt.Sprintf("gate run command failed: %v\n", err))
+			logMsg(logFile, fmt.Sprintf("gate run command failed: %v\n", err))
 		}
 	}
 
@@ -75,7 +82,7 @@ func runGate(ctx context.Context, phase config.Phase, env *Environment, stdin io
 	select {
 	case <-ctx.Done():
 		msg := "Gate cancelled\n"
-		logFile.WriteString(msg)
+		logMsg(logFile, msg)
 		return &Result{ExitCode: 1, Output: msg}, nil
 	case lr := <-lineCh:
 		if !lr.ok {
@@ -86,13 +93,13 @@ func runGate(ctx context.Context, phase config.Phase, env *Environment, stdin io
 		case "y", "yes":
 			msg := fmt.Sprintf("Gate %q approved\n", phase.Name)
 			fmt.Print(msg)
-			logFile.WriteString(msg)
+			logMsg(logFile, msg)
 			return &Result{ExitCode: 0, Output: msg}, nil
 		default:
 			msg := fmt.Sprintf("Gate %q — revision requested\n", phase.Name)
 			fmt.Print(msg)
-			logFile.WriteString(msg)
-			logFile.WriteString(fmt.Sprintf("Feedback: %s\n", input))
+			logMsg(logFile, msg)
+			logMsg(logFile, fmt.Sprintf("Feedback: %s\n", input))
 			return &Result{ExitCode: 1, Output: input}, nil
 		}
 	}

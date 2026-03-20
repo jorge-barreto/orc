@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -151,4 +152,21 @@ func TestRunGate_PrePromptRun(t *testing.T) {
 	if !strings.Contains(string(data), "pre-prompt") {
 		t.Fatalf("log = %q, want 'pre-prompt'", string(data))
 	}
+}
+
+type errWriter struct{}
+
+func (errWriter) Write([]byte) (int, error) { return 0, errors.New("disk full") }
+
+func TestLogMsg(t *testing.T) {
+	var buf bytes.Buffer
+	logMsg(&buf, "hello")
+	if buf.String() != "hello" {
+		t.Fatalf("got %q, want %q", buf.String(), "hello")
+	}
+}
+
+func TestLogMsg_WriteError(t *testing.T) {
+	// Must not panic; error is emitted to stderr
+	logMsg(errWriter{}, "hello")
 }
