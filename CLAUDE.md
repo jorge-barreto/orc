@@ -69,19 +69,15 @@ Beads is a **work tracker** that persists across sessions. The orc roadmap (ROAD
 
 - **Use beads instead of TodoWrite** — beads persist across sessions
 - **Valid types:** `task`, `bug`, `feature`, `chore`, `epic`
-- **Two tools:** `bdv` for viewing, `bd` for writing
-
-### Viewing Beads: Use `bdv` (not `bd`)
-
-**Prefer `bdv` for all read operations.** Better formatting, short IDs, dependency-aware views.
+- **One tool:** `bd` for everything
 
 | Use case | Command |
 |----------|---------|
-| Project dashboard (epics + children) | `bdv` |
-| What to work on next | `bdv next` |
-| Epic dependency chain | `bdv deps` |
-| Epic drill-down | `bdv show <id>` |
-| Full metadata + notes | `bd show <id>` |
+| Project dashboard (epics + children) | `bd` |
+| What to work on next | `bd ready` |
+| Epic dependency chain | `bd deps` |
+| Bead details + notes | `bd show <id>` |
+| Full metadata as JSON | `bd show <id> --json` |
 
 ### Search Beads BEFORE Planning
 
@@ -134,20 +130,19 @@ bd update <bead-id> --append-notes="Note: discovered Z behavior"
 ### Quick Reference
 
 ```bash
-# Viewing (prefer bdv)
-bdv                                       # Dashboard
-bdv next                                  # Ready tasks
-bdv show <id>                             # Bead details
-bdv deps                                  # Dependency chain
+# Viewing
+bd                                        # Dashboard
+bd ready                                  # Ready tasks
+bd show <id>                              # Bead details + notes
+bd deps                                   # Dependency chain
+bd search "keyword"                       # Full-text search
 
-# Writing (use bd)
-bd search "keyword"                       # Search (use this, not bd list)
-bd show <id>                              # Full details + notes
+# Writing
 bd create --title="..." --type=task --parent=<id> -d "..."
 bd update <id> --status=in_progress       # Claim
 bd update <id> --append-notes="info"      # Add notes
 bd close <id>                             # Complete
-bd sync                                   # Sync at session end
+bd dep add <blocked> <blocker>            # Add dependency
 ```
 
 ### Warnings

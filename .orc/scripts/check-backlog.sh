@@ -5,10 +5,10 @@ RUN_MODE=$(cat "$ORC_ARTIFACTS_DIR/run-mode.txt" 2>/dev/null || echo "single")
 
 if [[ "$RUN_MODE" == "wave" ]]; then
   # Wave mode: check for remaining children of this wave
-  TOTAL=$(bdv next "$TICKET" --json 2>/dev/null | jq -r '.total // 0')
+  TOTAL=$(bd ready "$TICKET" --json 2>/dev/null | jq -r '.total // 0')
 else
   # Single-ticket mode: check global backlog
-  TOTAL=$(bdv next --json 2>/dev/null | jq -r '.total // 0')
+  TOTAL=$(bd ready --json 2>/dev/null | jq -r '.total // 0')
 fi
 
 if [[ "$TOTAL" -gt 0 ]]; then

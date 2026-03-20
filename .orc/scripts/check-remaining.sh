@@ -3,7 +3,7 @@ set -euo pipefail
 
 PARENT_ID=$(cat "$ORC_ARTIFACTS_DIR/epic-id.txt")
 
-TOTAL=$(bdv next "$PARENT_ID" --json 2>/dev/null | jq -r '.total // 0')
+TOTAL=$(bd ready "$PARENT_ID" --json 2>/dev/null | jq -r '.total // 0')
 
 if [[ "$TOTAL" -gt 0 ]]; then
   echo "$TOTAL beads remaining — looping"

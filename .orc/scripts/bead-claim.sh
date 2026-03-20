@@ -36,7 +36,7 @@ fi
 
 if [[ "$WAVE_MODE" == "true" ]]; then
   # Wave mode: pick next ready child of the wave epic
-  TASK_JSON=$(bdv next "$TICKET" --json 2>/dev/null || echo '{"total":0}')
+  TASK_JSON=$(bd ready "$TICKET" --json 2>/dev/null || echo '{"total":0}')
   TOTAL=$(echo "$TASK_JSON" | jq -r '.total // 0')
 
   if [[ "$TOTAL" -eq 0 ]]; then
@@ -44,7 +44,7 @@ if [[ "$WAVE_MODE" == "true" ]]; then
     exit 1
   fi
 
-  BEAD_ID=$(echo "$TASK_JSON" | jq -r '.epics[0].tasks[0].id')
+  BEAD_ID=$(echo "$TASK_JSON" | jq -r '.items[0].id')
   if [[ "$BEAD_ID" == "null" || -z "$BEAD_ID" ]]; then
     echo "No ready beads under wave $TICKET"
     exit 1

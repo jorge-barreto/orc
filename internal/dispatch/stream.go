@@ -112,12 +112,6 @@ func ProcessStream(ctx context.Context, stdout io.Reader, display io.Writer, log
 		case "stream_event":
 			handleStreamEvent(&event, &textBuf, &ss, display, logFile)
 
-		case "assistant":
-			handleAssistantEvent(&event)
-
-		case "user":
-			handleUserEvent(&event, &result)
-
 		case "result":
 			handleResultEvent(&event, &result)
 		}
@@ -294,23 +288,6 @@ func toolUseSummary(toolName, rawJSON string) string {
 		}
 	}
 	return rawJSON
-}
-
-func handleAssistantEvent(event *streamEvent) {
-	// Assistant events contain complete tool_use blocks.
-	// We display these inline via stream_event content_block_start,
-	// so nothing additional needed here.
-}
-
-func handleUserEvent(event *streamEvent, result *StreamResult) {
-	if event.IsError {
-		// Permission denial or other error from the user side
-		for _, block := range event.Content {
-			if strings.Contains(block.Text, "permission") || strings.Contains(block.Text, "denied") {
-				// The actual denials are in the result event; this is just a signal
-			}
-		}
-	}
 }
 
 func handleResultEvent(event *streamEvent, result *StreamResult) {

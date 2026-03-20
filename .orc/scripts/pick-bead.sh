@@ -9,7 +9,7 @@ if [[ -z "$PARENT_ID" ]]; then
 fi
 
 # Get the next ready bead under the parent
-TASK_JSON=$(bdv next "$PARENT_ID" --json 2>/dev/null || echo '{"total":0}')
+TASK_JSON=$(bd ready "$PARENT_ID" --json 2>/dev/null || echo '{"total":0}')
 TOTAL=$(echo "$TASK_JSON" | jq -r '.total // 0')
 
 if [[ "$TOTAL" -eq 0 ]]; then
@@ -17,7 +17,7 @@ if [[ "$TOTAL" -eq 0 ]]; then
   exit 1
 fi
 
-ID=$(echo "$TASK_JSON" | jq -r '.epics[0].tasks[0].id')
+ID=$(echo "$TASK_JSON" | jq -r '.items[0].id')
 if [[ "$ID" == "null" || -z "$ID" ]]; then
   echo "No ready beads remaining"
   exit 1
