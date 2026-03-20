@@ -523,3 +523,56 @@ func TestProcessStream_NilRawLog(t *testing.T) {
 		t.Fatalf("Text = %q", result.Text)
 	}
 }
+
+func TestWarnWriter(t *testing.T) {
+	var buf bytes.Buffer
+	ww := &warnWriter{w: &buf}
+	n, err := ww.Write([]byte("hello"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n != 5 {
+		t.Fatalf("n = %d, want 5", n)
+	}
+	if buf.String() != "hello" {
+		t.Fatalf("buf = %q, want %q", buf.String(), "hello")
+	}
+}
+
+func TestWarnWriter_WarnsOnce(t *testing.T) {
+	ww := &warnWriter{w: errWriter{}}
+	n, err := ww.Write([]byte("first"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n != 5 {
+		t.Fatalf("n = %d, want 5", n)
+	}
+	if !ww.failed {
+		t.Fatal("expected failed = true after write error")
+	}
+	n2, err2 := ww.Write([]byte("second"))
+	if err2 != nil {
+		t.Fatalf("unexpected error on second write: %v", err2)
+	}
+	if n2 != 6 {
+		t.Fatalf("n = %d, want 6", n2)
+	}
+}
+
+func TestProcessStream_RawLogWriteError(t *testing.T) {
+	input := streamLines(
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello"}}}`,
+		`{"type":"result","total_cost_usd":0.01,"session_id":"s1","usage":{"input_tokens":100,"output_tokens":50},"permission_denials":[]}`,
+	)
+	result, err := ProcessStream(context.Background(), input, nil, nil, errWriter{})
+	if err != nil {
+		t.Fatalf("ProcessStream failed: %v", err)
+	}
+	if result.Text != "Hello" {
+		t.Fatalf("Text = %q, want %q", result.Text, "Hello")
+	}
+	if result.CostUSD != 0.01 {
+		t.Fatalf("CostUSD = %f, want 0.01", result.CostUSD)
+	}
+}

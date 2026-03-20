@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/jorge-barreto/orc/internal/ux"
@@ -52,6 +53,26 @@ type streamState struct {
 	userQuestions []UserQuestion
 }
 
+// warnWriter wraps an io.Writer and logs the first write error to stderr.
+// After the first error, subsequent writes are silently dropped.
+type warnWriter struct {
+	w      io.Writer
+	failed bool
+}
+
+func (ww *warnWriter) Write(p []byte) (int, error) {
+	if ww.failed {
+		return len(p), nil
+	}
+	n, err := ww.w.Write(p)
+	if err != nil {
+		ww.failed = true
+		fmt.Fprintf(os.Stderr, "warning: raw log write failed: %v\n", err)
+		return len(p), nil
+	}
+	return n, nil
+}
+
 // ProcessStream reads stream-json lines from stdout, routes text to display+log,
 // tracks tool use for inline display, and extracts the final result.
 func ProcessStream(ctx context.Context, stdout io.Reader, display io.Writer, logFile io.Writer, rawLog io.Writer) (*StreamResult, error) {
@@ -62,15 +83,20 @@ func ProcessStream(ctx context.Context, stdout io.Reader, display io.Writer, log
 	var textBuf strings.Builder
 	var ss streamState
 
+	var safeRawLog io.Writer
+	if rawLog != nil {
+		safeRawLog = &warnWriter{w: rawLog}
+	}
+
 	for scanner.Scan() {
 		if ctx.Err() != nil {
 			return &result, ctx.Err()
 		}
 
 		line := scanner.Bytes()
-		if rawLog != nil {
-			rawLog.Write(line)
-			rawLog.Write([]byte{'\n'})
+		if safeRawLog != nil {
+			safeRawLog.Write(line)
+			safeRawLog.Write([]byte{'\n'})
 		}
 		if len(line) == 0 {
 			continue
