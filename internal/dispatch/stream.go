@@ -292,10 +292,18 @@ func handleResultEvent(event *streamEvent, result *StreamResult) {
 		result.CostUSD = event.TotalCostUSD
 	}
 	if event.Usage != nil {
-		result.InputTokens = event.Usage.InputTokens
-		result.OutputTokens = event.Usage.OutputTokens
-		result.CacheCreationInputTokens = event.Usage.CacheCreationInputTokens
-		result.CacheReadInputTokens = event.Usage.CacheReadInputTokens
+		if event.Usage.InputTokens > 0 {
+			result.InputTokens = event.Usage.InputTokens
+		}
+		if event.Usage.OutputTokens > 0 {
+			result.OutputTokens = event.Usage.OutputTokens
+		}
+		if event.Usage.CacheCreationInputTokens > 0 {
+			result.CacheCreationInputTokens = event.Usage.CacheCreationInputTokens
+		}
+		if event.Usage.CacheReadInputTokens > 0 {
+			result.CacheReadInputTokens = event.Usage.CacheReadInputTokens
+		}
 	}
 	for _, d := range event.PermissionDenials {
 		result.PermissionDenials = append(result.PermissionDenials, PermissionDenial{

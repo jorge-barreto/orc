@@ -423,6 +423,54 @@ func TestProcessStream_UsageWithoutCacheFields(t *testing.T) {
 	}
 }
 
+func TestProcessStream_MultipleResultEventsPreserveUsage(t *testing.T) {
+	input := streamLines(
+		`{"type":"result","total_cost_usd":0.05,"session_id":"s1","usage":{"input_tokens":1500,"output_tokens":800,"cache_creation_input_tokens":3000,"cache_read_input_tokens":10000},"permission_denials":[]}`,
+		`{"type":"result","total_cost_usd":0,"session_id":"s1","usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},"permission_denials":[]}`,
+	)
+
+	result, err := ProcessStream(context.Background(), input, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CostUSD != 0.05 {
+		t.Fatalf("CostUSD = %f, want 0.05", result.CostUSD)
+	}
+	if result.InputTokens != 1500 {
+		t.Fatalf("InputTokens = %d, want 1500", result.InputTokens)
+	}
+	if result.OutputTokens != 800 {
+		t.Fatalf("OutputTokens = %d, want 800", result.OutputTokens)
+	}
+	if result.CacheCreationInputTokens != 3000 {
+		t.Fatalf("CacheCreationInputTokens = %d, want 3000", result.CacheCreationInputTokens)
+	}
+	if result.CacheReadInputTokens != 10000 {
+		t.Fatalf("CacheReadInputTokens = %d, want 10000", result.CacheReadInputTokens)
+	}
+}
+
+func TestProcessStream_MultipleResultEventsUpdatesHigherValues(t *testing.T) {
+	input := streamLines(
+		`{"type":"result","total_cost_usd":0.02,"session_id":"s1","usage":{"input_tokens":500,"output_tokens":200},"permission_denials":[]}`,
+		`{"type":"result","total_cost_usd":0.08,"session_id":"s1","usage":{"input_tokens":2000,"output_tokens":1000},"permission_denials":[]}`,
+	)
+
+	result, err := ProcessStream(context.Background(), input, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CostUSD != 0.08 {
+		t.Fatalf("CostUSD = %f, want 0.08", result.CostUSD)
+	}
+	if result.InputTokens != 2000 {
+		t.Fatalf("InputTokens = %d, want 2000", result.InputTokens)
+	}
+	if result.OutputTokens != 1000 {
+		t.Fatalf("OutputTokens = %d, want 1000", result.OutputTokens)
+	}
+}
+
 func TestProcessStream_RawLogReceivesAllLines(t *testing.T) {
 	lines := []string{
 		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello"}}}`,
