@@ -290,11 +290,23 @@ func toolUseSummary(toolName, rawJSON string) string {
 	return rawJSON
 }
 
+// handleResultEvent extracts cost, token usage, session ID, and permission
+// denials from a "result" event.
+//
+// Token counts and cost use "last positive value wins" assignment (=, not +=).
+// The claude CLI emits cumulative totals in each result event — not incremental
+// deltas — so the final positive value is the correct total. The > 0 guards
+// prevent a trailing result event with zeroed fields from overwriting real counts
+// (see TestProcessStream_MultipleResultEventsPreserveUsage).
+//
+// If the CLI ever changes to emit incremental deltas across multiple result
+// events, this function must switch to accumulation (+=).
 func handleResultEvent(event *streamEvent, result *StreamResult) {
 	if event.TotalCostUSD > 0 {
 		result.CostUSD = event.TotalCostUSD
 	}
 	if event.Usage != nil {
+		// Cumulative totals — assign, don't accumulate (see function doc).
 		if event.Usage.InputTokens > 0 {
 			result.InputTokens = event.Usage.InputTokens
 		}
