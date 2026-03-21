@@ -12,22 +12,42 @@ You define your workflow as a series of **phases** in a YAML config file. Each p
 
 ## Features
 
+### Workflow Engine
 - **Three phase types**: `script` (shell commands), `agent` (Claude AI via `claude -p`), `gate` (human approval with feedback)
-- **Variable substitution**: `$TICKET`, `$ARTIFACTS_DIR`, `$WORK_DIR`, `$PROJECT_ROOT` expanded in prompts and commands
 - **Convergent loops**: Phases can loop back with `loop` for retry-on-failure and min-iteration enforcement, with optional `on-exhaust` recovery
 - **Parallel execution**: Run two phases concurrently with `parallel-with`
 - **Conditional phases**: Skip phases based on a shell command exit code
-- **Custom variables**: Define project-specific variables under `vars:` that reference built-ins and each other
-- **Per-phase working directory**: Set `cwd` on script/agent phases for worktree workflows
-- **Resume from interruption**: State is saved after every phase — Ctrl+C and resume later
-- **Dry-run mode**: Preview the phase plan without executing anything
+- **Pre-run / post-run hooks**: Shell commands that bracket phase dispatch — start services before, clean up after
 - **Output validation**: Declare expected output files; agents are re-prompted once if outputs are missing
+- **Multi-workflow support**: Define multiple named workflows (bugfix, refactor, etc.) under `.orc/workflows/` with isolated artifacts per workflow
+
+### Configuration
+- **Variable substitution**: `$TICKET`, `$ARTIFACTS_DIR`, `$WORK_DIR`, `$PROJECT_ROOT`, `$WORKFLOW` expanded in prompts and commands
+- **Custom variables**: Define project-specific variables under `vars:` that reference built-ins and each other
 - **Per-phase model and timeout**: Choose `opus`, `sonnet`, or `haiku` per agent phase
+- **Per-phase working directory**: Set `cwd` on script/agent phases for worktree workflows
 - **Cost budgets**: Set per-run and per-phase spending limits with `max-cost`
 - **Tool approval**: Configure which tools agents can use with `default-allow-tools` and `allow-tools`
-- **Attended mode**: Steer agent phases interactively — provide follow-up instructions, approve denied tools on the fly
-- **Full observability**: Rendered prompts, agent logs, cost/token data, timing, and state all saved to `.orc/artifacts/`
-- **AI diagnostics**: `orc doctor` analyzes failed runs and suggests fixes
+- **MCP server support**: Connect agent phases to MCP servers with `mcp-config`
+
+### Execution Modes
+- **Attended mode**: Steer agent phases interactively — provide follow-up instructions, approve denied tools, answer agent questions
+- **Unattended mode**: `--auto` skips gates and disables all interactive prompts
+- **Step-through mode**: `--step` pauses after each phase — continue, rewind to a previous phase, inspect artifacts, or abort
+- **Dry-run mode**: Preview the phase plan without executing anything
+- **Resume from interruption**: State is saved after every phase — Ctrl+C and resume with `--resume` to continue the agent session
+
+### Developer Tools
+- **`orc test`**: Run a single phase in isolation for rapid prompt iteration — no need to execute the full workflow
+- **`orc debug`**: Analyze a phase execution — rendered prompt, tool call sequence, cost/token data, and exit status
+- **`orc doctor`**: AI-powered diagnostics for failed runs — gathers logs, timing, and feedback, then recommends next steps
+- **`orc improve`**: AI-assisted workflow refinement — one-shot or interactive editing of config and prompts
+- **`orc flow`**: Visualize the workflow as a rich flow diagram with loop regions, model badges, and hook annotations
+- **Prompt recipes**: `orc init --recipe` scaffolds from proven workflow patterns (simple, standard, full-pipeline, review-loop)
+
+### Observability
+- **Full audit trail**: Rendered prompts, agent logs, cost/token data, timing, and state all saved to `.orc/artifacts/`
+- **Structured exit codes**: 0 (success), 1 (retryable), 2 (human needed), 3 (config error), 130 (interrupted)
 
 ## Prerequisites
 

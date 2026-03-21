@@ -156,7 +156,7 @@ phases:
     run: .orc/scripts/check-backlog.sh
     loop:
       goto: bead-claim
-      max: 20
+      max: 40
 
   # ── Wave Wrap-Up (only in wave mode) ───────────────────
 
