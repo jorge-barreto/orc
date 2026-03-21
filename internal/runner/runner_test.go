@@ -2752,6 +2752,49 @@ func TestRun_StepMode_HooksSuccess(t *testing.T) {
 	}
 }
 
+func TestRun_PreRunHookGoError_Propagates(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("test requires non-root to enforce directory permissions")
+	}
+
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo", PreRun: "true"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+
+	// Pre-create the artifacts directory structure so Run()'s EnsureDir is a no-op.
+	// Then make the logs/ subdirectory read-only so runHookWithLog's os.OpenFile fails
+	// with a permission error (a Go error, not a non-zero exit code).
+	if err := state.EnsureDir(r.Env.ArtifactsDir); err != nil {
+		t.Fatal(err)
+	}
+	logsDir := filepath.Join(r.Env.ArtifactsDir, "logs")
+	if err := os.Chmod(logsDir, 0555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(logsDir, 0755) })
+
+	err := r.Run(context.Background())
+
+	// The Go error from runHookWithLog must propagate through dispatchWithHooks → Run
+	if err == nil {
+		t.Fatal("expected error from pre-run hook Go error, got nil")
+	}
+	assertExitCode(t, err, ExitRetryable)
+	if r.State.GetStatus() != state.StatusFailed {
+		t.Fatalf("status = %q, want %q", r.State.GetStatus(), state.StatusFailed)
+	}
+	// The dispatcher should NOT have been called — the pre-run hook Go error
+	// short-circuits before dispatch (runner.go:878-879).
+	if mock.callCount() != 0 {
+		t.Fatalf("dispatch calls = %d, want 0 (pre-run Go error should skip dispatch)", mock.callCount())
+	}
+}
+
 func TestRun_StepModeRewindClearsLoopCounts(t *testing.T) {
 	cfg := &config.Config{
 		Name: "test",
