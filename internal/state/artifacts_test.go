@@ -341,13 +341,13 @@ func TestAuditStreamLogPath(t *testing.T) {
 	}
 }
 
-func TestDispatchCounts_RoundTrip(t *testing.T) {
+func TestAttemptCounts_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	original := map[int]int{0: 3, 9: 7}
-	if err := SaveDispatchCounts(dir, original); err != nil {
+	if err := SaveAttemptCounts(dir, original); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := LoadDispatchCounts(dir)
+	loaded, err := LoadAttemptCounts(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,9 +356,9 @@ func TestDispatchCounts_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestDispatchCounts_NoFile(t *testing.T) {
+func TestAttemptCounts_NoFile(t *testing.T) {
 	dir := t.TempDir()
-	counts, err := LoadDispatchCounts(dir)
+	counts, err := LoadAttemptCounts(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

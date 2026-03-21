@@ -53,9 +53,9 @@ func SaveLoopCounts(artifactsDir string, counts map[string]int) error {
 	return writeFileAtomic(filepath.Join(artifactsDir, "loop-counts.json"), data, 0644)
 }
 
-// LoadDispatchCounts reads the dispatch count map from the audit directory.
-// Keys are phase indices (as strings); values are the number of times each phase was dispatched.
-func LoadDispatchCounts(auditDir string) (map[int]int, error) {
+// LoadAttemptCounts reads the attempt count map from the audit directory.
+// Keys are phase indices (as strings); values are the number of times each phase was attempted (includes pre-run hook failures).
+func LoadAttemptCounts(auditDir string) (map[int]int, error) {
 	path := filepath.Join(auditDir, "dispatch-counts.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -79,8 +79,8 @@ func LoadDispatchCounts(auditDir string) (map[int]int, error) {
 	return counts, nil
 }
 
-// SaveDispatchCounts writes the dispatch count map to the audit directory.
-func SaveDispatchCounts(auditDir string, counts map[int]int) error {
+// SaveAttemptCounts writes the attempt count map to the audit directory.
+func SaveAttemptCounts(auditDir string, counts map[int]int) error {
 	raw := make(map[string]int, len(counts))
 	for k, v := range counts {
 		raw[strconv.Itoa(k)] = v

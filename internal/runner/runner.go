@@ -114,7 +114,7 @@ func (r *Runner) Run(ctx context.Context) error {
 	r.Costs = costs
 	r.skipped = make(map[string]bool)
 
-	attemptCounts, err := state.LoadDispatchCounts(r.auditDir)
+	attemptCounts, err := state.LoadAttemptCounts(r.auditDir)
 	if err != nil {
 		return setupErr(fmt.Errorf("loading attempt counts: %w", err))
 	}
@@ -194,7 +194,7 @@ mainLoop:
 		// Archive every attempt to audit (before any error/interrupt handling)
 		r.attemptCount[i]++
 		archivePhaseFiles(r.Env.ArtifactsDir, r.auditDir, i, r.attemptCount[i], phase.Outputs)
-		if saveErr := state.SaveDispatchCounts(r.auditDir, r.attemptCount); saveErr != nil {
+		if saveErr := state.SaveAttemptCounts(r.auditDir, r.attemptCount); saveErr != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to save attempt counts: %v\n", saveErr)
 		}
 
@@ -300,7 +300,7 @@ mainLoop:
 				}
 				r.attemptCount[i]++
 				archivePhaseFiles(r.Env.ArtifactsDir, r.auditDir, i, r.attemptCount[i], phase.Outputs)
-				if saveErr := state.SaveDispatchCounts(r.auditDir, r.attemptCount); saveErr != nil {
+				if saveErr := state.SaveAttemptCounts(r.auditDir, r.attemptCount); saveErr != nil {
 					fmt.Fprintf(os.Stderr, "warning: failed to save attempt counts: %v\n", saveErr)
 				}
 				missing = state.CheckOutputs(r.Env.ArtifactsDir, phase.Outputs)
@@ -669,7 +669,7 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 			ux.PhaseComplete(pr.idx, time.Since(start))
 		}
 	}
-	if saveErr := state.SaveDispatchCounts(r.auditDir, r.attemptCount); saveErr != nil {
+	if saveErr := state.SaveAttemptCounts(r.auditDir, r.attemptCount); saveErr != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to save attempt counts: %v\n", saveErr)
 	}
 

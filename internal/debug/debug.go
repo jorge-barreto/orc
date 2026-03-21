@@ -271,7 +271,7 @@ func Run(projectRoot string, cfg *config.Config, phaseIdx int, ticket, workflow 
 	}
 
 	// Load attempt counts
-	attemptCounts, _ := state.LoadDispatchCounts(auditDir)
+	attemptCounts, _ := state.LoadAttemptCounts(auditDir)
 	attempts := attemptCounts[phaseIdx]
 
 	// Prompt path and size (agent only)
