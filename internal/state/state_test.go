@@ -3,6 +3,7 @@ package state
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -31,8 +32,8 @@ func TestLoad_NoExistingState(t *testing.T) {
 	if st.PhaseIndex != 0 {
 		t.Fatalf("PhaseIndex = %d, want 0", st.PhaseIndex)
 	}
-	if st.Status != StatusRunning {
-		t.Fatalf("Status = %q, want running", st.Status)
+	if st.GetStatus() != StatusRunning {
+		t.Fatalf("Status = %q, want running", st.GetStatus())
 	}
 }
 
@@ -53,8 +54,8 @@ func TestSaveAndLoad_RoundTrip(t *testing.T) {
 	if loaded.PhaseIndex != 3 {
 		t.Fatalf("PhaseIndex = %d, want 3", loaded.PhaseIndex)
 	}
-	if loaded.Ticket != "ABC-123" {
-		t.Fatalf("Ticket = %q", loaded.Ticket)
+	if loaded.GetTicket() != "ABC-123" {
+		t.Fatalf("Ticket = %q", loaded.GetTicket())
 	}
 	if loaded.Status != StatusCompleted {
 		t.Fatalf("Status = %q", loaded.Status)
@@ -64,16 +65,16 @@ func TestSaveAndLoad_RoundTrip(t *testing.T) {
 func TestAdvance(t *testing.T) {
 	s := &State{PhaseIndex: 2}
 	s.Advance()
-	if s.PhaseIndex != 3 {
-		t.Fatalf("PhaseIndex = %d, want 3", s.PhaseIndex)
+	if s.GetPhaseIndex() != 3 {
+		t.Fatalf("PhaseIndex = %d, want 3", s.GetPhaseIndex())
 	}
 }
 
 func TestSetPhase(t *testing.T) {
 	s := &State{PhaseIndex: 5}
 	s.SetPhase(1)
-	if s.PhaseIndex != 1 {
-		t.Fatalf("PhaseIndex = %d, want 1", s.PhaseIndex)
+	if s.GetPhaseIndex() != 1 {
+		t.Fatalf("PhaseIndex = %d, want 1", s.GetPhaseIndex())
 	}
 }
 
@@ -92,8 +93,8 @@ func TestSaveAndLoad_RoundTrip_WithSessionID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.PhaseSessionID != "session-uuid-1234" {
-		t.Fatalf("PhaseSessionID = %q, want %q", loaded.PhaseSessionID, "session-uuid-1234")
+	if loaded.GetSessionID() != "session-uuid-1234" {
+		t.Fatalf("PhaseSessionID = %q, want %q", loaded.GetSessionID(), "session-uuid-1234")
 	}
 }
 
@@ -112,30 +113,30 @@ func TestSaveAndLoad_RoundTrip_WithWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Workflow != "bugfix" {
-		t.Fatalf("Workflow = %q, want %q", loaded.Workflow, "bugfix")
+	if loaded.GetWorkflow() != "bugfix" {
+		t.Fatalf("Workflow = %q, want %q", loaded.GetWorkflow(), "bugfix")
 	}
 }
 
 func TestAdvance_ClearsSessionID(t *testing.T) {
 	s := &State{PhaseIndex: 2, PhaseSessionID: "session-123"}
 	s.Advance()
-	if s.PhaseSessionID != "" {
-		t.Fatalf("PhaseSessionID = %q after Advance, want empty", s.PhaseSessionID)
+	if s.GetSessionID() != "" {
+		t.Fatalf("PhaseSessionID = %q after Advance, want empty", s.GetSessionID())
 	}
-	if s.PhaseIndex != 3 {
-		t.Fatalf("PhaseIndex = %d, want 3", s.PhaseIndex)
+	if s.GetPhaseIndex() != 3 {
+		t.Fatalf("PhaseIndex = %d, want 3", s.GetPhaseIndex())
 	}
 }
 
 func TestSetPhase_ClearsSessionID(t *testing.T) {
 	s := &State{PhaseIndex: 5, PhaseSessionID: "session-456"}
 	s.SetPhase(1)
-	if s.PhaseSessionID != "" {
-		t.Fatalf("PhaseSessionID = %q after SetPhase, want empty", s.PhaseSessionID)
+	if s.GetSessionID() != "" {
+		t.Fatalf("PhaseSessionID = %q after SetPhase, want empty", s.GetSessionID())
 	}
-	if s.PhaseIndex != 1 {
-		t.Fatalf("PhaseIndex = %d, want 1", s.PhaseIndex)
+	if s.GetPhaseIndex() != 1 {
+		t.Fatalf("PhaseIndex = %d, want 1", s.GetPhaseIndex())
 	}
 }
 
@@ -364,4 +365,39 @@ func TestAuditBaseDirForWorkflow_Named(t *testing.T) {
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
+}
+
+func TestState_ConcurrentAccess(t *testing.T) {
+	s := &State{PhaseIndex: 0, Ticket: "T-1", Status: StatusRunning}
+	dir := t.TempDir()
+	var wg sync.WaitGroup
+	wg.Add(4)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			s.SetStatus(StatusRunning)
+			s.GetStatus()
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			s.Advance()
+			s.GetPhaseIndex()
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			s.SetSessionID("test")
+			s.GetSessionID()
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 50; i++ {
+			_ = s.Save(dir)
+		}
+	}()
+	wg.Wait()
 }

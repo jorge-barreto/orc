@@ -106,11 +106,11 @@ func TestRun_AllPhasesSucceed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State.Status != state.StatusCompleted {
-		t.Fatalf("status = %q", r.State.Status)
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q", r.State.GetStatus())
 	}
-	if r.State.PhaseIndex != 3 {
-		t.Fatalf("PhaseIndex = %d", r.State.PhaseIndex)
+	if r.State.GetPhaseIndex() != 3 {
+		t.Fatalf("PhaseIndex = %d", r.State.GetPhaseIndex())
 	}
 	calls := mock.callNames()
 	if len(calls) != 3 || calls[0] != "a" || calls[1] != "b" || calls[2] != "c" {
@@ -136,8 +136,8 @@ func TestRun_FailNoLoop(t *testing.T) {
 		t.Fatalf("expected phase b failure, got %v", err)
 	}
 	assertExitCode(t, err, ExitRetryable)
-	if r.State.Status != state.StatusFailed {
-		t.Fatalf("status = %q", r.State.Status)
+	if r.State.GetStatus() != state.StatusFailed {
+		t.Fatalf("status = %q", r.State.GetStatus())
 	}
 	calls := mock.callNames()
 	// c should never be called
@@ -180,8 +180,8 @@ func TestRun_LoopBasicConvergence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State.Status != state.StatusCompleted {
-		t.Fatalf("status = %q", r.State.Status)
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q", r.State.GetStatus())
 	}
 
 	// Feedback should be cleared after loop exit
@@ -293,8 +293,8 @@ func TestRun_LoopMinForcesIteration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State.Status != state.StatusCompleted {
-		t.Fatalf("status = %q", r.State.Status)
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q", r.State.GetStatus())
 	}
 	// b should be called 3 times (min=3 forced iterations)
 	mu.Lock()
@@ -337,8 +337,8 @@ func TestRun_LoopOnExhaust(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State.Status != state.StatusCompleted {
-		t.Fatalf("status = %q", r.State.Status)
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q", r.State.GetStatus())
 	}
 
 	counts, err := state.LoadLoopCounts(r.Env.ArtifactsDir)
@@ -599,7 +599,7 @@ func TestRun_ResumeFromState(t *testing.T) {
 	}
 	mock := newMock()
 	r := newTestRunner(t, cfg, mock)
-	r.State.PhaseIndex = 2 // resume from phase c
+	r.State.SetPhase(2) // resume from phase c
 
 	err := r.Run(context.Background())
 	if err != nil {
@@ -629,8 +629,8 @@ func TestRun_ContextCancelled(t *testing.T) {
 		t.Fatalf("expected error wrapping context.Canceled, got %v", err)
 	}
 	assertExitCode(t, err, ExitSignal)
-	if r.State.Status != state.StatusInterrupted {
-		t.Fatalf("status = %q", r.State.Status)
+	if r.State.GetStatus() != state.StatusInterrupted {
+		t.Fatalf("status = %q", r.State.GetStatus())
 	}
 }
 
@@ -652,8 +652,8 @@ func TestRun_OutputCheckPass(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State.Status != state.StatusCompleted {
-		t.Fatalf("status = %q", r.State.Status)
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q", r.State.GetStatus())
 	}
 }
 
@@ -671,8 +671,8 @@ func TestRun_OutputCheckFail(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "missing outputs") {
 		t.Fatalf("expected missing outputs error, got %v", err)
 	}
-	if r.State.Status != state.StatusFailed {
-		t.Fatalf("status = %q", r.State.Status)
+	if r.State.GetStatus() != state.StatusFailed {
+		t.Fatalf("status = %q", r.State.GetStatus())
 	}
 }
 
@@ -692,8 +692,8 @@ func TestRun_ParallelBothSucceed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State.Status != state.StatusCompleted {
-		t.Fatalf("status = %q", r.State.Status)
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q", r.State.GetStatus())
 	}
 	// Both parallel phases + c should have been called
 	if mock.callCount() != 3 {
@@ -718,8 +718,8 @@ func TestRun_ParallelOneFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if r.State.Status != state.StatusFailed {
-		t.Fatalf("status = %q", r.State.Status)
+	if r.State.GetStatus() != state.StatusFailed {
+		t.Fatalf("status = %q", r.State.GetStatus())
 	}
 	// c should not have been called
 	for _, c := range mock.callNames() {
@@ -773,8 +773,8 @@ func TestRun_ParallelOutputCheck(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "missing outputs") {
 		t.Fatalf("expected missing outputs error, got %v", err)
 	}
-	if r.State.Status != state.StatusFailed {
-		t.Fatalf("status = %q, want failed", r.State.Status)
+	if r.State.GetStatus() != state.StatusFailed {
+		t.Fatalf("status = %q, want failed", r.State.GetStatus())
 	}
 }
 
@@ -798,8 +798,8 @@ func TestRun_ParallelOutputCheckPass(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State.Status != state.StatusCompleted {
-		t.Fatalf("status = %q, want completed", r.State.Status)
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q, want completed", r.State.GetStatus())
 	}
 }
 
@@ -1112,8 +1112,8 @@ func TestRun_GateDenialExitCode(t *testing.T) {
 		t.Fatal("expected error for gate denial")
 	}
 	assertExitCode(t, err, ExitHumanNeeded)
-	if r.State.Status != state.StatusFailed {
-		t.Fatalf("status = %q, want failed", r.State.Status)
+	if r.State.GetStatus() != state.StatusFailed {
+		t.Fatalf("status = %q, want failed", r.State.GetStatus())
 	}
 }
 
@@ -1170,8 +1170,8 @@ func TestRun_RunCostLimitExceeded(t *testing.T) {
 		t.Fatalf("expected run cost limit error, got %v", err)
 	}
 	assertExitCode(t, err, ExitHumanNeeded)
-	if r.State.Status != state.StatusFailed {
-		t.Fatalf("status = %q, want failed", r.State.Status)
+	if r.State.GetStatus() != state.StatusFailed {
+		t.Fatalf("status = %q, want failed", r.State.GetStatus())
 	}
 	// Phase c should NOT have been dispatched
 	for _, c := range mock.callNames() {
@@ -1218,8 +1218,8 @@ func TestRun_PhaseCostLimitExceeded(t *testing.T) {
 		t.Fatalf("expected phase cost limit error, got %v", err)
 	}
 	assertExitCode(t, err, ExitHumanNeeded)
-	if r.State.Status != state.StatusFailed {
-		t.Fatalf("status = %q, want failed", r.State.Status)
+	if r.State.GetStatus() != state.StatusFailed {
+		t.Fatalf("status = %q, want failed", r.State.GetStatus())
 	}
 	// Phase b should NOT have been dispatched
 	for _, c := range mock.callNames() {
@@ -1321,8 +1321,8 @@ func TestRun_ParallelRunCostLimitExceeded(t *testing.T) {
 		t.Fatalf("expected run cost limit error, got %v", err)
 	}
 	assertExitCode(t, err, ExitHumanNeeded)
-	if r.State.Status != state.StatusFailed {
-		t.Fatalf("status = %q, want failed", r.State.Status)
+	if r.State.GetStatus() != state.StatusFailed {
+		t.Fatalf("status = %q, want failed", r.State.GetStatus())
 	}
 	// Phase c should NOT have been dispatched
 	for _, c := range mock.callNames() {
@@ -1349,8 +1349,8 @@ func TestRun_ParallelPhaseCostLimitExceeded(t *testing.T) {
 		t.Fatalf("expected phase cost limit error, got %v", err)
 	}
 	assertExitCode(t, err, ExitHumanNeeded)
-	if r.State.Status != state.StatusFailed {
-		t.Fatalf("status = %q, want failed", r.State.Status)
+	if r.State.GetStatus() != state.StatusFailed {
+		t.Fatalf("status = %q, want failed", r.State.GetStatus())
 	}
 }
 
@@ -1392,8 +1392,8 @@ func TestRun_LoopCheckFailTriggersLoopBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State.Status != state.StatusCompleted {
-		t.Fatalf("status = %q", r.State.Status)
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q", r.State.GetStatus())
 	}
 
 	// Feedback should be cleared after loop exit
@@ -1432,8 +1432,8 @@ func TestRun_LoopCheckPassAdvances(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State.Status != state.StatusCompleted {
-		t.Fatalf("status = %q", r.State.Status)
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q", r.State.GetStatus())
 	}
 	calls := mock.callNames()
 	if len(calls) != 3 || calls[0] != "a" || calls[1] != "b" || calls[2] != "c" {
@@ -1459,8 +1459,8 @@ func TestRun_LoopCheckVarExpansion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State.Status != state.StatusCompleted {
-		t.Fatalf("status = %q", r.State.Status)
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q", r.State.GetStatus())
 	}
 }
 
@@ -1666,8 +1666,8 @@ func TestRun_LoopCheckOmittedPreservesBehavior(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State.Status != state.StatusCompleted {
-		t.Fatalf("status = %q", r.State.Status)
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q", r.State.GetStatus())
 	}
 	calls := mock.callNames()
 	if len(calls) != 3 || calls[0] != "a" || calls[1] != "b" || calls[2] != "c" {
@@ -2163,8 +2163,8 @@ func TestRun_SavesAndClearsSessionIDOnSuccess(t *testing.T) {
 	}
 
 	// After successful completion, PhaseSessionID should be cleared by Advance()
-	if r.State.PhaseSessionID != "" {
-		t.Fatalf("PhaseSessionID = %q after success, want empty", r.State.PhaseSessionID)
+	if r.State.GetSessionID() != "" {
+		t.Fatalf("PhaseSessionID = %q after success, want empty", r.State.GetSessionID())
 	}
 }
 
@@ -2240,8 +2240,8 @@ func TestRun_NoSessionIDForScriptPhase(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if r.State.PhaseSessionID != "" {
-		t.Fatalf("PhaseSessionID = %q for script phase, want empty", r.State.PhaseSessionID)
+	if r.State.GetSessionID() != "" {
+		t.Fatalf("PhaseSessionID = %q for script phase, want empty", r.State.GetSessionID())
 	}
 }
 
@@ -2409,8 +2409,8 @@ func TestRun_StepModeContinue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State.Status != state.StatusCompleted {
-		t.Fatalf("status = %q, want completed", r.State.Status)
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q, want completed", r.State.GetStatus())
 	}
 	calls := mock.callNames()
 	if len(calls) != 3 || calls[0] != "a" || calls[1] != "b" || calls[2] != "c" {
@@ -2442,8 +2442,8 @@ func TestRun_StepModeAbort(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 	assertExitCode(t, err, ExitSignal)
-	if r.State.Status != state.StatusInterrupted {
-		t.Fatalf("status = %q, want interrupted", r.State.Status)
+	if r.State.GetStatus() != state.StatusInterrupted {
+		t.Fatalf("status = %q, want interrupted", r.State.GetStatus())
 	}
 	for _, c := range mock.callNames() {
 		if c == "c" {
@@ -2477,8 +2477,8 @@ func TestRun_StepModeRewind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State.Status != state.StatusCompleted {
-		t.Fatalf("status = %q, want completed", r.State.Status)
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q, want completed", r.State.GetStatus())
 	}
 	calls := mock.callNames()
 	want := []string{"a", "b", "c", "b", "c"}
@@ -2528,8 +2528,8 @@ func TestRun_StepModeInvalidRewindReprompts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State.Status != state.StatusCompleted {
-		t.Fatalf("status = %q, want completed", r.State.Status)
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q, want completed", r.State.GetStatus())
 	}
 	calls := mock.callNames()
 	if len(calls) != 3 {
@@ -2659,8 +2659,8 @@ func TestRun_StepMode_PreRunHookFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from pre-run hook failure, got nil")
 	}
-	if r.State.Status != state.StatusFailed {
-		t.Fatalf("status = %q, want %q", r.State.Status, state.StatusFailed)
+	if r.State.GetStatus() != state.StatusFailed {
+		t.Fatalf("status = %q, want %q", r.State.GetStatus(), state.StatusFailed)
 	}
 	if len(prompts) != 1 || prompts[0] != "a" {
 		t.Fatalf("step prompts = %v, want [a]", prompts)
@@ -2695,8 +2695,8 @@ func TestRun_StepMode_PostRunHookFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from post-run hook failure, got nil")
 	}
-	if r.State.Status != state.StatusFailed {
-		t.Fatalf("status = %q, want %q", r.State.Status, state.StatusFailed)
+	if r.State.GetStatus() != state.StatusFailed {
+		t.Fatalf("status = %q, want %q", r.State.GetStatus(), state.StatusFailed)
 	}
 	if len(prompts) != 1 || prompts[0] != "a" {
 		t.Fatalf("step prompts = %v, want [a]", prompts)
@@ -2736,8 +2736,8 @@ func TestRun_StepMode_HooksSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State.Status != state.StatusCompleted {
-		t.Fatalf("status = %q, want completed", r.State.Status)
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q, want completed", r.State.GetStatus())
 	}
 	calls := mock.callNames()
 	if len(calls) != 3 || calls[0] != "a" || calls[1] != "b" || calls[2] != "c" {
@@ -2781,8 +2781,8 @@ func TestRun_StepModeRewindClearsLoopCounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State.Status != state.StatusCompleted {
-		t.Fatalf("status = %q, want completed", r.State.Status)
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q, want completed", r.State.GetStatus())
 	}
 	want := []string{"a", "b", "a", "b", "c", "a", "b", "a", "b", "c"}
 	calls := mock.callNames()
@@ -2824,8 +2824,8 @@ func TestRun_StepModeParallelRewindClearsLoopCounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State.Status != state.StatusCompleted {
-		t.Fatalf("status = %q, want completed", r.State.Status)
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q, want completed", r.State.GetStatus())
 	}
 	calls := mock.callNames()
 	if len(calls) != 9 {
@@ -2887,8 +2887,8 @@ func TestRun_StepModeParallelRewindReturnsSentinel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State.Status != state.StatusCompleted {
-		t.Fatalf("status = %q, want completed", r.State.Status)
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q, want completed", r.State.GetStatus())
 	}
 	calls := mock.callNames()
 	if len(calls) != 7 {
