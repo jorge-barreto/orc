@@ -552,3 +552,99 @@ func TestReadFeedbackFiles(t *testing.T) {
 		})
 	}
 }
+
+func TestScanLogForStatus(t *testing.T) {
+	tests := []struct {
+		name       string
+		logContent string
+		create     bool
+		phaseName  string
+		want       string
+	}{
+		{
+			name:      "file does not exist",
+			create:    false,
+			phaseName: "build",
+			want:      "",
+		},
+		{
+			name:       "empty file",
+			logContent: "",
+			create:     true,
+			phaseName:  "build",
+			want:       "",
+		},
+		{
+			name:       "no status markers",
+			logContent: "line1\nline2\nline3\n",
+			create:     true,
+			phaseName:  "build",
+			want:       "",
+		},
+		{
+			name:       "failed status near end",
+			logContent: "output\nmore output\n[orc] phase \"build\" failed: exit code 1\n",
+			create:     true,
+			phaseName:  "build",
+			want:       "failed: exit code 1",
+		},
+		{
+			name:       "interrupted status",
+			logContent: "output\n[orc] phase interrupted: SIGINT\n",
+			create:     true,
+			phaseName:  "build",
+			want:       "interrupted",
+		},
+		{
+			name:       "status on last line no trailing newline",
+			logContent: "output\n[orc] phase \"deploy\" failed: timeout",
+			create:     true,
+			phaseName:  "deploy",
+			want:       "failed: timeout",
+		},
+		{
+			name:       "status on first line",
+			logContent: "[orc] phase \"test\" failed: oom\nmore output\n",
+			create:     true,
+			phaseName:  "test",
+			want:       "failed: oom",
+		},
+		{
+			name:       "multiple markers last wins",
+			logContent: "[orc] phase \"test\" failed: exit code 1\nmiddle\n[orc] phase \"test\" failed: exit code 2\n",
+			create:     true,
+			phaseName:  "test",
+			want:       "failed: exit code 2",
+		},
+		{
+			name:       "phase name mismatch",
+			logContent: "[orc] phase \"other\" failed: exit code 1\n",
+			create:     true,
+			phaseName:  "build",
+			want:       "",
+		},
+		{
+			name:       "interrupted last beats failed",
+			logContent: "[orc] phase \"build\" failed: exit code 1\n[orc] phase interrupted: SIGINT\n",
+			create:     true,
+			phaseName:  "build",
+			want:       "interrupted",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			logPath := filepath.Join(dir, "phase.log")
+			if tc.create {
+				if err := os.WriteFile(logPath, []byte(tc.logContent), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got := scanLogForStatus(logPath, tc.phaseName)
+			if got != tc.want {
+				t.Errorf("scanLogForStatus() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
