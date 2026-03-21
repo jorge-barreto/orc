@@ -44,25 +44,25 @@ Be direct and concise. Focus on actionable advice.`
 
 // Run gathers failure context from artifacts and sends it to claude for diagnosis.
 func Run(ctx context.Context, auditDir, artifactsDir string, cfg *config.Config, st *state.State) error {
-	if st.Status != state.StatusFailed && st.Status != state.StatusInterrupted {
+	if st.GetStatus() != state.StatusFailed && st.GetStatus() != state.StatusInterrupted {
 		fmt.Println("No failed run to diagnose.")
 		return nil
 	}
 
-	if st.PhaseIndex >= len(cfg.Phases) {
-		return fmt.Errorf("phase index %d out of range (config has %d phases)", st.PhaseIndex, len(cfg.Phases))
+	if st.GetPhaseIndex() >= len(cfg.Phases) {
+		return fmt.Errorf("phase index %d out of range (config has %d phases)", st.GetPhaseIndex(), len(cfg.Phases))
 	}
 
-	phase := cfg.Phases[st.PhaseIndex]
+	phase := cfg.Phases[st.GetPhaseIndex()]
 
 	phaseConfig := gatherPhaseConfig(phase)
-	log := gatherLog(artifactsDir, st.PhaseIndex)
-	prompt := gatherPrompt(artifactsDir, st.PhaseIndex, phase)
+	log := gatherLog(artifactsDir, st.GetPhaseIndex())
+	prompt := gatherPrompt(artifactsDir, st.GetPhaseIndex(), phase)
 	feedback := gatherFeedback(artifactsDir)
 	timing := gatherTimingWithFallback(auditDir, artifactsDir)
 	loops := gatherLoopCounts(artifactsDir)
-	otherLogs := gatherAllLogs(artifactsDir, cfg.Phases, st.PhaseIndex)
-	iterLogs := gatherIterationLogs(auditDir, st.PhaseIndex)
+	otherLogs := gatherAllLogs(artifactsDir, cfg.Phases, st.GetPhaseIndex())
+	iterLogs := gatherIterationLogs(auditDir, st.GetPhaseIndex())
 
 	diagText := buildPrompt(phaseConfig, log, prompt, feedback, timing, loops, otherLogs, iterLogs)
 
@@ -73,14 +73,14 @@ func Run(ctx context.Context, auditDir, artifactsDir string, cfg *config.Config,
 
 	// Print header
 	fmt.Printf("\n%s%s══ Doctor: diagnosing phase %d/%d (%s) ══%s\n\n",
-		ux.Bold, ux.Cyan, st.PhaseIndex+1, len(cfg.Phases), phase.Name, ux.Reset)
+		ux.Bold, ux.Cyan, st.GetPhaseIndex()+1, len(cfg.Phases), phase.Name, ux.Reset)
 
 	if err := runClaude(ctx, diagText, model); err != nil {
 		return fmt.Errorf("failed to run claude: %w", err)
 	}
 
 	fmt.Println()
-	ux.ResumeHint(st.Ticket, st.PhaseSessionID != "")
+	ux.ResumeHint(st.GetTicket(), st.GetSessionID() != "")
 	return nil
 }
 

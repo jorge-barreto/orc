@@ -203,10 +203,10 @@ func determineExitStatus(logPath, artifactsDir string, phaseIdx int, phaseName s
 		return "unknown"
 	}
 	switch {
-	case st.PhaseIndex > phaseIdx:
+	case st.GetPhaseIndex() > phaseIdx:
 		return "success"
-	case st.PhaseIndex == phaseIdx:
-		switch st.Status {
+	case st.GetPhaseIndex() == phaseIdx:
+		switch st.GetStatus() {
 		case state.StatusCompleted:
 			return "success"
 		case state.StatusFailed:

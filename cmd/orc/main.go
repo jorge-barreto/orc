@@ -152,9 +152,9 @@ func runCmd() *cli.Command {
 			if err != nil {
 				return cfgErr(fmt.Errorf("loading state: %w", err))
 			}
-			st.Ticket = ticket
-			st.Workflow = workflowName
-			st.Status = state.StatusRunning
+			st.SetTicket(ticket)
+			st.SetWorkflow(workflowName)
+			st.SetStatus(state.StatusRunning)
 
 			// Handle --retry, --from, and --resume (mutually exclusive)
 			retryVal := cmd.String("retry")
@@ -193,10 +193,10 @@ func runCmd() *cli.Command {
 
 			// Handle --resume: validate and thread session ID
 			if resumeFlag {
-				if st.PhaseSessionID == "" {
+				if st.GetSessionID() == "" {
 					return cfgErr(fmt.Errorf("no interrupted agent session to resume (use --retry to restart the phase)"))
 				}
-				env.ResumeSessionID = st.PhaseSessionID
+				env.ResumeSessionID = st.GetSessionID()
 			}
 
 			stepMode := cmd.Bool("step")
@@ -281,11 +281,11 @@ func cancelCmd() *cli.Command {
 				return fmt.Errorf("loading state: %w", err)
 			}
 
-			if st.Ticket != "" && st.Ticket != ticket {
-				return fmt.Errorf("state is for ticket %q, not %q", st.Ticket, ticket)
+			if st.GetTicket() != "" && st.GetTicket() != ticket {
+				return fmt.Errorf("state is for ticket %q, not %q", st.GetTicket(), ticket)
 			}
 
-			if st.Status == state.StatusRunning && !cmd.Bool("force") {
+			if st.GetStatus() == state.StatusRunning && !cmd.Bool("force") {
 				return fmt.Errorf("ticket %s appears to be running — Ctrl+C the process first, or use --force", ticket)
 			}
 

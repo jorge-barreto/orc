@@ -38,13 +38,13 @@ func RenderStatus(cfg *config.Config, st *state.State, artifactsDir, auditDir st
 	}
 
 	// Header
-	fmt.Printf("%sTicket:%s  %s\n", Bold, Reset, st.Ticket)
-	if st.PhaseIndex >= len(cfg.Phases) {
+	fmt.Printf("%sTicket:%s  %s\n", Bold, Reset, st.GetTicket())
+	if st.GetPhaseIndex() >= len(cfg.Phases) {
 		fmt.Printf("%sState:%s   %s%scompleted%s\n", Bold, Reset, Green, Bold, Reset)
 	} else {
-		phase := cfg.Phases[st.PhaseIndex]
+		phase := cfg.Phases[st.GetPhaseIndex()]
 		fmt.Printf("%sState:%s   %d/%d (%s) — %s\n",
-			Bold, Reset, st.PhaseIndex+1, len(cfg.Phases), phase.Name, st.Status)
+			Bold, Reset, st.GetPhaseIndex()+1, len(cfg.Phases), phase.Name, st.GetStatus())
 	}
 	if timing != nil {
 		if elapsed := timing.TotalElapsed(); elapsed > 0 {
@@ -106,10 +106,10 @@ func RenderStatus(cfg *config.Config, st *state.State, artifactsDir, auditDir st
 			fmt.Printf("  %s%-4s%-20s%8s%10s%s\n",
 				"", "", "", Bold+totalElapsed+Reset, Bold+totalCost+Reset, "")
 		}
-	} else if st.PhaseIndex > 0 {
+	} else if st.GetPhaseIndex() > 0 {
 		// Fallback: no timing data, just list completed phase names
 		fmt.Printf("\n%sCompleted:%s\n", Bold, Reset)
-		for i := 0; i < st.PhaseIndex && i < len(cfg.Phases); i++ {
+		for i := 0; i < st.GetPhaseIndex() && i < len(cfg.Phases); i++ {
 			p := cfg.Phases[i]
 			fmt.Printf("  %s%d%s  %-20s %sdone%s\n",
 				Dim, i+1, Reset, p.Name, Green, Reset)
@@ -117,12 +117,12 @@ func RenderStatus(cfg *config.Config, st *state.State, artifactsDir, auditDir st
 	}
 
 	// Remaining phases
-	if st.PhaseIndex < len(cfg.Phases) {
+	if st.GetPhaseIndex() < len(cfg.Phases) {
 		fmt.Printf("\n%sRemaining:%s\n", Bold, Reset)
-		for i := st.PhaseIndex; i < len(cfg.Phases); i++ {
+		for i := st.GetPhaseIndex(); i < len(cfg.Phases); i++ {
 			p := cfg.Phases[i]
 			marker := "  "
-			if i == st.PhaseIndex {
+			if i == st.GetPhaseIndex() {
 				marker = fmt.Sprintf("%s→%s ", Yellow, Reset)
 			}
 			fmt.Printf("  %s%s%d%s  %-20s %s(%s)%s\n",
@@ -166,7 +166,7 @@ func RenderStatusAll(cfg *config.Config, tickets []state.TicketSummary) {
 	// Check if any ticket has a workflow name
 	hasWorkflow := false
 	for _, t := range tickets {
-		if t.State.Workflow != "" {
+		if t.State.GetWorkflow() != "" {
 			hasWorkflow = true
 			break
 		}
@@ -180,7 +180,7 @@ func RenderStatusAll(cfg *config.Config, tickets []state.TicketSummary) {
 
 	for _, t := range tickets {
 		statusColor := Dim
-		switch t.State.Status {
+		switch t.State.GetStatus() {
 		case state.StatusCompleted:
 			statusColor = Green
 		case state.StatusRunning:
@@ -193,12 +193,12 @@ func RenderStatusAll(cfg *config.Config, tickets []state.TicketSummary) {
 
 		var phase string
 		if len(cfg.Phases) == 0 {
-			phase = fmt.Sprintf("phase %d", t.State.PhaseIndex+1)
-		} else if t.State.PhaseIndex >= len(cfg.Phases) {
+			phase = fmt.Sprintf("phase %d", t.State.GetPhaseIndex()+1)
+		} else if t.State.GetPhaseIndex() >= len(cfg.Phases) {
 			phase = fmt.Sprintf("%d/%d", len(cfg.Phases), len(cfg.Phases))
 		} else {
-			p := cfg.Phases[t.State.PhaseIndex]
-			phase = fmt.Sprintf("%d/%d (%s)", t.State.PhaseIndex+1, len(cfg.Phases), p.Name)
+			p := cfg.Phases[t.State.GetPhaseIndex()]
+			phase = fmt.Sprintf("%d/%d (%s)", t.State.GetPhaseIndex()+1, len(cfg.Phases), p.Name)
 		}
 
 		cost := fmt.Sprintf("$%.2f", t.Costs.TotalCostUSD)
@@ -211,18 +211,18 @@ func RenderStatusAll(cfg *config.Config, tickets []state.TicketSummary) {
 		}
 
 		if hasWorkflow {
-			wf := t.State.Workflow
+			wf := t.State.GetWorkflow()
 			if wf == "" {
 				wf = "-"
 			}
 			fmt.Printf("%-14s%-14s%s%-14s%s%-17s%-10s%s\n",
 				t.Ticket, wf,
-				statusColor, t.State.Status, Reset,
+				statusColor, t.State.GetStatus(), Reset,
 				phase, cost, elapsed)
 		} else {
 			fmt.Printf("%-14s%s%-14s%s%-17s%-10s%s\n",
 				t.Ticket,
-				statusColor, t.State.Status, Reset,
+				statusColor, t.State.GetStatus(), Reset,
 				phase, cost, elapsed)
 		}
 	}

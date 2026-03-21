@@ -54,7 +54,7 @@ func appendPhaseLog(artifactsDir string, phaseIdx int, msg string) {
 // failAndHint sets the failure status, saves state (warning on error),
 // flushes timing, prints a resume hint, and returns the given error.
 func (r *Runner) failAndHint(status string, exitCode int, err error) error {
-	r.State.Status = status
+	r.State.SetStatus(status)
 	if saveErr := r.State.Save(r.Env.ArtifactsDir); saveErr != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to save state: %v\n", saveErr)
 	}
@@ -73,7 +73,7 @@ func (r *Runner) failAndHint(status string, exitCode int, err error) error {
 			fmt.Fprintf(os.Stderr, "warning: failed to flush costs: %v\n", flushErr)
 		}
 	}
-	ux.ResumeHint(r.State.Ticket, r.State.PhaseSessionID != "")
+	ux.ResumeHint(r.State.GetTicket(), r.State.GetSessionID() != "")
 	return &ExitError{Code: exitCode, Err: err}
 }
 
@@ -128,8 +128,8 @@ func (r *Runner) Run(ctx context.Context) error {
 	total := len(r.Config.Phases)
 
 mainLoop:
-	for r.State.PhaseIndex < total {
-		i := r.State.PhaseIndex
+	for r.State.GetPhaseIndex() < total {
+		i := r.State.GetPhaseIndex()
 		phase := r.Config.Phases[i]
 
 		// Check for context cancellation
@@ -190,7 +190,7 @@ mainLoop:
 		// Must happen before any error handling — if the process dies
 		// during error handling, the session ID is still on disk.
 		if phase.Type == "agent" && result != nil && result.SessionID != "" {
-			r.State.PhaseSessionID = result.SessionID
+			r.State.SetSessionID(result.SessionID)
 			if saveErr := r.State.Save(r.Env.ArtifactsDir); saveErr != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to save session ID: %v\n", saveErr)
 			}
@@ -399,7 +399,7 @@ mainLoop:
 			fmt.Fprintf(os.Stderr, "warning: failed to flush timing: %v\n", err)
 		}
 		r.State.Advance()
-		r.State.Status = state.StatusRunning
+		r.State.SetStatus(state.StatusRunning)
 		if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
 			return fmt.Errorf("saving state after phase advance: %w", err)
 		}
@@ -424,8 +424,8 @@ mainLoop:
 						fmt.Fprintf(os.Stderr, "  invalid rewind target: %v\n", err)
 						continue
 					}
-					if idx < r.State.PhaseIndex {
-						if err := r.prepareBackwardJump(idx, r.State.PhaseIndex, loopCounts); err != nil {
+					if idx < r.State.GetPhaseIndex() {
+						if err := r.prepareBackwardJump(idx, r.State.GetPhaseIndex(), loopCounts); err != nil {
 							return err
 						}
 						if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
@@ -445,7 +445,7 @@ mainLoop:
 		}
 	}
 
-	r.State.Status = state.StatusCompleted
+	r.State.SetStatus(state.StatusCompleted)
 	if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
 		return fmt.Errorf("saving final state: %w", err)
 	}
@@ -769,8 +769,8 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 					fmt.Fprintf(os.Stderr, "  invalid rewind target: %v\n", err)
 					continue
 				}
-				if idx < r.State.PhaseIndex {
-					if err := r.prepareBackwardJump(idx, r.State.PhaseIndex, loopCounts); err != nil {
+				if idx < r.State.GetPhaseIndex() {
+					if err := r.prepareBackwardJump(idx, r.State.GetPhaseIndex(), loopCounts); err != nil {
 						return err
 					}
 					if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
