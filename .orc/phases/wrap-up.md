@@ -34,7 +34,9 @@ You are wrapping up work on a bead.
 5. **Create beads for discovered issues:**
    Check `$ARTIFACTS_DIR/quick-review-findings.md` for any non-blocking notes from the review. For each note that describes a real issue, classify it:
 
-   **Critical** (could cause incorrect runtime behavior — crashes, data races, wrong results, security issues):
+   For each note, ask: **"Can I describe a concrete scenario where this bug ships to a user and causes wrong behavior at runtime?"** If the answer requires "if someone later refactors..." or "if a future caller..." — it's backlog, not critical.
+
+   **Critical** (wrong behavior that can happen today — not hypothetically after a future change):
    ```bash
    EPIC=$(cat "$ARTIFACTS_DIR/epic-id.txt")
    bd create --title="<concise title>" --type=bug --priority=1 --parent="$EPIC" -d "<what's wrong and where>"
@@ -44,7 +46,7 @@ You are wrapping up work on a bead.
    echo "<new-bead-id>" >> "$ARTIFACTS_DIR/bead-ids.txt"
    ```
 
-   **Backlog** (test gaps, improvements, refactors, style — anything where the worst case is "ugly" not "wrong"):
+   **Backlog** (everything else — missing assertions on tested code, improvements, defensive hardening, hypothetical risks):
    ```bash
    bd create --title="<concise title>" --type=task --priority=3 -d "<what's wrong and where>"
    ```

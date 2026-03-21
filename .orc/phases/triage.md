@@ -9,16 +9,20 @@ You are triaging findings from the wave review into actionable beads.
 
 1. Read `$ARTIFACTS_DIR/wave-review-findings.md`.
 
-2. **Classify each finding** as either **critical** or **backlog** using this rule:
+2. **Classify each finding** as either **critical** or **backlog** using this decision test:
+
+   For each finding, ask: **"Can I describe a concrete scenario where this bug ships to a user and causes wrong behavior at runtime?"**
+
+   If yes → **Critical**. If the answer is hypothetical ("if someone later refactors...", "if a future caller...") → **Backlog**.
 
    **Critical** (goes in current wave — gets worked immediately):
-   - Bugs that cause incorrect runtime behavior: crashes, data races, data loss, security issues, silent wrong results
-   - Test gaps for code that handles concurrency, state persistence, external input, or error recovery
+   - Bugs in code that runs today and produces wrong results: crashes, data races, data loss, security issues
+   - A missing test is critical ONLY if: (1) the code it covers has zero existing test coverage, AND (2) the untested code path can produce a wrong result in a scenario that can actually happen today (not hypothetically after a future refactor)
 
    **Backlog** (orphan bead — saved for human review later):
-   - Improvements, refactors, and style issues
-   - Test gaps for rendering, formatting, simple getters, or deterministic pure functions
-   - Anything where the worst case is "ugly" rather than "wrong"
+   - Everything else: improvements, refactors, style, missing assertions on already-tested code, hypothetical future risks, defensive hardening
+   - A missing test where the code already has some coverage (even indirect) is always backlog
+   - A test that would only catch a bug introduced by a future change that hasn't happened is always backlog
 
 3. **For each critical finding** — create a bead as a child of this wave so it gets picked up:
    ```bash
