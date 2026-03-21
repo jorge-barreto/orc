@@ -18,6 +18,9 @@ func Preflight(phases []config.Phase) error {
 		case "agent":
 			needed["claude"] = true
 		}
+		if p.PreRun != "" || p.PostRun != "" {
+			needed["bash"] = true
+		}
 	}
 
 	var missing []string

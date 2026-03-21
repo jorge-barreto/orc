@@ -41,3 +41,21 @@ func TestPreflight_MissingBinary(t *testing.T) {
 		t.Fatalf("expected error mentioning claude, got: %v", err)
 	}
 }
+
+func TestPreflight_HooksNeedBash(t *testing.T) {
+	phases := []config.Phase{
+		{Name: "approve", Type: "gate", PreRun: "echo setup"},
+	}
+	if err := Preflight(phases); err != nil {
+		t.Fatalf("gate with pre-run hook should check for bash, got: %v", err)
+	}
+}
+
+func TestPreflight_PostRunHookNeedsBash(t *testing.T) {
+	phases := []config.Phase{
+		{Name: "notify", Type: "gate", PostRun: "echo done"},
+	}
+	if err := Preflight(phases); err != nil {
+		t.Fatalf("gate with post-run hook should check for bash, got: %v", err)
+	}
+}
