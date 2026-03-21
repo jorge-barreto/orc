@@ -462,7 +462,7 @@ loop:
 
 **On-exhaust recovery:** When a loop exhausts, if `on-exhaust` is set, the loop counter resets and orc jumps to the on-exhaust target. This enables outer recovery (e.g., re-plan then re-implement). Accepts a string (`on-exhaust: plan`) or object (`on-exhaust: {goto: plan, max: 2}`).
 
-Loop counts are persisted to `.orc/artifacts/loop-counts.json` and reset when using `--retry` or `--from`. Note: `loop.max` means total iterations, not retries.
+Loop counts are persisted to `.orc/artifacts/loop-counts.json` and reset when using `--retry`, `--from`, or step-mode backward rewind. Note: `loop.max` means total iterations, not retries.
 
 ## Parallel Phases
 

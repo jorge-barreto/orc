@@ -583,7 +583,7 @@ on-exhaust accepts a string (phase name, fires once) or an object
 ({goto: plan, max: 2} for multiple recovery attempts).
 
 Loop counts are persisted to .orc/artifacts/<ticket>/loop-counts.json
-and reset when using --retry or --from.
+and reset when using --retry, --from, or step-mode backward rewind.
 
 Note: loop.max means total iterations, not retries. A phase with
 max: 3 runs at most 3 times before exhaustion.
@@ -693,8 +693,9 @@ Commands:
   a, abort               Stop the run, save state as interrupted
   i <file>, inspect file Print an artifact file to the terminal
 
-Rewind preserves artifacts from completed phases — it only changes
-which phase runs next. Loop counts are not reset.
+Rewind preserves artifacts from completed phases. When rewinding
+backward, loop counters for phases between the target and the current
+position are reset so loops re-execute correctly.
 
 --step is incompatible with --auto (step-through requires interactive
 input).
