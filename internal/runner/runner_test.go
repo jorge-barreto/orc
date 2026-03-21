@@ -2991,3 +2991,53 @@ func TestRun_ParallelAttemptCountInvariant(t *testing.T) {
 		t.Fatalf("attemptCount[1] = %d, want 1", r.attemptCount[1])
 	}
 }
+
+func TestRun_StepModeParallelAbort(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "pre", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo", ParallelWith: "c"},
+			{Name: "c", Type: "script", Run: "echo"},
+			{Name: "post", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	r.StepMode = true
+	r.StepPromptFn = func(artifactsDir string, phaseIdx int, phaseName string) ux.StepAction {
+		if phaseName == "pre" {
+			return ux.StepAction{Type: "continue"}
+		}
+		if phaseName == "b + c" {
+			return ux.StepAction{Type: "abort"}
+		}
+		return ux.StepAction{Type: "continue"}
+	}
+
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected error from parallel abort, got nil")
+	}
+	assertExitCode(t, err, ExitSignal)
+	if r.State.GetStatus() != state.StatusInterrupted {
+		t.Fatalf("status = %q, want interrupted", r.State.GetStatus())
+	}
+	for _, c := range mock.callNames() {
+		if c == "post" {
+			t.Fatal("phase post should not have been dispatched after parallel abort")
+		}
+	}
+	calls := mock.callNames()
+	if len(calls) != 3 {
+		t.Fatalf("len(calls) = %d, want 3 (pre + b + c); calls=%v", len(calls), calls)
+	}
+	if calls[0] != "pre" {
+		t.Fatalf("calls[0] = %q, want \"pre\"", calls[0])
+	}
+	pair := []string{calls[1], calls[2]}
+	sort.Strings(pair)
+	if pair[0] != "b" || pair[1] != "c" {
+		t.Fatalf("calls[1:3] = %v, want b+c in any order", calls[1:3])
+	}
+}
