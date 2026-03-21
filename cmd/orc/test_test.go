@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -9,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/jorge-barreto/orc/internal/config"
+	"github.com/jorge-barreto/orc/internal/dispatch"
+	"github.com/jorge-barreto/orc/internal/state"
 )
 
 func TestCheckMissingArtifacts_NoPriorPhases(t *testing.T) {
@@ -103,5 +106,45 @@ func TestCheckMissingArtifacts_MultiplePriorPhases(t *testing.T) {
 	}
 	if !strings.Contains(got, "phase 2: code") {
 		t.Errorf("expected output to contain %q, got: %q", "phase 2: code", got)
+	}
+}
+
+func TestOrcTest_HooksNotRun(t *testing.T) {
+	sentinel := filepath.Join(t.TempDir(), "hook-ran")
+	phase := config.Phase{
+		Name:    "check",
+		Type:    "script",
+		Run:     "echo ok",
+		PreRun:  "touch " + sentinel,
+		PostRun: "touch " + sentinel + ".post",
+	}
+
+	artifactsDir := filepath.Join(t.TempDir(), "artifacts")
+	if err := state.EnsureDir(artifactsDir); err != nil {
+		t.Fatal(err)
+	}
+
+	env := &dispatch.Environment{
+		ProjectRoot:  t.TempDir(),
+		WorkDir:      t.TempDir(),
+		ArtifactsDir: artifactsDir,
+		Ticket:       "TEST-1",
+		PhaseIndex:   0,
+		PhaseCount:   1,
+	}
+
+	result, err := dispatch.Dispatch(context.Background(), phase, env)
+	if err != nil {
+		t.Fatalf("dispatch.Dispatch returned error: %v", err)
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d", result.ExitCode)
+	}
+
+	if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
+		t.Fatal("orc test calls dispatch.Dispatch directly, not dispatchWithHooks — pre-run hook must not run")
+	}
+	if _, err := os.Stat(sentinel + ".post"); !os.IsNotExist(err) {
+		t.Fatal("orc test calls dispatch.Dispatch directly, not dispatchWithHooks — post-run hook must not run")
 	}
 }
