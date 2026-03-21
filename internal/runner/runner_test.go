@@ -2298,9 +2298,7 @@ func TestRun_PostRunFailure_OverridesSuccess(t *testing.T) {
 	mock := newMock()
 	r := newTestRunner(t, cfg, mock)
 	err := r.Run(context.Background())
-	if err == nil {
-		t.Fatal("expected failure due to post-run exit 1")
-	}
+	assertExitCode(t, err, ExitRetryable)
 }
 
 func TestRun_PostRunWarning_OnDispatchFailure(t *testing.T) {
