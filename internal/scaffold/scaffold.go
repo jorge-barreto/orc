@@ -95,7 +95,7 @@ func InitWorkflow(targetDir, name, recipe string) error {
 
 	var content string
 	if recipe != "" {
-		r, err := GetRecipe(recipe)
+		r, err := getRecipeFn(recipe)
 		if err != nil {
 			return err
 		}
@@ -285,6 +285,9 @@ func printSuccess(source string, written []string) {
 		fmt.Printf("    %s%s%s\n", ux.Cyan, path, ux.Reset)
 	}
 }
+
+// getRecipeFn is the function used to fetch recipes. Tests can override this.
+var getRecipeFn = GetRecipe
 
 // runClaude is the function used to invoke claude. Tests can override this.
 var runClaude = runClaudeCaptureDefault
