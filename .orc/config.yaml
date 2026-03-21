@@ -180,6 +180,10 @@ phases:
     condition: '[ "$(cat "$ORC_ARTIFACTS_DIR/run-mode.txt" 2>/dev/null)" = "wave" ]'
     outputs:
       - triage-results.md
+    loop:
+      goto: bead-claim
+      max: 5
+      check: test "$(bd ready $ORC_TICKET --json | jq -r '.total')" -gt 0
 
   - name: wave-summary
     type: script
