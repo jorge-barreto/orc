@@ -371,7 +371,7 @@ func TestState_ConcurrentAccess(t *testing.T) {
 	s := &State{PhaseIndex: 0, Ticket: "T-1", Status: StatusRunning}
 	dir := t.TempDir()
 	var wg sync.WaitGroup
-	wg.Add(4)
+	wg.Add(7)
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 100; i++ {
@@ -397,6 +397,26 @@ func TestState_ConcurrentAccess(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < 50; i++ {
 			_ = s.Save(dir)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			s.SetTicket("T-concurrent")
+			s.GetTicket()
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			s.SetWorkflow("test-workflow")
+			s.GetWorkflow()
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			s.SetPhase(i % 10)
 		}
 	}()
 	wg.Wait()
