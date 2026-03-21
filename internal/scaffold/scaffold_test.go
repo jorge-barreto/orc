@@ -1,7 +1,9 @@
 package scaffold
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,6 +50,18 @@ func stubClaudeCapture(t *testing.T) *string {
 			"```\n", nil
 	}
 	return &captured
+}
+
+func captureOutput(fn func()) string {
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	fn()
+	w.Close()
+	os.Stdout = old
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	return buf.String()
 }
 
 func TestInit_CreatesDirectoryStructure(t *testing.T) {
@@ -340,5 +354,28 @@ func TestWriteBlocks_ErrorOnWriteFailure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), ".orc/config.yaml") {
 		t.Fatalf("error should reference the failing path, got: %v", err)
+	}
+}
+
+func TestListRecipes(t *testing.T) {
+	out := captureOutput(func() {
+		ListRecipes()
+	})
+	if !strings.Contains(out, "Available recipes:") {
+		t.Errorf("missing header 'Available recipes:'\noutput:\n%s", out)
+	}
+	for _, r := range AllRecipes() {
+		if !strings.Contains(out, r.Name) {
+			t.Errorf("missing recipe name %q\noutput:\n%s", r.Name, out)
+		}
+		if !strings.Contains(out, r.Description) {
+			t.Errorf("missing description for %q: %q\noutput:\n%s", r.Name, r.Description, out)
+		}
+		if !strings.Contains(out, r.Workflow) {
+			t.Errorf("missing workflow for %q: %q\noutput:\n%s", r.Name, r.Workflow, out)
+		}
+	}
+	if !strings.Contains(out, "orc init --recipe") {
+		t.Errorf("missing usage hint\noutput:\n%s", out)
 	}
 }
