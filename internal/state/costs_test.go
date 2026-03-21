@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -166,5 +167,51 @@ func TestCosts_JSONFormat(t *testing.T) {
 	}
 	if _, ok := raw["total_output_tokens"]; !ok {
 		t.Fatal("missing 'total_output_tokens' key")
+	}
+}
+
+func TestCostData_ConcurrentAccess(t *testing.T) {
+	c := &CostData{}
+	dir := t.TempDir()
+	var wg sync.WaitGroup
+	wg.Add(4)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			c.Record("phase-a", 0, 0.5, 100, 50, 10, 20, 1)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			c.Record("phase-b", 1, 0.25, 200, 100, 20, 40, 2)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			c.TotalCost()
+			c.PhaseCost("phase-a")
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			_ = c.Flush(dir)
+		}
+	}()
+	wg.Wait()
+	// After wg.Wait(), happens-before guarantees make direct field access safe.
+	if len(c.Phases) != 200 {
+		t.Fatalf("len(Phases) = %d, want 200", len(c.Phases))
+	}
+	if got := c.TotalCost(); got != 75.0 {
+		t.Fatalf("TotalCost() = %f, want 75.0", got)
+	}
+	if got := c.PhaseCost("phase-a"); got != 50.0 {
+		t.Fatalf("PhaseCost(\"phase-a\") = %f, want 50.0", got)
+	}
+	if got := c.PhaseCost("phase-b"); got != 25.0 {
+		t.Fatalf("PhaseCost(\"phase-b\") = %f, want 25.0", got)
 	}
 }
