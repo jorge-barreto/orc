@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 const (
@@ -16,6 +17,7 @@ const (
 )
 
 type State struct {
+	mu             sync.RWMutex
 	PhaseIndex     int    `json:"phase_index"`
 	Ticket         string `json:"ticket"`
 	Workflow       string `json:"workflow,omitempty"`
@@ -52,7 +54,9 @@ func Load(artifactsDir string) (*State, error) {
 
 // Save writes the state to the artifacts directory.
 func (s *State) Save(artifactsDir string) error {
+	s.mu.RLock()
 	data, err := json.MarshalIndent(s, "", "  ")
+	s.mu.RUnlock()
 	if err != nil {
 		return err
 	}
@@ -61,14 +65,81 @@ func (s *State) Save(artifactsDir string) error {
 
 // Advance increments the phase index.
 func (s *State) Advance() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.PhaseIndex++
 	s.PhaseSessionID = ""
 }
 
 // SetPhase sets the phase index for retry/from/loop jumps.
 func (s *State) SetPhase(idx int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.PhaseIndex = idx
 	s.PhaseSessionID = ""
+}
+
+// GetPhaseIndex returns the current phase index.
+func (s *State) GetPhaseIndex() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.PhaseIndex
+}
+
+// GetTicket returns the ticket identifier.
+func (s *State) GetTicket() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.Ticket
+}
+
+// GetWorkflow returns the workflow name.
+func (s *State) GetWorkflow() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.Workflow
+}
+
+// GetStatus returns the current status.
+func (s *State) GetStatus() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.Status
+}
+
+// GetSessionID returns the phase session ID.
+func (s *State) GetSessionID() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.PhaseSessionID
+}
+
+// SetTicket sets the ticket identifier.
+func (s *State) SetTicket(ticket string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Ticket = ticket
+}
+
+// SetWorkflow sets the workflow name.
+func (s *State) SetWorkflow(workflow string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Workflow = workflow
+}
+
+// SetStatus sets the current status.
+func (s *State) SetStatus(status string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Status = status
+}
+
+// SetSessionID sets the phase session ID.
+func (s *State) SetSessionID(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.PhaseSessionID = id
 }
 
 // TicketSummary holds the loaded state and cost data for one ticket.
@@ -93,7 +164,7 @@ func loadTicketSummary(st *State, artifactsDir, auditDir string) TicketSummary {
 		timing, _ = LoadTiming(artifactsDir)
 	}
 	return TicketSummary{
-		Ticket:       st.Ticket,
+		Ticket:       st.GetTicket(),
 		ArtifactsDir: artifactsDir,
 		State:        st,
 		Costs:        costs,
@@ -129,8 +200,8 @@ func ListTickets(baseArtifactsDir, baseAuditDir string) ([]TicketSummary, error)
 			if err != nil {
 				continue
 			}
-			if st.Ticket == "" {
-				st.Ticket = e.Name()
+			if st.GetTicket() == "" {
+				st.SetTicket(e.Name())
 			}
 			auditDir := filepath.Join(baseAuditDir, e.Name())
 			tickets = append(tickets, loadTicketSummary(st, ad, auditDir))
@@ -154,11 +225,11 @@ func ListTickets(baseArtifactsDir, baseAuditDir string) ([]TicketSummary, error)
 			if err != nil {
 				continue
 			}
-			if st.Ticket == "" {
-				st.Ticket = se.Name()
+			if st.GetTicket() == "" {
+				st.SetTicket(se.Name())
 			}
-			if st.Workflow == "" {
-				st.Workflow = e.Name()
+			if st.GetWorkflow() == "" {
+				st.SetWorkflow(e.Name())
 			}
 			auditDir := filepath.Join(baseAuditDir, e.Name(), se.Name())
 			tickets = append(tickets, loadTicketSummary(st, ticketDir, auditDir))
