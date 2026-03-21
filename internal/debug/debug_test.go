@@ -326,6 +326,85 @@ func TestRun_AgentPhase(t *testing.T) {
 	}
 }
 
+func TestRun_ScriptPhase(t *testing.T) {
+	dir := t.TempDir()
+
+	configPath := filepath.Join(dir, "config.yaml")
+	configYAML := `name: test
+phases:
+  - name: build
+    type: script
+    run: make build
+`
+	if err := os.WriteFile(configPath, []byte(configYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.Load(configPath, dir)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+
+	artifactsDir := filepath.Join(dir, ".orc", "artifacts", "TEST-1")
+	logsDir := filepath.Join(artifactsDir, "logs")
+	if err := os.MkdirAll(logsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	logContent := "building...\nok\n"
+	if err := os.WriteFile(filepath.Join(logsDir, "phase-1.log"), []byte(logContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	stateJSON := `{"phase_index":1,"status":"completed"}`
+	if err := os.WriteFile(filepath.Join(artifactsDir, "state.json"), []byte(stateJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	timingJSON := `{"entries":[{"phase":"build","start":"2026-01-01T00:00:00Z","end":"2026-01-01T00:02:00Z","duration":"2m 00s"}]}`
+	if err := os.WriteFile(filepath.Join(artifactsDir, "timing.json"), []byte(timingJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Run(dir, cfg, 0, "TEST-1", ""); err != nil {
+		t.Errorf("Run returned error: %v", err)
+	}
+}
+
+func TestRender_ScriptPhase(t *testing.T) {
+	var buf bytes.Buffer
+	info := &PhaseInfo{
+		Name:       "build",
+		Type:       "script",
+		Index:      0,
+		Total:      1,
+		Duration:   2 * time.Minute,
+		RunCommand: "make build",
+		ExitStatus: "success",
+	}
+	render(&buf, info)
+	out := buf.String()
+
+	for _, want := range []string{
+		"Phase:", "build", "(script)",
+		"Duration:", "2m",
+		"Command: make build",
+		"Artifacts written:", "none declared",
+		"Feedback:", "none",
+		"Exit:", "success",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in output:\n%s", want, out)
+		}
+	}
+
+	for _, absent := range []string{"Cost:", "Tokens:", "Rendered prompt:", "Tool calls"} {
+		if strings.Contains(out, absent) {
+			t.Errorf("unexpected %q in script output:\n%s", absent, out)
+		}
+	}
+}
+
 func TestRender_ToolCallTruncation(t *testing.T) {
 	t.Run("n=20 no truncation", func(t *testing.T) {
 		var buf bytes.Buffer

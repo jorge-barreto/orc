@@ -1311,35 +1311,39 @@ Improve the status display with cost data, loop iteration counts, and estimated 
 
 ### R-034: Eval framework — `orc eval`
 
-Systematic prompt quality testing. Define test fixtures with known inputs and scoring rubrics, run the workflow against them, and measure output quality. This is what makes prompt iteration empirical instead of vibes-based.
+**Why this exists:** Agent-driven workflows are probabilistic. Changing a prompt, switching models, tweaking review criteria, or adjusting loop limits all affect output quality — but you can't tell by how much, or even in which direction, without measuring. `orc eval` is the research tool that makes workflow iteration empirical. It answers: *"I changed my review prompt. Before I run this on 50 real tickets, is it better or worse?"*
+
+This is a **user-facing feature of the orc product**, not an orc-internal testing tool. Every project that uses orc can define eval cases that represent their domain's important scenarios, then run those cases after any workflow change to measure impact. orc's own `.orc/evals/` directory is just one consumer of this feature.
+
+**User story:** A project owner maintains a `.orc/` workflow for their codebase. They want to change their implement prompt to produce smaller PRs. They define 3 eval cases representing real past tickets (a bug fix, a feature, a refactor), each pinned to a known git ref. They run `orc eval` before and after the prompt change. The score report shows quality held steady but cost dropped 30%. They ship the change with confidence.
 
 **Fixture structure:**
 ```
 .orc/evals/
-  happy-path/
+  bug-fix/
     fixture.yaml           # git ref, ticket, variables
     rubric.yaml            # scoring criteria
-  no-tests/
+  new-feature/
     fixture.yaml
     rubric.yaml
-  vague-ticket/
+  refactor/
     fixture.yaml
     rubric.yaml
 ```
 
 **Fixture definition:**
 ```yaml
-# .orc/evals/happy-path/fixture.yaml
+# .orc/evals/bug-fix/fixture.yaml
 ref: abc123f               # git commit to check out (the starting state)
-ticket: EVAL-001           # ticket ID for this eval case
+ticket: KS-42              # ticket ID for this eval case
 vars:                      # additional variables
   JIRA_TICKET: "KS-42"
-description: "Clean codebase with clear ticket, tests present"
+description: "Fix stale cache bug — clear ticket, tests present, small scope"
 ```
 
 **Rubric definition:**
 ```yaml
-# .orc/evals/happy-path/rubric.yaml
+# .orc/evals/bug-fix/rubric.yaml
 criteria:
   - name: compiles
     check: "make build"
@@ -1363,7 +1367,7 @@ criteria:
 
   - name: quality
     judge: true
-    prompt: .orc/evals/happy-path/judge.md
+    prompt: .orc/evals/bug-fix/judge.md
     expect: ">= 7"
     weight: 2
 ```
@@ -1373,7 +1377,7 @@ Criteria are either script checks (objective — `check` runs a shell command, `
 **Usage:**
 ```bash
 orc eval                          # run all eval cases
-orc eval happy-path               # run a specific case
+orc eval bug-fix                  # run a specific case
 orc eval --report                 # show score history across runs
 ```
 
@@ -1381,10 +1385,23 @@ orc eval --report                 # show score history across runs
 1. For each eval case: create a git worktree at the fixture ref
 2. Run the full workflow (`orc run`) in the worktree
 3. After completion (or failure), evaluate each rubric criterion
-4. Compute weighted score (0-100)
-5. Append scores to `.orc/eval-history.json` with timestamp and prompt hash
-6. Clean up worktree
-7. Print score report
+4. Record cost and duration alongside rubric scores (a prompt change that improves quality but 3x's cost is important to know)
+5. Compute weighted score (0-100)
+6. Append results to `.orc/eval-history.json` with timestamp and config fingerprint
+7. Clean up worktree
+8. Print score report with cost/duration columns
+
+**Score report output:**
+```
+  orc eval — 3 cases, config fingerprint a1b2c3
+
+  CASE            SCORE    COST      TIME       PASS/FAIL
+  bug-fix         85/100   $1.20     8m 12s     5/5 pass
+  new-feature     62/100   $4.80     22m 03s    3/5 pass (tests-pass: FAIL, quality: 4/10)
+  refactor        78/100   $2.10     14m 30s    4/5 pass (quality: 6/10)
+
+  Totals: 75/100 avg, $8.10 total cost, 44m 45s total time
+```
 
 **Score history:**
 ```json
@@ -1392,32 +1409,47 @@ orc eval --report                 # show score history across runs
   "runs": [
     {
       "timestamp": "2026-03-01T15:30:00Z",
-      "prompt_hash": "abc123",
+      "config_fingerprint": "abc123",
       "cases": {
-        "happy-path": {"score": 85, "details": {"compiles": 1.0, "tests-pass": 1.0, "quality": 0.7}},
-        "vague-ticket": {"score": 62, "details": {"compiles": 1.0, "tests-pass": 0.5, "quality": 0.4}}
+        "bug-fix": {
+          "score": 85,
+          "cost_usd": 1.20,
+          "duration_seconds": 492,
+          "details": {"compiles": 1.0, "tests-pass": 1.0, "quality": 0.7}
+        },
+        "new-feature": {
+          "score": 62,
+          "cost_usd": 4.80,
+          "duration_seconds": 1323,
+          "details": {"compiles": 1.0, "tests-pass": 0.5, "quality": 0.4}
+        }
       }
     }
   ]
 }
 ```
 
+**Config fingerprint:** Hash of all files that affect workflow behavior — `config.yaml`, all prompt files referenced by `prompt:` fields, and any script files referenced by `run:` fields. This is broader than just `.orc/phases/*.md` because a consumer's workflow may use scripts, custom prompt directories, or vars that alter behavior. The fingerprint captures the full configuration surface so that score history correctly attributes changes.
+
 **Implementation approach:**
 - New `internal/eval/` package
 - New `evalCmd()` in `main.go`
-- Worktree creation uses `git worktree add` (same pattern as kitchen-scheduler's setup script)
+- Worktree creation uses `git worktree add`
 - Script criteria: run via `exec.CommandContext("bash", "-c", check)`, pass/fail based on exit code
 - Judge criteria: invoke `claude -p` with the judge prompt + workflow output. The judge prompt must instruct the agent to output a line matching `SCORE: <N>` (e.g., `SCORE: 7`). orc extracts the score by regex-matching the last `SCORE: \d+` line in stdout
-- Prompt hash: hash all `.orc/phases/*.md` files to fingerprint the prompt version
+- Cost/duration: read from the run's `costs.json` and `timing.json` artifacts after the workflow completes
+- Config fingerprint: walk `config.yaml`, resolve all `prompt:` and `run:` file references, hash their contents
 
 **Acceptance criteria:**
 - `orc eval` runs all eval cases and produces a score report
 - Each case runs in an isolated git worktree
 - Script criteria produce pass/fail scores
 - Judge criteria produce numeric scores (1-10, normalized to 0-1)
-- Scores are persisted to eval-history.json with prompt hash
-- `orc eval --report` shows score trends across prompt versions
+- Cost and duration are recorded per-case and displayed in the report
+- Results are persisted to eval-history.json with config fingerprint
+- `orc eval --report` shows score and cost trends across config versions
 - Eval cases are discoverable (`orc eval --list`)
+- The feature works for any project with a `.orc/` directory, not just orc itself
 
 **Priority:** P2
 **Effort:** Large
