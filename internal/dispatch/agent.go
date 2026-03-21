@@ -343,9 +343,15 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 		tr, err := runAgentTurn(ctx, phase, env, prompt, sessionID, isFirst, logFile, rawLog, extraTools)
 		if resuming && err != nil {
 			fmt.Fprintf(os.Stderr, "  warning: resume failed (%v), falling back to fresh start\n", err)
-			envFresh := env.Clone()
-			envFresh.ResumeSessionID = ""
-			return RunAgentAttended(ctx, phase, envFresh)
+			var renderErr error
+			prompt, renderErr = RenderAndSavePrompt(phase, env)
+			if renderErr != nil {
+				return nil, renderErr
+			}
+			sessionID = uuid.New().String()
+			isFirst = true
+			resuming = false
+			continue
 		}
 		if err != nil {
 			return nil, err
