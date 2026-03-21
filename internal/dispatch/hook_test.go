@@ -4,11 +4,29 @@ import (
 	"bytes"
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/jorge-barreto/orc/internal/config"
 )
+
+type safeBuf struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (s *safeBuf) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *safeBuf) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
+}
 
 func TestRunHook_Success(t *testing.T) {
 	env := scriptEnv(t)
@@ -88,7 +106,7 @@ func TestRunHook_ContextCancelled(t *testing.T) {
 
 	env := scriptEnv(t)
 	phase := config.Phase{Name: "test", Type: "script"}
-	var buf bytes.Buffer
+	var sb safeBuf
 
 	type result struct {
 		code int
@@ -96,21 +114,30 @@ func TestRunHook_ContextCancelled(t *testing.T) {
 	}
 	ch := make(chan result, 1)
 	go func() {
-		code, err := RunHook(ctx, "sleep 60", phase, env, &buf)
+		code, err := RunHook(ctx, "echo ready && sleep 60", phase, env, &sb)
 		ch <- result{code, err}
 	}()
 
-	time.Sleep(100 * time.Millisecond)
+	// Wait for the process to signal readiness before cancelling.
+	deadline := time.After(5 * time.Second)
+	for !strings.Contains(sb.String(), "ready") {
+		select {
+		case <-deadline:
+			t.Fatal("hook process did not become ready")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
 	cancel()
 
-	r := <-ch
-	if r.err != nil {
-		t.Fatalf("expected nil error (exitCode extracts ExitError), got: %v", r.err)
-	}
-	if r.code == 0 {
-		t.Fatalf("expected non-zero exit code (signal death), got 0")
-	}
-	if ctx.Err() != context.Canceled {
-		t.Fatalf("expected context.Canceled, got: %v", ctx.Err())
+	select {
+	case r := <-ch:
+		if r.err != nil {
+			t.Fatalf("expected nil error (exitCode extracts ExitError), got: %v", r.err)
+		}
+		if r.code != -1 {
+			t.Fatalf("expected exit code -1 (signal kill), got %d", r.code)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("RunHook did not return after context cancellation")
 	}
 }
