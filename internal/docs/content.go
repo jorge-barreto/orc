@@ -1118,8 +1118,9 @@ Adding a Workflow
   orc init --add-workflow bugfix                  Minimal starter workflow
   orc init --add-workflow bugfix --recipe simple  From a recipe
 
-This creates .orc/workflows/bugfix.yaml. Edit it and create any
-referenced prompt files in .orc/phases/.
+This creates .orc/workflows/bugfix.yaml. With --recipe, the recipe's
+prompt files are also written to .orc/phases/ (existing files are not
+overwritten). Without --recipe, create prompt files manually.
 
 Template Variables
 ------------------

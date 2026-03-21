@@ -94,15 +94,22 @@ func InitWorkflow(targetDir, name, recipe string) error {
 	}
 
 	var content string
+	var promptFiles map[string]string
 	if recipe != "" {
 		r, err := getRecipeFn(recipe)
 		if err != nil {
 			return err
 		}
-		if c, ok := r.Files[".orc/config.yaml"]; ok {
-			content = c
-		} else {
+		c, ok := r.Files[".orc/config.yaml"]
+		if !ok {
 			return fmt.Errorf("recipe %q has no config.yaml", recipe)
+		}
+		content = c
+		promptFiles = make(map[string]string)
+		for path, body := range r.Files {
+			if path != ".orc/config.yaml" {
+				promptFiles[path] = body
+			}
 		}
 	} else {
 		content = fmt.Sprintf(`name: %s
@@ -125,7 +132,28 @@ phases:
 		return fmt.Errorf("writing workflow: %w", err)
 	}
 
+	// Write recipe prompt files (skip files that already exist)
+	var created []string
+	for relPath, body := range promptFiles {
+		fullPath := filepath.Join(targetDir, relPath)
+		if _, err := os.Stat(fullPath); err == nil {
+			continue // don't overwrite existing files
+		}
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			return fmt.Errorf("creating directory for %s: %w", relPath, err)
+		}
+		if err := os.WriteFile(fullPath, []byte(body), 0644); err != nil {
+			return fmt.Errorf("writing %s: %w", relPath, err)
+		}
+		created = append(created, relPath)
+	}
+
 	fmt.Printf("%s✓ Created workflow %q at %s%s\n", ux.Green, name, workflowPath, ux.Reset)
+	if len(created) > 0 {
+		for _, p := range created {
+			fmt.Printf("  %s+ %s%s\n", ux.Dim, p, ux.Reset)
+		}
+	}
 	fmt.Printf("  Next: edit %s, then %sorc run %s <ticket>%s\n\n", workflowPath, ux.Cyan, name, ux.Reset)
 	return nil
 }

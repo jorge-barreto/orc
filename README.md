@@ -524,6 +524,8 @@ orc init --add-workflow bugfix                   # minimal starter
 orc init --add-workflow bugfix --recipe simple   # from a recipe
 ```
 
+With `--recipe`, prompt files are also written to `.orc/phases/` (existing files are not overwritten). Without `--recipe`, create prompt files manually.
+
 ### Multi-Workflow Commands
 
 ```bash

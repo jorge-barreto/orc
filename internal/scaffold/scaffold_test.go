@@ -444,3 +444,77 @@ func TestInitWorkflow_RecipeMissingConfig(t *testing.T) {
 		t.Fatalf("expected error containing 'has no config.yaml', got: %v", err)
 	}
 }
+
+func TestInitWorkflow_RecipeWritesPromptFiles(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".orc"), 0755)
+
+	captureOutput(func() {
+		if err := InitWorkflow(dir, "myworkflow", "full-pipeline"); err != nil {
+			t.Fatalf("InitWorkflow failed: %v", err)
+		}
+	})
+
+	// Workflow YAML must exist
+	if _, err := os.Stat(filepath.Join(dir, ".orc", "workflows", "myworkflow.yaml")); err != nil {
+		t.Fatalf("workflow file not created: %v", err)
+	}
+
+	r, err := GetRecipe("full-pipeline")
+	if err != nil {
+		t.Fatalf("GetRecipe failed: %v", err)
+	}
+	for relPath := range r.Files {
+		if relPath == ".orc/config.yaml" {
+			continue
+		}
+		fullPath := filepath.Join(dir, relPath)
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			t.Errorf("prompt file %q not created: %v", relPath, err)
+			continue
+		}
+		if info.Size() == 0 {
+			t.Errorf("prompt file %q is empty", relPath)
+		}
+	}
+}
+
+func TestInitWorkflow_RecipeDoesNotOverwriteExisting(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".orc", "phases"), 0755)
+
+	existingPath := filepath.Join(dir, ".orc", "phases", "plan.md")
+	if err := os.WriteFile(existingPath, []byte("my custom prompt"), 0644); err != nil {
+		t.Fatalf("failed to pre-write file: %v", err)
+	}
+
+	captureOutput(func() {
+		if err := InitWorkflow(dir, "myworkflow", "simple"); err != nil {
+			t.Fatalf("InitWorkflow failed: %v", err)
+		}
+	})
+
+	data, err := os.ReadFile(existingPath)
+	if err != nil {
+		t.Fatalf("reading file: %v", err)
+	}
+	if string(data) != "my custom prompt" {
+		t.Fatalf("existing file was overwritten; got %q", string(data))
+	}
+}
+
+func TestInitWorkflow_NoRecipeNoPromptFiles(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".orc"), 0755)
+
+	captureOutput(func() {
+		if err := InitWorkflow(dir, "myworkflow", ""); err != nil {
+			t.Fatalf("InitWorkflow failed: %v", err)
+		}
+	})
+
+	if _, err := os.Stat(filepath.Join(dir, ".orc", "phases")); err == nil {
+		t.Fatal(".orc/phases should not exist when no recipe is used")
+	}
+}
