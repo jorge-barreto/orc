@@ -416,6 +416,14 @@ mainLoop:
 						fmt.Fprintf(os.Stderr, "  invalid rewind target: %v\n", err)
 						continue
 					}
+					if idx < r.State.PhaseIndex {
+						if err := r.prepareBackwardJump(idx, r.State.PhaseIndex, loopCounts); err != nil {
+							return err
+						}
+						if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
+							return fmt.Errorf("saving loop counts after rewind: %w", err)
+						}
+					}
 					r.State.SetPhase(idx)
 					if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
 						return fmt.Errorf("saving state after rewind: %w", err)
@@ -752,6 +760,14 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "  invalid rewind target: %v\n", err)
 					continue
+				}
+				if idx < r.State.PhaseIndex {
+					if err := r.prepareBackwardJump(idx, r.State.PhaseIndex, loopCounts); err != nil {
+						return err
+					}
+					if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
+						return fmt.Errorf("saving loop counts after rewind: %w", err)
+					}
 				}
 				r.State.SetPhase(idx)
 				if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
