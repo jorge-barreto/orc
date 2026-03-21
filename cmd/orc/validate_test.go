@@ -284,6 +284,46 @@ func TestPrintConfigSummary_AgentPhase(t *testing.T) {
 	}
 }
 
+func TestPrintConfigSummary_Hooks(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "build", Type: "script", Run: "make build", Timeout: 10, PreRun: "echo before", PostRun: "echo after"},
+		},
+	}
+
+	var buf bytes.Buffer
+	printConfigSummary(&buf, cfg, "/tmp")
+	out := buf.String()
+
+	for _, want := range []string{"pre-run: echo before", "post-run: echo after"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\noutput:\n%s", want, out)
+		}
+	}
+}
+
+func TestPrintConfigSummary_HooksTruncation(t *testing.T) {
+	long := strings.Repeat("x", 80)
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "build", Type: "script", Run: "make build", Timeout: 10, PreRun: long},
+		},
+	}
+
+	var buf bytes.Buffer
+	printConfigSummary(&buf, cfg, "/tmp")
+	out := buf.String()
+
+	if !strings.Contains(out, "...") {
+		t.Errorf("long pre-run not truncated\noutput:\n%s", out)
+	}
+	if strings.Contains(out, long) {
+		t.Errorf("full long string should not appear\noutput:\n%s", out)
+	}
+}
+
 func TestValidateMultiWorkflow(t *testing.T) {
 	root := t.TempDir()
 	orcDir := filepath.Join(root, ".orc")

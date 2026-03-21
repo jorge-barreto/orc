@@ -208,6 +208,20 @@ func printConfigSummary(w io.Writer, cfg *config.Config, projectRoot string) {
 		if p.Cwd != "" {
 			fmt.Fprintf(w, "%scwd: %s\n", indent, p.Cwd)
 		}
+		if p.PreRun != "" {
+			cmd := p.PreRun
+			if len(cmd) > 60 {
+				cmd = cmd[:57] + "..."
+			}
+			fmt.Fprintf(w, "%spre-run: %s\n", indent, cmd)
+		}
+		if p.PostRun != "" {
+			cmd := p.PostRun
+			if len(cmd) > 60 {
+				cmd = cmd[:57] + "..."
+			}
+			fmt.Fprintf(w, "%spost-run: %s\n", indent, cmd)
+		}
 		if p.MaxCost > 0 {
 			fmt.Fprintf(w, "%smax-cost: $%.2f\n", indent, p.MaxCost)
 		}
