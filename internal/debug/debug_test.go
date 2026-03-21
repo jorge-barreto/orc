@@ -405,6 +405,75 @@ func TestRender_ScriptPhase(t *testing.T) {
 	}
 }
 
+func TestRender_Hooks(t *testing.T) {
+	t.Run("both hooks", func(t *testing.T) {
+		var buf bytes.Buffer
+		render(&buf, &PhaseInfo{
+			Type:    "script",
+			PreRun:  "echo setup",
+			PostRun: "echo cleanup",
+		})
+		out := buf.String()
+		if !strings.Contains(out, "Pre-run:  echo setup") {
+			t.Errorf("missing pre-run; got:\n%s", out)
+		}
+		if !strings.Contains(out, "Post-run: echo cleanup") {
+			t.Errorf("missing post-run; got:\n%s", out)
+		}
+	})
+
+	t.Run("pre-run only", func(t *testing.T) {
+		var buf bytes.Buffer
+		render(&buf, &PhaseInfo{Type: "script", PreRun: "make deps"})
+		out := buf.String()
+		if !strings.Contains(out, "Pre-run:  make deps") {
+			t.Errorf("missing pre-run; got:\n%s", out)
+		}
+		if strings.Contains(out, "Post-run:") {
+			t.Errorf("unexpected post-run in output:\n%s", out)
+		}
+	})
+
+	t.Run("post-run only", func(t *testing.T) {
+		var buf bytes.Buffer
+		render(&buf, &PhaseInfo{Type: "script", PostRun: "rm -rf tmp/"})
+		out := buf.String()
+		if !strings.Contains(out, "Post-run: rm -rf tmp/") {
+			t.Errorf("missing post-run; got:\n%s", out)
+		}
+		if strings.Contains(out, "Pre-run:") {
+			t.Errorf("unexpected pre-run in output:\n%s", out)
+		}
+	})
+
+	t.Run("no hooks", func(t *testing.T) {
+		var buf bytes.Buffer
+		render(&buf, &PhaseInfo{Type: "script"})
+		out := buf.String()
+		if strings.Contains(out, "Pre-run:") {
+			t.Errorf("unexpected pre-run in output:\n%s", out)
+		}
+		if strings.Contains(out, "Post-run:") {
+			t.Errorf("unexpected post-run in output:\n%s", out)
+		}
+	})
+
+	t.Run("long hook truncated", func(t *testing.T) {
+		// 70-char string: first 57 chars + "..." should appear; full string should not
+		long := strings.Repeat("a", 57) + strings.Repeat("b", 13) // 70 chars total
+		var buf bytes.Buffer
+		render(&buf, &PhaseInfo{Type: "script", PreRun: long})
+		out := buf.String()
+		want := strings.Repeat("a", 57) + "..."
+		if !strings.Contains(out, want) {
+			t.Errorf("missing truncated form %q; got:\n%s", want, out)
+		}
+		if strings.Contains(out, long) {
+			t.Errorf("full 70-char string should not appear in output:\n%s", out)
+		}
+	})
+}
+
 func TestRender_ToolCallTruncation(t *testing.T) {
 	t.Run("n=20 no truncation", func(t *testing.T) {
 		var buf bytes.Buffer

@@ -50,6 +50,8 @@ type PhaseInfo struct {
 	ExitStatus                                        string
 	Attempts                                          int
 	RunCommand                                        string
+	PreRun                                            string
+	PostRun                                           string
 }
 
 // parseToolCalls reads a log file and extracts tool call lines starting with "⚡ ".
@@ -361,6 +363,8 @@ func Run(projectRoot string, cfg *config.Config, phaseIdx int, ticket, workflow 
 		ExitStatus:    exitStatus,
 		Attempts:      attempts,
 		RunCommand:    phase.Run,
+		PreRun:        phase.PreRun,
+		PostRun:       phase.PostRun,
 	}
 
 	render(os.Stdout, info)
@@ -437,6 +441,25 @@ func render(w io.Writer, info *PhaseInfo) {
 	// Script-only
 	if info.Type == "script" && info.RunCommand != "" {
 		fmt.Fprintf(w, "Command: %s\n\n", info.RunCommand)
+	}
+
+	// Hooks (all phase types)
+	if info.PreRun != "" || info.PostRun != "" {
+		if info.PreRun != "" {
+			cmd := info.PreRun
+			if len(cmd) > 60 {
+				cmd = cmd[:57] + "..."
+			}
+			fmt.Fprintf(w, "Pre-run:  %s\n", cmd)
+		}
+		if info.PostRun != "" {
+			cmd := info.PostRun
+			if len(cmd) > 60 {
+				cmd = cmd[:57] + "..."
+			}
+			fmt.Fprintf(w, "Post-run: %s\n", cmd)
+		}
+		fmt.Fprintln(w)
 	}
 
 	// Outputs (all phase types)
