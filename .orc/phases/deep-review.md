@@ -246,7 +246,7 @@ If no findings in a category, write `None.`
 > - Edge cases covered: empty input, nil, zero, missing files, error paths?
 > - Tests verify behavior, not just "runs without panic"?
 > - Test names are descriptive and follow Go conventions (`TestFunctionName_Scenario`)?
-> - Any scenarios that SHOULD be tested but aren't?
+> - Are there untested error paths or concurrent code paths in the changed code? (Only flag gaps where the absence of a test could let a crash, data race, or silent wrong result ship — do not flag missing tests for rendering, formatting, or simple deterministic functions.)
 > - For runner tests: does the test use `mockDispatcher` correctly?
 > - For config tests: are validation error messages checked (not just error presence)?
 > - For state tests: are atomic write guarantees tested (crash simulation)?

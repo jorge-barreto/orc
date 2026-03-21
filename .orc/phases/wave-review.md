@@ -249,7 +249,7 @@ If no findings in a category, write `None.`
 > - For runner tests: `mockDispatcher` used correctly?
 > - For config tests: validation error messages checked (not just error presence)?
 > - For state tests: atomic write guarantees tested?
-> - Any scenarios that SHOULD be tested but aren't? (List specific gaps)
+> - Are there untested error paths or concurrent code paths in the changed code? (Only flag gaps where the absence of a test could let a crash, data race, or silent wrong result ship — do not flag missing tests for rendering, formatting, or simple deterministic functions.)
 >
 > Write findings to `$ARTIFACTS_DIR/reviews/test-coverage.md`.
 > Only flag issues in test code introduced by this wave's diff.

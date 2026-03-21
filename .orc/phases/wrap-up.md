@@ -32,15 +32,23 @@ You are wrapping up work on a bead.
    ```
 
 5. **Create beads for discovered issues:**
-   Check `$ARTIFACTS_DIR/quick-review-findings.md` for any non-blocking notes from the review. If any note describes an issue **directly related to this work item's scope** that must be addressed to complete it correctly, create a bead for it:
+   Check `$ARTIFACTS_DIR/quick-review-findings.md` for any non-blocking notes from the review. For each note that describes a real issue, classify it:
+
+   **Critical** (could cause incorrect runtime behavior — crashes, data races, wrong results, security issues):
    ```bash
    EPIC=$(cat "$ARTIFACTS_DIR/epic-id.txt")
-   bd create --title="<concise title>" --type=bug --priority=3 --parent="$EPIC" -d "<what's wrong and where>"
+   bd create --title="<concise title>" --type=bug --priority=1 --parent="$EPIC" -d "<what's wrong and where>"
    ```
-   Append each new bead ID to the bead list:
+   Append each critical bead ID to the bead list so it gets worked in this run:
    ```bash
    echo "<new-bead-id>" >> "$ARTIFACTS_DIR/bead-ids.txt"
    ```
+
+   **Backlog** (test gaps, improvements, refactors, style — anything where the worst case is "ugly" not "wrong"):
+   ```bash
+   bd create --title="<concise title>" --type=task --priority=3 -d "<what's wrong and where>"
+   ```
+   Do NOT append backlog beads to bead-ids.txt — they are saved for human review, not auto-scheduled.
 
 6. **Clean up** per-bead artifacts so the next bead starts fresh:
    ```bash
