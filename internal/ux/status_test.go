@@ -112,6 +112,7 @@ func TestRenderStatus(t *testing.T) {
 		artDirOverride  string
 		wantContains    []string
 		wantNotContains []string
+		customAssert    func(t *testing.T, out string)
 	}{
 		{
 			name: "a completed workflow with timing and costs",
@@ -130,7 +131,7 @@ func TestRenderStatus(t *testing.T) {
 				}})
 				writeCosts(t, dir, &state.CostData{
 					Phases: []state.CostEntry{
-						{Name: "plan", CostUSD: 0.05, InputTokens: 1000, OutputTokens: 200},
+						{Name: "plan", CostUSD: 0.05, InputTokens: 1000, OutputTokens: 200, CacheReadInputTokens: 500, CacheCreationInputTokens: 300},
 						{Name: "implement", CostUSD: 0.10, InputTokens: 2000, OutputTokens: 400},
 						{Name: "test", CostUSD: 0.02, InputTokens: 500, OutputTokens: 100},
 					},
@@ -142,24 +143,36 @@ func TestRenderStatus(t *testing.T) {
 					t.Fatal(err)
 				}
 			},
-			wantContains:    []string{"PROJ-1", "completed", "#", "PHASE", "TIME", "COST", "TOKENS IN/OUT", "CACHE R/W", "plan", "implement", "test", "$", "Artifacts:"},
+			wantContains: []string{
+				"PROJ-1", "completed",
+				"#", "PHASE", "TIME", "COST", "TOKENS IN/OUT", "CACHE R/W",
+				"plan", "implement", "test",
+				"$0.05", "1000/200", "500/300", "$0.17",
+				"Artifacts:", "plan.md",
+			},
 			wantNotContains: []string{"Remaining:"},
 		},
 		{
-			name: "b in-progress at phase 2 of 3",
+			name: "b in-progress with empty duration fallback",
 			cfg: &config.Config{Phases: []config.Phase{
 				{Name: "plan", Type: "agent"},
 				{Name: "implement", Type: "agent"},
 				{Name: "test", Type: "script"},
 			}},
-			st: &state.State{PhaseIndex: 1, Ticket: "PROJ-2", Status: state.StatusRunning},
+			st: &state.State{PhaseIndex: 1, Ticket: "TEST2", Status: state.StatusRunning},
 			setupAudit: func(t *testing.T, dir string) {
 				now := time.Now()
 				writeTiming(t, dir, &state.Timing{Entries: []state.TimingEntry{
 					{Phase: "plan", Start: now, End: now.Add(60 * time.Second), Duration: "1m 00s"},
+					{Phase: "implement", Start: now, End: now.Add(30 * time.Second), Duration: ""},
 				}})
 			},
-			wantContains: []string{"PROJ-2", "2/3 (implement)", "running", "plan", "Remaining:", "implement", "test"},
+			wantContains: []string{"TEST2", "2/3 (implement)", "running", "plan", "Remaining:", "test"},
+			customAssert: func(t *testing.T, out string) {
+				if !strings.Contains(out, "-") {
+					t.Errorf("expected dash from empty-duration fallback, got:\n%s", out)
+				}
+			},
 		},
 		{
 			name: "c no timing data — fallback to phase list",
@@ -228,7 +241,15 @@ func TestRenderStatus(t *testing.T) {
 					TotalCostUSD: 0.11,
 				})
 			},
-			wantContains: []string{"1", "2", "implement", "test"},
+			wantContains: []string{"PROJ-6", "RUN"},
+			customAssert: func(t *testing.T, out string) {
+				if c := strings.Count(out, "implement"); c < 2 {
+					t.Errorf("expected 'implement' at least 2 times, got %d\nfull output:\n%s", c, out)
+				}
+				if c := strings.Count(out, "test"); c < 2 {
+					t.Errorf("expected 'test' at least 2 times, got %d\nfull output:\n%s", c, out)
+				}
+			},
 		},
 		{
 			name: "g costs fallback to artifactsDir",
@@ -346,6 +367,9 @@ func TestRenderStatus(t *testing.T) {
 				if strings.Contains(out, notWant) {
 					t.Errorf("output should not contain %q\nfull output:\n%s", notWant, out)
 				}
+			}
+			if tt.customAssert != nil {
+				tt.customAssert(t, out)
 			}
 		})
 	}
