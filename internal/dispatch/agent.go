@@ -112,6 +112,48 @@ func runAgentTurn(ctx context.Context, phase config.Phase, env *Environment, pro
 	return &turnResult{Stream: streamResult, ExitCode: code}, nil
 }
 
+// resumePrompt is the continuation prompt used when resuming an interrupted session.
+const resumePrompt = "The previous session was interrupted. Continue from where you left off and complete the remaining work."
+
+// dispatchWithResume handles the resume-or-fresh decision for agent turns.
+// If resumeSessionID is non-empty, it first tries to dispatch with --resume.
+// If that fails (error OR non-zero exit code), it logs a warning and falls
+// back to a fresh start.
+//
+// Returns the turn result, the active session ID, and whether it was a first turn.
+func dispatchWithResume(
+	resumeSessionID string,
+	renderPrompt func() (string, error),
+	newSessionID func() string,
+	dispatch func(prompt, sessionID string, isFirst bool) (*turnResult, error),
+	warn func(err error),
+) (tr *turnResult, sessionID string, isFirst bool, err error) {
+	if resumeSessionID != "" {
+		tr, err = dispatch(resumePrompt, resumeSessionID, false)
+		if err == nil && tr.ExitCode == 0 {
+			return tr, resumeSessionID, false, nil
+		}
+		// Resume failed — either error or non-zero exit code
+		if err != nil {
+			warn(err)
+		} else {
+			warn(fmt.Errorf("exit code %d", tr.ExitCode))
+		}
+		// Fall through to fresh start
+	}
+
+	prompt, err := renderPrompt()
+	if err != nil {
+		return nil, "", false, err
+	}
+	sid := newSessionID()
+	tr, err = dispatch(prompt, sid, true)
+	if err != nil {
+		return nil, "", false, err
+	}
+	return tr, sid, true, nil
+}
+
 // RenderAndSavePrompt reads the prompt template, expands variables, injects
 // feedback from previous failures, and saves the rendered prompt to artifacts/prompts/.
 // Returns the fully rendered prompt string.
@@ -148,28 +190,11 @@ func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 		defer cancel()
 	}
 
-	var rendered string
-	var sessionID string
-	var isFirst bool
-	resuming := env.ResumeSessionID != ""
-
-	if resuming {
-		// Resuming an interrupted session — use continuation prompt
-		sessionID = env.ResumeSessionID
-		rendered = "The previous session was interrupted. Continue from where you left off and complete the remaining work."
-		isFirst = false
-		// Save continuation prompt for observability
-		if err := os.WriteFile(state.PromptPath(env.ArtifactsDir, env.PhaseIndex), []byte(rendered), 0644); err != nil {
+	// Save resume prompt for observability if resuming
+	if env.ResumeSessionID != "" {
+		if err := os.WriteFile(state.PromptPath(env.ArtifactsDir, env.PhaseIndex), []byte(resumePrompt), 0644); err != nil {
 			return nil, err
 		}
-	} else {
-		var err error
-		rendered, err = RenderAndSavePrompt(phase, env)
-		if err != nil {
-			return nil, err
-		}
-		sessionID = uuid.New().String()
-		isFirst = true
 	}
 
 	logFile, err := os.OpenFile(state.LogPath(env.ArtifactsDir, env.PhaseIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -187,13 +212,18 @@ func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 		defer rawLog.Close()
 	}
 
-	tr, err := runAgentTurn(ctx, phase, env, rendered, sessionID, isFirst, logFile, rawLog, nil)
-	if resuming && err != nil {
-		fmt.Fprintf(os.Stderr, "  warning: resume failed (%v), falling back to fresh start\n", err)
-		envFresh := env.Clone()
-		envFresh.ResumeSessionID = ""
-		return RunAgent(ctx, phase, envFresh)
+	dispatch := func(prompt, sid string, first bool) (*turnResult, error) {
+		return runAgentTurn(ctx, phase, env, prompt, sid, first, logFile, rawLog, nil)
 	}
+	renderPrompt := func() (string, error) {
+		return RenderAndSavePrompt(phase, env)
+	}
+	newSID := func() string { return uuid.New().String() }
+	warn := func(err error) {
+		fmt.Fprintf(os.Stderr, "  warning: resume failed (%v), falling back to fresh start\n", err)
+	}
+
+	tr, sessionID, _, err := dispatchWithResume(env.ResumeSessionID, renderPrompt, newSID, dispatch, warn)
 	if err != nil {
 		return nil, err
 	}
