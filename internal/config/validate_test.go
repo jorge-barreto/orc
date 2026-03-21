@@ -530,6 +530,54 @@ func TestValidateTicket_FullyAnchored(t *testing.T) {
 	}
 }
 
+func TestValidateTicket_EscapedDollarNotTreatedAsAnchor(t *testing.T) {
+	// Pattern ^foo\$ has a literal $, not an anchor — must be wrapped.
+	// Should match "foo$" but not "foo$garbage".
+	if err := ValidateTicket(`^foo\$`, "foo$"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	err := ValidateTicket(`^foo\$`, "foo$garbage")
+	if err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("expected no-match error for trailing garbage, got %v", err)
+	}
+}
+
+func TestValidateTicket_DoubleEscapedBackslashDollarIsAnchor(t *testing.T) {
+	// Pattern ^foo\\$ — \\ is an escaped backslash, and $ IS a real anchor.
+	// Should match "foo\" but not "foo\garbage".
+	if err := ValidateTicket(`^foo\\$`, `foo\`); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	err := ValidateTicket(`^foo\\$`, `foo\garbage`)
+	if err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("expected no-match error, got %v", err)
+	}
+}
+
+func TestValidateTicket_EscapedCaretNotTreatedAsAnchor(t *testing.T) {
+	// Pattern \^foo$ — the \^ is a literal caret, not an anchor.
+	// Should be wrapped, matching "^foo" but not "garbage^foo".
+	if err := ValidateTicket(`\^foo$`, "^foo"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	err := ValidateTicket(`\^foo$`, "garbage^foo")
+	if err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("expected no-match error, got %v", err)
+	}
+}
+
+func TestValidateTicket_BothEscapedAnchors(t *testing.T) {
+	// Pattern \^foo\$ — both anchors escaped (literal ^ and $).
+	// Should match "^foo$" but not "^foo$garbage".
+	if err := ValidateTicket(`\^foo\$`, "^foo$"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	err := ValidateTicket(`\^foo\$`, "^foo$garbage")
+	if err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("expected no-match error for trailing garbage, got %v", err)
+	}
+}
+
 func TestValidate_VarsBuiltinOverride(t *testing.T) {
 	cfg := &Config{
 		Name:   "test",

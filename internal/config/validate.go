@@ -245,17 +245,12 @@ func ValidateTicket(pattern, ticket string) error {
 	if pattern == "" {
 		return nil
 	}
-	// Enforce full-match semantics: anchor the pattern if not already anchored.
+	// Enforce full-match semantics: wrap the pattern unless it already
+	// has unescaped ^ at start AND unescaped $ at end.
 	anchored := pattern
-	hasStart := strings.HasPrefix(anchored, "^")
-	hasEnd := strings.HasSuffix(anchored, "$")
-	switch {
-	case !hasStart && !hasEnd:
-		anchored = "^(?:" + anchored + ")$"
-	case !hasStart:
-		anchored = "^" + anchored
-	case !hasEnd:
-		anchored = anchored + "$"
+	fullyAnchored := strings.HasPrefix(pattern, "^") && hasUnescapedSuffix(pattern, '$')
+	if !fullyAnchored {
+		anchored = "^(?:" + pattern + ")$"
 	}
 	re, err := regexp.Compile(anchored)
 	if err != nil {
@@ -274,4 +269,18 @@ func phaseExists(phases []Phase, name string) bool {
 		}
 	}
 	return false
+}
+
+// hasUnescapedSuffix reports whether s ends with an unescaped instance of ch.
+// A character is escaped if preceded by an odd number of backslashes.
+func hasUnescapedSuffix(s string, ch byte) bool {
+	if len(s) == 0 || s[len(s)-1] != ch {
+		return false
+	}
+	// Count consecutive backslashes immediately before the final character.
+	n := 0
+	for i := len(s) - 2; i >= 0 && s[i] == '\\'; i-- {
+		n++
+	}
+	return n%2 == 0
 }
