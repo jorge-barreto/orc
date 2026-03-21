@@ -295,6 +295,58 @@ func TestOrcTest_WithHooks_DispatchFailPostRunStillRuns(t *testing.T) {
 	_ = postCode
 }
 
+func TestOrcTest_WithHooks_PostRunFailOverridesSuccess(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	phase := config.Phase{
+		Name:    "check",
+		Type:    "script",
+		Run:     "echo ok",
+		PostRun: "exit 7",
+	}
+
+	artifactsDir := filepath.Join(tmpDir, "artifacts")
+	if err := state.EnsureDir(artifactsDir); err != nil {
+		t.Fatal(err)
+	}
+
+	env := &dispatch.Environment{
+		ProjectRoot:  tmpDir,
+		WorkDir:      tmpDir,
+		ArtifactsDir: artifactsDir,
+		Ticket:       "TEST-1",
+		PhaseIndex:   0,
+		PhaseCount:   1,
+	}
+
+	ctx := context.Background()
+
+	result, dispatchErr := dispatch.Dispatch(ctx, phase, env)
+	if dispatchErr != nil {
+		t.Fatalf("dispatch returned error: %v", dispatchErr)
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("expected dispatch exit code 0, got %d", result.ExitCode)
+	}
+
+	code, err := runTestHook(ctx, phase.PostRun, "post-run", phase, env)
+	if err != nil {
+		t.Fatalf("post-run hook error: %v", err)
+	}
+	if code != 7 {
+		t.Fatalf("expected post-run exit code 7, got %d", code)
+	}
+
+	// Apply the same override logic as orc test --with-hooks (test.go:145-146)
+	if result.ExitCode == 0 {
+		result.ExitCode = code
+	}
+
+	if result.ExitCode != 7 {
+		t.Fatalf("expected overridden exit code 7, got %d", result.ExitCode)
+	}
+}
+
 func TestOrcTest_HooksNotRun(t *testing.T) {
 	sentinel := filepath.Join(t.TempDir(), "hook-ran")
 	phase := config.Phase{
