@@ -69,6 +69,16 @@ func TestDocs_ArtifactsTicketScoped(t *testing.T) {
 	}
 }
 
+func TestDocs_OrcTestSkipsHooks(t *testing.T) {
+	topic, err := Get("phases")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(topic.Content, "orc test skips pre-run and post-run hooks") {
+		t.Error("phases topic should document that orc test skips pre-run/post-run hooks")
+	}
+}
+
 func TestDocs_NoBareArtifactPaths(t *testing.T) {
 	for _, topic := range All() {
 		lines := strings.Split(topic.Content, "\n")

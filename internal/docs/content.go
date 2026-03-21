@@ -390,6 +390,7 @@ Both hooks:
 - In loops, run every iteration
 - In parallel-with, wrap each goroutine's dispatch
 - Output is captured in the phase log file
+- Do NOT run during orc test (isolated phase testing calls dispatch directly)
 
 Testing Phases in Isolation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -402,6 +403,11 @@ Use orc test to run a single phase without running the full workflow:
 This sets up the full environment (variables, artifacts dir) but does not
 modify state or advance the workflow. Missing artifacts from prior phases
 produce a warning.
+
+Note: orc test skips pre-run and post-run hooks. It calls the phase
+dispatcher directly without hook wrappers, so hook side effects (e.g.,
+starting/stopping services) will not occur. Run the full workflow to
+exercise hooks.
 
 Use orc debug to analyze what happened during a phase execution:
 
