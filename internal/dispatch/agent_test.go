@@ -427,6 +427,19 @@ func TestRunAgent_ResumeSucceeds_Integration(t *testing.T) {
 	}
 }
 
+func TestRunAgentWithPrompt_SetsSessionID(t *testing.T) {
+	dir := setupFakeClaudeForResume(t, true)
+	phase, env := makeIntegrationEnv(t, dir, "")
+
+	result, err := RunAgentWithPrompt(context.Background(), phase, env, "test prompt", "test-session-id")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.SessionID != "test-session-id" {
+		t.Errorf("expected sessionID=test-session-id, got %q", result.SessionID)
+	}
+}
+
 func TestRunAgentAttended_ResumeFallback_Integration(t *testing.T) {
 	dir := setupFakeClaudeForResume(t, false)
 	phase, env := makeIntegrationEnv(t, dir, "sess-to-fail")

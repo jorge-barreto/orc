@@ -297,7 +297,7 @@ func RunAgentWithPrompt(ctx context.Context, phase config.Phase, env *Environmen
 	if tr.Stream != nil {
 		output = tr.Stream.Text
 	}
-	res := &Result{ExitCode: tr.ExitCode, Output: output, Turns: 1}
+	res := &Result{ExitCode: tr.ExitCode, Output: output, Turns: 1, SessionID: sessionID}
 	if ctx.Err() == context.DeadlineExceeded {
 		res.TimedOut = true
 	}
