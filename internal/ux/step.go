@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/jorge-barreto/orc/internal/state"
 )
 
 // StepAction represents the user's choice at a step-through prompt.
@@ -62,9 +64,10 @@ func listStepArtifacts(artifactsDir string, phaseIdx int) []string {
 			}
 		}
 	}
-	logPath := filepath.Join(artifactsDir, "logs", fmt.Sprintf("phase-%d.log", phaseIdx))
+	logPath := state.LogPath(artifactsDir, phaseIdx)
 	if _, err := os.Stat(logPath); err == nil {
-		result = append(result, fmt.Sprintf("logs/phase-%d.log", phaseIdx))
+		rel, _ := filepath.Rel(artifactsDir, logPath)
+		result = append(result, rel)
 	}
 	sort.Strings(result)
 	return result
