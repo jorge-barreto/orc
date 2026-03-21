@@ -403,12 +403,13 @@ func doctorCmd() *cli.Command {
 			}
 
 			artifactsDir := state.ArtifactsDirForWorkflow(projectRoot, workflowName, ticket)
+			auditDir := state.AuditDirForWorkflow(projectRoot, workflowName, ticket)
 			st, err := state.Load(artifactsDir)
 			if err != nil {
 				return fmt.Errorf("loading state: %w", err)
 			}
 
-			return doctor.Run(ctx, projectRoot, artifactsDir, cfg, st)
+			return doctor.Run(ctx, auditDir, artifactsDir, cfg, st)
 		},
 	}
 }

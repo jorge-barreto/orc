@@ -43,7 +43,7 @@ Instructions:
 Be direct and concise. Focus on actionable advice.`
 
 // Run gathers failure context from artifacts and sends it to claude for diagnosis.
-func Run(ctx context.Context, projectRoot, artifactsDir string, cfg *config.Config, st *state.State) error {
+func Run(ctx context.Context, auditDir, artifactsDir string, cfg *config.Config, st *state.State) error {
 	if st.Status != state.StatusFailed && st.Status != state.StatusInterrupted {
 		fmt.Println("No failed run to diagnose.")
 		return nil
@@ -53,7 +53,6 @@ func Run(ctx context.Context, projectRoot, artifactsDir string, cfg *config.Conf
 		return fmt.Errorf("phase index %d out of range (config has %d phases)", st.PhaseIndex, len(cfg.Phases))
 	}
 
-	auditDir := state.AuditDir(projectRoot, st.Ticket)
 	phase := cfg.Phases[st.PhaseIndex]
 
 	phaseConfig := gatherPhaseConfig(phase)
