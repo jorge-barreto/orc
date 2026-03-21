@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -2611,5 +2612,24 @@ func TestRun_RePromptRecordsCostAndArchive(t *testing.T) {
 	}
 	if _, err := os.Stat(state.AuditLogPath(auditDir, 0, 2)); err != nil {
 		t.Fatalf("audit log iter-2 missing: %v", err)
+	}
+}
+
+func TestRunHookWithLog_LogFileOpenError(t *testing.T) {
+	r := &Runner{
+		Env: &dispatch.Environment{
+			ArtifactsDir: filepath.Join(t.TempDir(), "nonexistent", "artifacts"),
+		},
+	}
+	phase := config.Phase{Name: "test-phase"}
+	env := r.Env.Clone()
+	env.PhaseIndex = 0
+
+	_, err := r.runHookWithLog(context.Background(), "echo hello", "pre-run", phase, env)
+	if err == nil {
+		t.Fatal("expected error when log directory does not exist")
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("expected fs.ErrNotExist in error chain, got: %v", err)
 	}
 }
