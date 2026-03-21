@@ -1158,6 +1158,8 @@ phases:
 
 **Validation checkpoint:** After Wave 3, jb can show a client a run report with timing, costs, and phase outcomes. He can also look at historical runs to identify patterns (which phases are slowest, which loops trigger most often).
 
+**Items:** R-008, R-014, R-015, R-019, R-034, R-048, R-049, R-050
+
 ---
 
 ### R-008: `orc report` command — basic version
@@ -1423,11 +1425,233 @@ orc eval --report                 # show score history across runs
 
 ---
 
+### R-019: Phase output artifacts — structured metadata
+
+> **Moved from Wave 4 to Wave 3.** This is foundational observability infrastructure — the structured data layer that R-008 (`orc report`), R-048 (`orc stats`), and analysis commands (`orc debug`, `orc improve`) all consume. Without it, reporting commands stitch together data from 4+ separate files. With it, each phase is self-describing.
+
+Currently, agent phase output is saved as raw text to `logs/phase-N.log`. Add structured metadata alongside the raw log.
+
+**Metadata file:** `logs/phase-N.meta.json`
+```json
+{
+  "phase_name": "implement",
+  "phase_type": "agent",
+  "model": "opus",
+  "session_id": "abc-123",
+  "start_time": "2026-02-28T14:30:00Z",
+  "end_time": "2026-02-28T14:38:22Z",
+  "duration_seconds": 502,
+  "cost_usd": 1.87,
+  "input_tokens": 45000,
+  "output_tokens": 22000,
+  "exit_code": 0,
+  "tools_used": ["Read", "Edit", "Write", "Bash"],
+  "tools_denied": [],
+  "files_modified": ["src/handler.go", "src/handler_test.go"]
+}
+```
+
+This metadata enables `orc report` to produce richer reports and gives `orc improve` signal about which phases are expensive, which tools are used, etc.
+
+**Implementation approach:**
+- After each phase completes, write the metadata file alongside the log file
+- For agent phases: extract session_id, cost, tokens, tools from the stream parser results
+- For script phases: capture exit code, duration
+- Tool tracking: the stream parser already handles tool names in `content_block_start`/`content_block_stop` events for inline display (via `streamState.toolName`) — add a `ToolsUsed []string` field to `StreamResult` and accumulate tool names there
+
+**Acceptance criteria:**
+- Every phase produces a `.meta.json` file in the logs directory
+- Metadata includes timing, cost, tokens, tools used, exit code
+- `orc report` uses metadata for richer output
+- Metadata files are JSON and parseable by external tools
+
+**Priority:** P2
+**Effort:** Medium
+**Dependencies:** R-004 (cost tracking) — already complete
+
+---
+
+### R-048: Aggregate metrics — `orc stats`
+
+Cross-run aggregate metrics for pattern identification. The Wave 3 validation checkpoint says "look at historical runs to identify patterns (which phases are slowest, which loops trigger most often)." R-008 gives per-run reports and R-014 gives history archives, but nothing computes aggregates across runs. Without this, "identify patterns" means manually eyeballing individual reports.
+
+**Usage:**
+```bash
+orc stats                    # aggregate across all tickets
+orc stats KS-42              # aggregate across runs of one ticket
+orc stats --last 20          # limit to last N runs (default: all)
+```
+
+**Output:**
+```
+  orc stats — 47 runs across 32 tickets (last 30 days)
+
+  Overall
+    Success rate:  83% (39/47)
+    Avg cost:      $3.42  (p95: $8.71)
+    Avg duration:  18m 32s  (p95: 42m 10s)
+
+  Phase Breakdown
+    PHASE          AVG COST   AVG TIME   LOOP RATE   AVG ITERS
+    plan           $0.41      2m 12s     —           —
+    review-plan    $0.38      1m 45s     —           —
+    implement      $1.82      8m 30s     42%         2.1
+    build-test     —          22s        38%         1.8
+    review         $0.61      3m 05s     15%         1.2
+
+  Failure Breakdown
+    Loop exhaustion:    4  (50%)
+    Script failure:     2  (25%)
+    Gate rejection:     1  (12.5%)
+    Cost overrun:       1  (12.5%)
+
+  Cost Trend (last 5 weeks)
+    Feb 17:  $3.89 avg  (8 runs)
+    Feb 24:  $3.52 avg  (12 runs)
+    Mar 03:  $3.21 avg  (10 runs)
+    Mar 10:  $2.98 avg  (9 runs)
+    Mar 17:  $3.71 avg  (8 runs)
+```
+
+**Implementation approach:**
+- New `statsCmd()` in `main.go`
+- New `internal/stats/` package
+- Reads from `.orc/audit/` directories (same data source as `orc improve`)
+- Computes: mean, p95 for cost and duration per phase and overall
+- Loop rate = % of runs where phase looped at least once
+- Avg iters = mean iteration count when looping occurred
+- Failure breakdown uses failure taxonomy (R-049)
+- Weekly cost trend buckets by run start time
+- `--json` flag for machine-readable output
+
+**Data sources:**
+- `.orc/audit/<ticket>/timing.json` — durations
+- `.orc/audit/<ticket>/costs.json` — costs per phase
+- `.orc/audit/<ticket>/dispatch-counts.json` — iteration counts
+- `.orc/audit/<ticket>/state.json` — run status, failure phase
+- Rotated audit dirs (`<ticket>-YYMMDD-HHMMSS`) included for cancelled runs
+
+**Acceptance criteria:**
+- `orc stats` computes and displays aggregate metrics across all audited runs
+- Per-phase breakdown shows avg cost, avg time, loop rate, avg iterations
+- Failure breakdown categorizes failures (requires R-049 taxonomy)
+- Cost/duration trend shows weekly buckets
+- `--last N` limits to most recent N runs
+- `orc stats TICKET` scopes to a single ticket's runs
+- `--json` produces machine-parseable output
+- Graceful with sparse data (few runs, missing cost data) — shows "—" and notes sample size
+
+**Priority:** P1
+**Effort:** Medium
+**Dependencies:** R-014 (run history provides the archived runs to aggregate), R-049 (failure taxonomy for breakdown)
+
+---
+
+### R-049: Failure taxonomy — classify run/phase failures
+
+Structured failure classification for every run exit. When a run fails, orc currently records "failed at phase N" in `state.json`. But failures have distinct categories that matter for pattern identification and client reporting. A client looking at "5 of last 20 runs failed" needs to know *why* as a class — not dig into each one individually.
+
+**Failure categories:**
+- `loop_exhaustion` — max loop iterations reached without convergence
+- `cost_overrun` — per-phase or per-run cost limit exceeded
+- `gate_rejection` — human rejected at a gate phase
+- `script_failure` — script phase exited non-zero
+- `output_missing` — declared outputs not produced (after re-prompt)
+- `interrupted` — SIGINT/SIGTERM during execution
+- `agent_error` — `claude -p` exited non-zero (crash, permission denial, etc.)
+
+**Implementation approach:**
+- Add `FailureCategory string` and `FailureDetail string` fields to `state.State`
+- Runner sets these when transitioning to failed/interrupted state:
+  - Loop exhaustion: set in `handleLoopBackward()` when max hit and no on-exhaust
+  - Cost overrun: set in cost limit check
+  - Gate rejection: set when gate returns "no"
+  - Script failure: set in `RunScript` error path
+  - Output missing: set after re-prompt still missing outputs
+  - Interrupted: set in signal handler
+  - Agent error: set when `RunAgent`/`RunAgentAttended` returns non-zero exit
+- Persisted in `state.json` (backward compatible — old state files have empty string = unclassified)
+- `orc report` includes failure category in the header
+- `orc stats` (R-048) uses categories for failure breakdown
+
+**Acceptance criteria:**
+- Every failed/interrupted run has a `failure_category` in `state.json`
+- All 7 categories are correctly assigned by the runner
+- `orc report` displays the failure category and detail for failed runs
+- `orc status` shows failure category for failed tickets
+- Backward compatible — runs without `failure_category` display as "unclassified"
+- Categories are documented in `orc docs`
+
+**Priority:** P1
+**Effort:** Small
+**Dependencies:** None (consumed by R-008 report and R-048 stats)
+
+---
+
+### R-050: Run comparison — `orc diff`
+
+Compare two runs of the same ticket side-by-side. With R-014 storing historical runs, the natural debugging question is: "What was different between the run that worked and the one that didn't?" Especially valuable for loop debugging and prompt iteration.
+
+**Usage:**
+```bash
+orc diff KS-42                    # compare last two runs
+orc diff KS-42 run-1 run-2       # compare specific run IDs
+orc diff KS-42 --phase implement  # focus on one phase
+```
+
+**Output:**
+```
+  orc diff — KS-42: run 2026-03-10T14:30 vs 2026-03-11T09:15
+
+                        Run 1 (Mar 10)    Run 2 (Mar 11)
+  Status:               completed         failed
+  Duration:             18m 32s           24m 05s  (+30%)
+  Cost:                 $3.42             $5.18    (+51%)
+  Failure:              —                 loop_exhaustion (review)
+
+  Phase Comparison
+  PHASE          COST Δ        TIME Δ        ITERS Δ    RESULT
+  plan           $0.41→0.39   2m→1m 50s     1→1        pass→pass
+  implement      $1.82→2.41   8m→12m        1→3        pass→pass
+  review         $0.61→1.80   3m→8m         1→3        pass→fail ⚠
+  push-pr        —            8s→—          1→0        pass→skip
+
+  Key Differences:
+  • review looped 3x in Run 2 (vs 1x in Run 1)
+  • implement cost increased 32% ($1.82 → $2.41)
+  • Run 2 failed: loop_exhaustion at review phase
+```
+
+**Implementation approach:**
+- New `diffCmd()` in `main.go`
+- Reads from `.orc/artifacts/<ticket>/history/` (R-014) or `.orc/audit/<ticket>/` directories
+- Loads `timing.json`, `costs.json`, `dispatch-counts.json`, `state.json` from both runs
+- Computes deltas (absolute and percentage) for cost, duration, iteration counts
+- Highlights significant changes (>20% delta) and status differences
+- `--phase` flag narrows to a single phase with more detail (shows log snippets, feedback diffs)
+- `--json` for machine output
+
+**Acceptance criteria:**
+- `orc diff TICKET` compares the two most recent runs
+- Shows per-phase cost, time, iteration, and result deltas
+- Highlights significant regressions (>20% cost/time increase, new failures)
+- Works with completed, failed, and interrupted runs
+- Graceful when only one run exists ("nothing to compare")
+- `--phase` shows detailed comparison for a single phase
+
+**Priority:** P2
+**Effort:** Medium
+**Dependencies:** R-014 (run history provides the archived runs to compare)
+
+---
+
 ## Wave 4: Client Readiness
 
 **Theme:** Polish and operational features needed before deploying orc on a client codebase. Professional output, headless operation, robust error handling.
 
 **Validation checkpoint:** After Wave 4, jb can run `orc run TICKET --headless` in a CI/CD pipeline or unattended terminal, capture structured output, and present a professional report to the client.
+
+**Items:** R-016, R-017, R-018 (R-019 moved to Wave 3)
 
 ---
 
@@ -1519,50 +1743,6 @@ Review every error message in the codebase for clarity. Error messages should te
 **Priority:** P2
 **Effort:** Medium
 **Dependencies:** None
-
----
-
-### R-019: Phase output artifacts — structured metadata
-
-Currently, agent phase output is saved as raw text to `logs/phase-N.log`. Add structured metadata alongside the raw log.
-
-**Metadata file:** `logs/phase-N.meta.json`
-```json
-{
-  "phase_name": "implement",
-  "phase_type": "agent",
-  "model": "opus",
-  "session_id": "abc-123",
-  "start_time": "2026-02-28T14:30:00Z",
-  "end_time": "2026-02-28T14:38:22Z",
-  "duration_seconds": 502,
-  "cost_usd": 1.87,
-  "input_tokens": 45000,
-  "output_tokens": 22000,
-  "exit_code": 0,
-  "tools_used": ["Read", "Edit", "Write", "Bash"],
-  "tools_denied": [],
-  "files_modified": ["src/handler.go", "src/handler_test.go"]
-}
-```
-
-This metadata enables `orc report` to produce richer reports and gives `orc improve` signal about which phases are expensive, which tools are used, etc.
-
-**Implementation approach:**
-- After each phase completes, write the metadata file alongside the log file
-- For agent phases: extract session_id, cost, tokens, tools from the stream parser results
-- For script phases: capture exit code, duration
-- Tool tracking: the stream parser already handles tool names in `content_block_start`/`content_block_stop` events for inline display (via `streamState.toolName`) — add a `ToolsUsed []string` field to `StreamResult` and accumulate tool names there
-
-**Acceptance criteria:**
-- Every phase produces a `.meta.json` file in the logs directory
-- Metadata includes timing, cost, tokens, tools used, exit code
-- `orc report` uses metadata for richer output
-- Metadata files are JSON and parseable by external tools
-
-**Priority:** P2
-**Effort:** Medium
-**Dependencies:** R-004 (cost tracking)
 
 ---
 
