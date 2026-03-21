@@ -2633,3 +2633,122 @@ func TestRunHookWithLog_LogFileOpenError(t *testing.T) {
 		t.Fatalf("expected fs.ErrNotExist in error chain, got: %v", err)
 	}
 }
+
+func TestRun_StepMode_PreRunHookFailure(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo", PreRun: "false"},
+			{Name: "c", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	r.StepMode = true
+
+	var prompts []string
+	r.StepPromptFn = func(artifactsDir string, phaseIdx int, phaseName string) ux.StepAction {
+		prompts = append(prompts, phaseName)
+		return ux.StepAction{Type: "continue"}
+	}
+
+	err := r.Run(context.Background())
+
+	if err == nil {
+		t.Fatal("expected error from pre-run hook failure, got nil")
+	}
+	if r.State.Status != state.StatusFailed {
+		t.Fatalf("status = %q, want %q", r.State.Status, state.StatusFailed)
+	}
+	if len(prompts) != 1 || prompts[0] != "a" {
+		t.Fatalf("step prompts = %v, want [a]", prompts)
+	}
+	calls := mock.callNames()
+	if len(calls) != 1 || calls[0] != "a" {
+		t.Fatalf("dispatch calls = %v, want [a]", calls)
+	}
+}
+
+func TestRun_StepMode_PostRunHookFailure(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo", PostRun: "false"},
+			{Name: "c", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	r.StepMode = true
+
+	var prompts []string
+	r.StepPromptFn = func(artifactsDir string, phaseIdx int, phaseName string) ux.StepAction {
+		prompts = append(prompts, phaseName)
+		return ux.StepAction{Type: "continue"}
+	}
+
+	err := r.Run(context.Background())
+
+	if err == nil {
+		t.Fatal("expected error from post-run hook failure, got nil")
+	}
+	if r.State.Status != state.StatusFailed {
+		t.Fatalf("status = %q, want %q", r.State.Status, state.StatusFailed)
+	}
+	if len(prompts) != 1 || prompts[0] != "a" {
+		t.Fatalf("step prompts = %v, want [a]", prompts)
+	}
+	calls := mock.callNames()
+	if len(calls) != 2 || calls[0] != "a" || calls[1] != "b" {
+		t.Fatalf("dispatch calls = %v, want [a b]", calls)
+	}
+}
+
+func TestRun_StepMode_HooksSuccess(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo", PreRun: "true"},
+			{Name: "b", Type: "script", Run: "echo", PreRun: "true", PostRun: "true"},
+			{Name: "c", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	r.StepMode = true
+
+	var prompts []struct {
+		idx  int
+		name string
+	}
+	r.StepPromptFn = func(artifactsDir string, phaseIdx int, phaseName string) ux.StepAction {
+		prompts = append(prompts, struct {
+			idx  int
+			name string
+		}{phaseIdx, phaseName})
+		return ux.StepAction{Type: "continue"}
+	}
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.State.Status != state.StatusCompleted {
+		t.Fatalf("status = %q, want completed", r.State.Status)
+	}
+	calls := mock.callNames()
+	if len(calls) != 3 || calls[0] != "a" || calls[1] != "b" || calls[2] != "c" {
+		t.Fatalf("dispatch calls = %v, want [a b c]", calls)
+	}
+	if len(prompts) != 3 {
+		t.Fatalf("got %d step prompts, want 3", len(prompts))
+	}
+	for i, p := range prompts {
+		wantName := cfg.Phases[i].Name
+		if p.idx != i || p.name != wantName {
+			t.Fatalf("prompt[%d] = {%d, %q}, want {%d, %q}", i, p.idx, p.name, i, wantName)
+		}
+	}
+}
