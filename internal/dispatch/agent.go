@@ -203,13 +203,14 @@ func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 	}
 	defer logFile.Close()
 
-	var rawLog *os.File
+	var rawLog io.Writer
 	if env.Verbose {
-		rawLog, err = os.OpenFile(state.StreamLogPath(env.ArtifactsDir, env.PhaseIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f, err := os.OpenFile(state.StreamLogPath(env.ArtifactsDir, env.PhaseIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			return nil, err
 		}
-		defer rawLog.Close()
+		defer f.Close()
+		rawLog = f
 	}
 
 	dispatch := func(prompt, sid string, first bool) (*turnResult, error) {
@@ -277,13 +278,14 @@ func RunAgentWithPrompt(ctx context.Context, phase config.Phase, env *Environmen
 	}
 	defer logFile.Close()
 
-	var rawLog *os.File
+	var rawLog io.Writer
 	if env.Verbose {
-		rawLog, err = os.OpenFile(state.StreamLogPath(env.ArtifactsDir, env.PhaseIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f, err := os.OpenFile(state.StreamLogPath(env.ArtifactsDir, env.PhaseIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			return nil, err
 		}
-		defer rawLog.Close()
+		defer f.Close()
+		rawLog = f
 	}
 
 	tr, err := runAgentTurn(ctx, phase, env, prompt, sessionID, false, logFile, rawLog, nil)
@@ -327,13 +329,14 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 	}
 	defer logFile.Close()
 
-	var rawLog *os.File
+	var rawLog io.Writer
 	if env.Verbose {
-		rawLog, err = os.OpenFile(state.StreamLogPath(env.ArtifactsDir, env.PhaseIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f, err := os.OpenFile(state.StreamLogPath(env.ArtifactsDir, env.PhaseIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			return nil, err
 		}
-		defer rawLog.Close()
+		defer f.Close()
+		rawLog = f
 	}
 
 	// Save resume prompt for observability if resuming
