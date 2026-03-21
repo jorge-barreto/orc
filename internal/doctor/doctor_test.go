@@ -238,6 +238,108 @@ func TestRun_PhaseIndexOutOfRange(t *testing.T) {
 	}
 }
 
+func TestGatherTimingWithFallback_WorkflowNamespaced(t *testing.T) {
+	projectRoot := t.TempDir()
+
+	auditDir := state.AuditDirForWorkflow(projectRoot, "bugfix", "T-001")
+	os.MkdirAll(auditDir, 0755)
+
+	timing := &state.Timing{
+		Entries: []state.TimingEntry{
+			{Phase: "plan", Duration: "1m 10s"},
+			{Phase: "implement", Duration: "3m 20s"},
+		},
+	}
+	timing.Flush(auditDir)
+
+	artifactsDir := state.ArtifactsDirForWorkflow(projectRoot, "bugfix", "T-001")
+	os.MkdirAll(artifactsDir, 0755)
+
+	result := gatherTimingWithFallback(auditDir, artifactsDir)
+	if !strings.Contains(result, "plan") {
+		t.Error("missing plan phase in timing")
+	}
+	if !strings.Contains(result, "1m 10s") {
+		t.Error("missing plan duration")
+	}
+	if !strings.Contains(result, "implement") {
+		t.Error("missing implement phase in timing")
+	}
+	if !strings.Contains(result, "3m 20s") {
+		t.Error("missing implement duration")
+	}
+}
+
+func TestGatherIterationLogs_WorkflowNamespaced(t *testing.T) {
+	projectRoot := t.TempDir()
+
+	auditDir := state.AuditDirForWorkflow(projectRoot, "bugfix", "T-001")
+	logsDir := filepath.Join(auditDir, "logs")
+	os.MkdirAll(logsDir, 0755)
+
+	os.WriteFile(state.AuditLogPath(auditDir, 1, 1), []byte("iter 1 wf output"), 0644)
+	os.WriteFile(state.AuditLogPath(auditDir, 1, 2), []byte("iter 2 wf output"), 0644)
+
+	result := gatherIterationLogs(auditDir, 1)
+	if !strings.Contains(result, "iter 1 wf output") {
+		t.Error("missing iteration 1 from workflow-namespaced audit dir")
+	}
+	if !strings.Contains(result, "iter 2 wf output") {
+		t.Error("missing iteration 2 from workflow-namespaced audit dir")
+	}
+	if !strings.Contains(result, "phase-2.iter-1.log") {
+		t.Error("missing iteration 1 header")
+	}
+}
+
+func TestRun_WorkflowNamespaced_GathersData(t *testing.T) {
+	projectRoot := t.TempDir()
+	workflow := "bugfix"
+	ticket := "T-001"
+
+	auditDir := state.AuditDirForWorkflow(projectRoot, workflow, ticket)
+	artifactsDir := state.ArtifactsDirForWorkflow(projectRoot, workflow, ticket)
+	state.EnsureDir(artifactsDir)
+	os.MkdirAll(filepath.Join(auditDir, "logs"), 0755)
+
+	os.WriteFile(state.LogPath(artifactsDir, 0), []byte("build failed: exit 1"), 0644)
+
+	timing := &state.Timing{
+		Entries: []state.TimingEntry{
+			{Phase: "build", Duration: "0m 15s"},
+		},
+	}
+	timing.Flush(auditDir)
+
+	os.WriteFile(state.AuditLogPath(auditDir, 0, 1), []byte("prev attempt output"), 0644)
+
+	st := &state.State{
+		Status:     state.StatusFailed,
+		PhaseIndex: 0,
+		Ticket:     ticket,
+		Workflow:   workflow,
+	}
+
+	cfg := &config.Config{
+		Phases: []config.Phase{
+			{Name: "build", Type: "script", Run: "make build"},
+		},
+	}
+
+	// Clear PATH so claude binary is not findable — prevents real API calls.
+	// t.Setenv automatically restores the original PATH when the test completes.
+	t.Setenv("PATH", t.TempDir())
+
+	err := Run(context.Background(), auditDir, artifactsDir, cfg, st)
+	if err == nil {
+		t.Fatal("expected error from runClaude (no claude binary), got nil")
+	}
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "claude") {
+		t.Errorf("expected claude-related error, got: %v", err)
+	}
+}
+
 func TestGatherAllLogs_MultiplePhases(t *testing.T) {
 	dir := t.TempDir()
 	artifactsDir := filepath.Join(dir, ".orc", "artifacts")
