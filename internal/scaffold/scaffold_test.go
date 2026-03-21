@@ -52,6 +52,13 @@ func stubClaudeCapture(t *testing.T) *string {
 	return &captured
 }
 
+func stubGetRecipe(t *testing.T, fn func(string) (Recipe, error)) {
+	t.Helper()
+	orig := getRecipeFn
+	t.Cleanup(func() { getRecipeFn = orig })
+	getRecipeFn = fn
+}
+
 func captureOutput(fn func()) string {
 	old := os.Stdout
 	r, w, _ := os.Pipe()
@@ -377,5 +384,63 @@ func TestListRecipes(t *testing.T) {
 	}
 	if !strings.Contains(out, "orc init --recipe") {
 		t.Errorf("missing usage hint\noutput:\n%s", out)
+	}
+}
+
+func TestInitWorkflow_WithValidRecipe(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".orc"), 0755)
+
+	captureOutput(func() {
+		if err := InitWorkflow(dir, "myworkflow", "simple"); err != nil {
+			t.Fatalf("InitWorkflow failed: %v", err)
+		}
+	})
+
+	data, err := os.ReadFile(filepath.Join(dir, ".orc", "workflows", "myworkflow.yaml"))
+	if err != nil {
+		t.Fatalf("workflow file not created: %v", err)
+	}
+
+	r, err := GetRecipe("simple")
+	if err != nil {
+		t.Fatalf("GetRecipe failed: %v", err)
+	}
+	want := r.Files[".orc/config.yaml"]
+	if string(data) != want {
+		t.Fatalf("content mismatch\ngot:  %q\nwant: %q", string(data), want)
+	}
+}
+
+func TestInitWorkflow_UnknownRecipe(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".orc"), 0755)
+
+	err := InitWorkflow(dir, "myworkflow", "nonexistent-recipe")
+	if err == nil {
+		t.Fatal("expected error for unknown recipe")
+	}
+	if !strings.Contains(err.Error(), "unknown recipe") {
+		t.Fatalf("expected error containing 'unknown recipe', got: %v", err)
+	}
+}
+
+func TestInitWorkflow_RecipeMissingConfig(t *testing.T) {
+	stubGetRecipe(t, func(name string) (Recipe, error) {
+		return Recipe{
+			Name:  name,
+			Files: map[string]string{".orc/phases/plan.md": "prompt content"},
+		}, nil
+	})
+
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".orc"), 0755)
+
+	err := InitWorkflow(dir, "myworkflow", "broken-recipe")
+	if err == nil {
+		t.Fatal("expected error when recipe has no config.yaml")
+	}
+	if !strings.Contains(err.Error(), "has no config.yaml") {
+		t.Fatalf("expected error containing 'has no config.yaml', got: %v", err)
 	}
 }
