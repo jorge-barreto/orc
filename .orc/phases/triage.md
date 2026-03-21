@@ -15,9 +15,9 @@ You are triaging findings from the wave review into actionable beads.
      -d "<what's wrong, which file/line, how to fix>"
    ```
 
-3. **For each Improvement finding** — create a standalone bead (no parent) for future prioritization:
+3. **For each Improvement finding** — create a bead under the current wave for future prioritization:
    ```bash
-   bd create --title="<concise title>" --type=task --priority=3 \
+   bd create --title="<concise title>" --type=task --priority=3 --parent="$TICKET" \
      -d "<description and rationale>"
    ```
 
@@ -51,8 +51,7 @@ You are triaging findings from the wave review into actionable beads.
 
 ## Rules
 
-- Bugs and test gaps go under the current wave (`--parent="$TICKET"`) — they will be available for a follow-up run.
-- Improvements go as standalone beads (no parent) for future prioritization.
+- ALL beads go under the current wave (`--parent="$TICKET"`) — bugs and test gaps for follow-up, improvements for future prioritization.
 - Do NOT create beads for style preferences or minor nits.
 - Each bead description must be specific enough for an agent to implement without additional context.
 - If the wave review found no findings, write an empty triage-results.md noting "No findings to triage."
