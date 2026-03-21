@@ -242,10 +242,11 @@ orc test -w bugfix fix KS-42     # test a phase from a named workflow
 |------|-------------|
 | `--auto` | Unattended mode — skip gates, no interactive steering |
 | `--verbose`, `-v` | Save raw stream-json output to `.stream.jsonl` files |
+| `--with-hooks` | Run pre-run and post-run hooks around the phase dispatch |
 
 Missing artifacts from prior phases produce a warning listing which files are absent and which earlier phases normally create them.
 
-Pre-run and post-run hooks do not run during `orc test`. It calls the phase dispatcher directly, so hook side effects (e.g., starting/stopping services) will not occur. Run the full workflow to exercise hooks.
+By default, pre-run and post-run hooks do not run during `orc test`. Use `--with-hooks` to execute them with the same semantics as a full workflow run. Without the flag, hooks are skipped and hook side effects (e.g., starting/stopping services) will not occur.
 
 ### `orc debug <phase> [ticket]`
 

@@ -396,7 +396,7 @@ Both hooks:
 - In loops, run every iteration
 - In parallel-with, wrap each goroutine's dispatch
 - Output is captured in the phase log file
-- Do NOT run during orc test (isolated phase testing calls dispatch directly)
+- Do NOT run during orc test unless --with-hooks is passed
 
 Testing Phases in Isolation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -410,10 +410,9 @@ This sets up the full environment (variables, artifacts dir) but does not
 modify state or advance the workflow. Missing artifacts from prior phases
 produce a warning.
 
-Note: orc test skips pre-run and post-run hooks. It calls the phase
-dispatcher directly without hook wrappers, so hook side effects (e.g.,
-starting/stopping services) will not occur. Run the full workflow to
-exercise hooks.
+Note: by default, orc test skips pre-run and post-run hooks. Use
+--with-hooks to execute them with the same semantics as a full workflow
+run (pre-run failure skips dispatch; post-run runs regardless for cleanup).
 
 Use orc debug to analyze what happened during a phase execution:
 
@@ -1157,15 +1156,17 @@ the workflow.
   orc test -w bugfix fix KS-42     Test a phase from a named workflow
 
 Flags:
-  --auto       Unattended mode (skip gates, no steering)
-  --verbose    Save raw stream-json output
+  --auto         Unattended mode (skip gates, no steering)
+  --verbose      Save raw stream-json output
+  --with-hooks   Run pre-run and post-run hooks around the phase dispatch
 
 Notes:
 - Missing artifacts from prior phases produce a warning listing which
   files are absent and which earlier phases normally create them.
-- Pre-run and post-run hooks do NOT run during orc test. It calls the
-  phase dispatcher directly, so hook side effects (starting/stopping
-  services) will not occur. Run the full workflow to exercise hooks.
+- By default, pre-run and post-run hooks do NOT run during orc test.
+  Use --with-hooks to execute hooks around the phase dispatch, with
+  the same semantics as a full workflow run (pre-run failure skips
+  dispatch; post-run runs regardless for cleanup).
 
 orc debug — Phase Execution Analysis
 --------------------------------------

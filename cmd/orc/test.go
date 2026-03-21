@@ -24,6 +24,7 @@ func testCmd() *cli.Command {
 		Flags: []cli.Flag{
 			&cli.BoolFlag{Name: "auto", Usage: "Unattended mode — skip gates, no interactive steering"},
 			&cli.BoolFlag{Name: "verbose", Aliases: []string{"v"}, Usage: "Save raw stream-json output to .stream.jsonl files"},
+			&cli.BoolFlag{Name: "with-hooks", Usage: "Run pre-run and post-run hooks around the phase dispatch"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfgErr := func(err error) error {
@@ -113,11 +114,49 @@ func testCmd() *cli.Command {
 
 			ux.PhaseHeader(phaseIdx, len(cfg.Phases), phase)
 
+			withHooks := cmd.Bool("with-hooks")
 			start := time.Now()
-			result, err := dispatch.Dispatch(ctx, phase, env)
+
+			var preRunFailed bool
+			var preRunCode int
+
+			if withHooks && phase.PreRun != "" {
+				code, err := runTestHook(ctx, phase.PreRun, "pre-run", phase, env)
+				if err != nil {
+					return err
+				}
+				if code != 0 {
+					preRunFailed = true
+					preRunCode = code
+				}
+			}
+
+			var result *dispatch.Result
+			var dispatchErr error
+			if !preRunFailed {
+				result, dispatchErr = dispatch.Dispatch(ctx, phase, env)
+			}
+
+			if withHooks && phase.PostRun != "" {
+				code, err := runTestHook(ctx, phase.PostRun, "post-run", phase, env)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "warning: post-run hook error: %v\n", err)
+				} else if code != 0 {
+					if !preRunFailed && dispatchErr == nil && result != nil && result.ExitCode == 0 {
+						result.ExitCode = code
+					} else {
+						fmt.Fprintf(os.Stderr, "warning: post-run hook failed (exit %d) but phase already failed\n", code)
+					}
+				}
+			}
+
+			if preRunFailed && result == nil {
+				result = &dispatch.Result{ExitCode: preRunCode}
+			}
+
 			duration := time.Since(start)
-			if err != nil {
-				return err
+			if dispatchErr != nil {
+				return dispatchErr
 			}
 
 			if result.ExitCode == 0 {
@@ -132,6 +171,18 @@ func testCmd() *cli.Command {
 			return nil
 		},
 	}
+}
+
+// runTestHook executes a hook command and logs output to the phase log file.
+// Mirrors Runner.runHookWithLog but works without a Runner instance.
+func runTestHook(ctx context.Context, hookCmd, label string, phase config.Phase, env *dispatch.Environment) (int, error) {
+	logFile, err := os.OpenFile(state.LogPath(env.ArtifactsDir, env.PhaseIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return 0, err
+	}
+	defer logFile.Close()
+	fmt.Fprintf(logFile, "\n[orc] %s: %s\n", label, hookCmd)
+	return dispatch.RunHook(ctx, hookCmd, phase, env, logFile)
 }
 
 // checkMissingArtifacts checks for declared outputs from phases that precede
