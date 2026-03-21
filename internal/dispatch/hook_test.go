@@ -5,6 +5,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jorge-barreto/orc/internal/config"
 )
@@ -78,5 +79,38 @@ func TestRunHook_StderrCapture(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "err") {
 		t.Fatalf("logWriter = %q, expected stderr written to logWriter", buf.String())
+	}
+}
+
+func TestRunHook_ContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	env := scriptEnv(t)
+	phase := config.Phase{Name: "test", Type: "script"}
+	var buf bytes.Buffer
+
+	type result struct {
+		code int
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		code, err := RunHook(ctx, "sleep 60", phase, env, &buf)
+		ch <- result{code, err}
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	r := <-ch
+	if r.err != nil {
+		t.Fatalf("expected nil error (exitCode extracts ExitError), got: %v", r.err)
+	}
+	if r.code == 0 {
+		t.Fatalf("expected non-zero exit code (signal death), got 0")
+	}
+	if ctx.Err() != context.Canceled {
+		t.Fatalf("expected context.Canceled, got: %v", ctx.Err())
 	}
 }
