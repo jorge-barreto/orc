@@ -2009,9 +2009,9 @@ func TestRun_ArchivesOutputsBeforeReDispatch(t *testing.T) {
 	}
 }
 
-func TestRun_DispatchCountsSurviveResume(t *testing.T) {
+func TestRun_AttemptCountsSurviveResume(t *testing.T) {
 	// Phase a succeeds, phase b fails — simulates an interrupted run.
-	// On "resume" (second Runner with same dirs), dispatch counts should persist
+	// On "resume" (second Runner with same dirs), attempt counts should persist
 	// so iter-1 from the first run is not overwritten.
 	cfg := &config.Config{
 		Name: "test",
@@ -2601,9 +2601,9 @@ func TestRun_RePromptRecordsCostAndArchive(t *testing.T) {
 		t.Fatalf("TotalCostUSD = %f, want %f", costs.TotalCostUSD, wantTotal)
 	}
 
-	// dispatchCount for phase 0 should be 2
-	if r.dispatchCount[0] != 2 {
-		t.Fatalf("dispatchCount[0] = %d, want 2", r.dispatchCount[0])
+	// attemptCount for phase 0 should be 2
+	if r.attemptCount[0] != 2 {
+		t.Fatalf("attemptCount[0] = %d, want 2", r.attemptCount[0])
 	}
 
 	// Audit log files must exist for both iter-1 and iter-2

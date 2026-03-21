@@ -48,7 +48,7 @@ type PhaseInfo struct {
 	Outputs                                           []OutputFile
 	FeedbackFiles                                     []FeedbackFile
 	ExitStatus                                        string
-	Iterations                                        int
+	Attempts                                          int
 	RunCommand                                        string
 }
 
@@ -270,9 +270,9 @@ func Run(projectRoot string, cfg *config.Config, phaseIdx int, ticket, workflow 
 		}
 	}
 
-	// Load dispatch counts for iterations
-	dispatchCounts, _ := state.LoadDispatchCounts(auditDir)
-	iterations := dispatchCounts[phaseIdx]
+	// Load attempt counts
+	attemptCounts, _ := state.LoadDispatchCounts(auditDir)
+	attempts := attemptCounts[phaseIdx]
 
 	// Prompt path and size (agent only)
 	var promptPath string
@@ -359,7 +359,7 @@ func Run(projectRoot string, cfg *config.Config, phaseIdx int, ticket, workflow 
 		Outputs:       outputs,
 		FeedbackFiles: feedbackFiles,
 		ExitStatus:    exitStatus,
-		Iterations:    iterations,
+		Attempts:      attempts,
 		RunCommand:    phase.Run,
 	}
 
@@ -377,11 +377,11 @@ func render(w io.Writer, info *PhaseInfo) {
 			typeStr += ", " + info.Effort
 		}
 	}
-	iterSuffix := ""
-	if info.Iterations > 1 {
-		iterSuffix = fmt.Sprintf(" %s(iteration %d)%s", ux.Dim, info.Iterations, ux.Reset)
+	attemptSuffix := ""
+	if info.Attempts > 1 {
+		attemptSuffix = fmt.Sprintf(" %s(attempt %d)%s", ux.Dim, info.Attempts, ux.Reset)
 	}
-	fmt.Fprintf(w, "%sPhase:%s %s (%s)%s\n", ux.Bold, ux.Reset, info.Name, typeStr, iterSuffix)
+	fmt.Fprintf(w, "%sPhase:%s %s (%s)%s\n", ux.Bold, ux.Reset, info.Name, typeStr, attemptSuffix)
 
 	// Duration line
 	fmt.Fprintf(w, "%sDuration:%s %s", ux.Bold, ux.Reset, state.FormatDuration(info.Duration))
