@@ -19,6 +19,11 @@ import (
 	"github.com/jorge-barreto/orc/internal/ux"
 )
 
+// errStepRewind is returned by runParallel when the user chooses to rewind
+// in step-through mode. The caller uses this to distinguish rewind from
+// normal completion, ensuring post-success logic is not executed on rewind.
+var errStepRewind = errors.New("step rewind")
+
 // Runner drives the workflow state machine.
 type Runner struct {
 	Config       *config.Config
@@ -163,6 +168,9 @@ mainLoop:
 			}
 			if partnerIdx > i {
 				err := r.runParallel(ctx, i, partnerIdx, total, loopCounts)
+				if err == errStepRewind {
+					continue
+				}
 				if err != nil {
 					return err
 				}
@@ -773,7 +781,7 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 				if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
 					return fmt.Errorf("saving state after rewind: %w", err)
 				}
-				return nil
+				return errStepRewind
 			case "continue":
 				// fall through
 			}

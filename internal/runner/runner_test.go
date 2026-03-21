@@ -2860,3 +2860,58 @@ func TestRun_StepModeParallelRewindClearsLoopCounts(t *testing.T) {
 		t.Fatalf("calls[8] = %q, want \"d\" (calls=%v)", calls[8], calls)
 	}
 }
+
+func TestRun_StepModeParallelRewindReturnsSentinel(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "pre", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo", ParallelWith: "c"},
+			{Name: "c", Type: "script", Run: "echo"},
+			{Name: "post", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	r.StepMode = true
+	rewound := false
+	r.StepPromptFn = func(artifactsDir string, phaseIdx int, phaseName string) ux.StepAction {
+		if phaseName == "b + c" && !rewound {
+			rewound = true
+			return ux.StepAction{Type: "rewind", Target: "1"}
+		}
+		return ux.StepAction{Type: "continue"}
+	}
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.State.Status != state.StatusCompleted {
+		t.Fatalf("status = %q, want completed", r.State.Status)
+	}
+	calls := mock.callNames()
+	if len(calls) != 7 {
+		t.Fatalf("len(calls) = %d, want 7 (calls=%v)", len(calls), calls)
+	}
+	// pre, b+c (parallel), pre again, b+c again, post
+	if calls[0] != "pre" {
+		t.Fatalf("calls[0] = %q, want \"pre\"", calls[0])
+	}
+	pair1 := []string{calls[1], calls[2]}
+	sort.Strings(pair1)
+	if pair1[0] != "b" || pair1[1] != "c" {
+		t.Fatalf("calls[1:3] = %v, want b+c in any order", calls[1:3])
+	}
+	if calls[3] != "pre" {
+		t.Fatalf("calls[3] = %q, want \"pre\"", calls[3])
+	}
+	pair2 := []string{calls[4], calls[5]}
+	sort.Strings(pair2)
+	if pair2[0] != "b" || pair2[1] != "c" {
+		t.Fatalf("calls[4:6] = %v, want b+c in any order", calls[4:6])
+	}
+	if calls[6] != "post" {
+		t.Fatalf("calls[6] = %q, want \"post\"", calls[6])
+	}
+}
