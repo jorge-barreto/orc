@@ -491,6 +491,32 @@ func TestBuildEnv_UnprefixedCustomVars(t *testing.T) {
 	}
 }
 
+func TestBuildEnv_CustomVarShadowsParentEnv(t *testing.T) {
+	t.Setenv("MY_DIR", "/from-parent")
+
+	env := &Environment{
+		ProjectRoot:  "/proj",
+		WorkDir:      "/work",
+		ArtifactsDir: "/art",
+		Ticket:       "T-1",
+		CustomVars:   map[string]string{"MY_DIR": "/from-config"},
+	}
+	result := BuildEnv(env)
+
+	var found []string
+	for _, e := range result {
+		if strings.HasPrefix(e, "MY_DIR=") {
+			found = append(found, e)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("expected exactly 1 MY_DIR entry, got %d: %v", len(found), found)
+	}
+	if found[0] != "MY_DIR=/from-config" {
+		t.Fatalf("MY_DIR = %q, want MY_DIR=/from-config", found[0])
+	}
+}
+
 func TestPhaseWorkDir_NoCwd(t *testing.T) {
 	env := &Environment{
 		ProjectRoot:  "/proj",

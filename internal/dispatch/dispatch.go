@@ -108,6 +108,9 @@ func BuildEnv(env *Environment) []string {
 		"WORK_DIR": true, "PROJECT_ROOT": true,
 		"WORKFLOW": true,
 	}
+	for k := range env.CustomVars {
+		overridden[k] = true
+	}
 	var filtered []string
 	for _, e := range os.Environ() {
 		key := strings.SplitN(e, "=", 2)[0]
