@@ -1,7 +1,9 @@
 package debug
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -173,6 +175,17 @@ func writeStateJSON(t *testing.T, dir string, phaseIndex int, status string) {
 	}
 }
 
+func makeToolCalls(n int) []ToolCall {
+	calls := make([]ToolCall, n)
+	for i := range calls {
+		calls[i] = ToolCall{
+			Name:    fmt.Sprintf("Tool%d", i+1),
+			Summary: fmt.Sprintf("summary%d", i+1),
+		}
+	}
+	return calls
+}
+
 func TestExitStatusFromLog(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		dir := t.TempDir()
@@ -311,4 +324,96 @@ func TestRun_AgentPhase(t *testing.T) {
 	if err := Run(dir, cfg, 0, "TEST-1", ""); err != nil {
 		t.Errorf("Run returned error: %v", err)
 	}
+}
+
+func TestRender_ToolCallTruncation(t *testing.T) {
+	t.Run("n=20 no truncation", func(t *testing.T) {
+		var buf bytes.Buffer
+		info := PhaseInfo{
+			Type:      "agent",
+			ToolCalls: makeToolCalls(20),
+		}
+		render(&buf, &info)
+		out := buf.String()
+
+		if !strings.Contains(out, "Tool calls (20):") {
+			t.Errorf("missing header; got:\n%s", out)
+		}
+		for i := 1; i <= 20; i++ {
+			want := fmt.Sprintf("Tool%d summary%d", i, i)
+			if !strings.Contains(out, want) {
+				t.Errorf("missing %q in output", want)
+			}
+		}
+		if strings.Contains(out, "...") {
+			t.Errorf("unexpected '...' in output for n=20")
+		}
+	})
+
+	t.Run("n=21 first truncation", func(t *testing.T) {
+		var buf bytes.Buffer
+		info := PhaseInfo{
+			Type:      "agent",
+			ToolCalls: makeToolCalls(21),
+		}
+		render(&buf, &info)
+		out := buf.String()
+
+		if !strings.Contains(out, "Tool calls (21):") {
+			t.Errorf("missing header; got:\n%s", out)
+		}
+		for i := 1; i <= 15; i++ {
+			want := fmt.Sprintf("Tool%d summary%d", i, i)
+			if !strings.Contains(out, want) {
+				t.Errorf("missing first-15 entry %q", want)
+			}
+		}
+		if !strings.Contains(out, "... (21 total)") {
+			t.Errorf("missing separator '... (21 total)'")
+		}
+		for i := 17; i <= 21; i++ {
+			want := fmt.Sprintf("Tool%d summary%d", i, i)
+			if !strings.Contains(out, want) {
+				t.Errorf("missing last-5 entry %q", want)
+			}
+		}
+		if strings.Contains(out, "Tool16 summary16") {
+			t.Errorf("truncated entry Tool16 should not appear")
+		}
+	})
+
+	t.Run("n=30 large N", func(t *testing.T) {
+		var buf bytes.Buffer
+		info := PhaseInfo{
+			Type:      "agent",
+			ToolCalls: makeToolCalls(30),
+		}
+		render(&buf, &info)
+		out := buf.String()
+
+		if !strings.Contains(out, "Tool calls (30):") {
+			t.Errorf("missing header; got:\n%s", out)
+		}
+		for i := 1; i <= 15; i++ {
+			want := fmt.Sprintf("Tool%d summary%d", i, i)
+			if !strings.Contains(out, want) {
+				t.Errorf("missing first-15 entry %q", want)
+			}
+		}
+		if !strings.Contains(out, "... (30 total)") {
+			t.Errorf("missing separator '... (30 total)'")
+		}
+		for i := 26; i <= 30; i++ {
+			want := fmt.Sprintf("Tool%d summary%d", i, i)
+			if !strings.Contains(out, want) {
+				t.Errorf("missing last-5 entry %q", want)
+			}
+		}
+		for i := 16; i <= 25; i++ {
+			want := fmt.Sprintf("Tool%d summary%d", i, i)
+			if strings.Contains(out, want) {
+				t.Errorf("truncated entry %q should not appear", want)
+			}
+		}
+	})
 }
