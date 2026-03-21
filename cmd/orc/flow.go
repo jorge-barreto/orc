@@ -45,6 +45,8 @@ func flowCmd() *cli.Command {
 				if err == nil {
 					fmt.Printf("\n%s═══ Workflow: default (config.yaml) ═══%s\n\n", ux.Bold, ux.Reset)
 					ux.FlowViz(cfg)
+				} else {
+					fmt.Fprintf(os.Stderr, "warning: default (config.yaml): %v\n", err)
 				}
 			}
 			for _, name := range workflows {
