@@ -321,29 +321,6 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 		defer cancel()
 	}
 
-	resuming := env.ResumeSessionID != ""
-
-	var prompt string
-	var sessionID string
-	var isFirst bool
-
-	if resuming {
-		sessionID = env.ResumeSessionID
-		prompt = "The previous session was interrupted. Continue from where you left off and complete the remaining work."
-		isFirst = false
-		if err := os.WriteFile(state.PromptPath(env.ArtifactsDir, env.PhaseIndex), []byte(prompt), 0644); err != nil {
-			return nil, err
-		}
-	} else {
-		var err error
-		prompt, err = RenderAndSavePrompt(phase, env)
-		if err != nil {
-			return nil, err
-		}
-		sessionID = uuid.New().String()
-		isFirst = true
-	}
-
 	logFile, err := os.OpenFile(state.LogPath(env.ArtifactsDir, env.PhaseIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, err
@@ -359,36 +336,52 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 		defer rawLog.Close()
 	}
 
+	// Save resume prompt for observability if resuming
+	if env.ResumeSessionID != "" {
+		if err := os.WriteFile(state.PromptPath(env.ArtifactsDir, env.PhaseIndex), []byte(resumePrompt), 0644); err != nil {
+			return nil, err
+		}
+	}
+
+	dispatch := func(prompt, sid string, first bool) (*turnResult, error) {
+		return runAgentTurn(ctx, phase, env, prompt, sid, first, logFile, rawLog, nil)
+	}
+	renderFresh := func() (string, error) {
+		return RenderAndSavePrompt(phase, env)
+	}
+	newSID := func() string { return uuid.New().String() }
+	warn := func(err error) {
+		fmt.Fprintf(os.Stderr, "  warning: resume failed (%v), falling back to fresh start\n", err)
+	}
+
+	// First turn: handles resume-or-fresh decision (no stdin reader needed yet)
+	firstTR, sessionID, _, err := dispatchWithResume(env.ResumeSessionID, renderFresh, newSID, dispatch, warn)
+	if err != nil {
+		return nil, err
+	}
+
 	reader := NewStdinReader(os.Stdin)
 	defer reader.Stop()
 
 	var extraTools []string
+	var prompt string // for subsequent turns — set by denial/question/steering handlers
 	var lastTurn *turnResult
 	var totalCost float64
 	var totalInput, totalOutput int
 	var totalCacheCreation, totalCacheRead int
-	var turns int
+	turns := 0
+	tr := firstTR
 
 	for {
-		tr, err := runAgentTurn(ctx, phase, env, prompt, sessionID, isFirst, logFile, rawLog, extraTools)
-		if resuming && err != nil {
-			fmt.Fprintf(os.Stderr, "  warning: resume failed (%v), falling back to fresh start\n", err)
-			var renderErr error
-			prompt, renderErr = RenderAndSavePrompt(phase, env)
-			if renderErr != nil {
-				return nil, renderErr
+		// Dispatch subsequent turns (first turn already handled by dispatchWithResume)
+		if turns > 0 {
+			var err error
+			tr, err = runAgentTurn(ctx, phase, env, prompt, sessionID, false, logFile, rawLog, extraTools)
+			if err != nil {
+				return nil, err
 			}
-			sessionID = uuid.New().String()
-			isFirst = true
-			resuming = false
-			continue
-		}
-		if err != nil {
-			return nil, err
 		}
 		lastTurn = tr
-		isFirst = false
-		resuming = false // prevent re-triggering fallback on subsequent loop iterations
 		turns++
 		if tr.Stream != nil {
 			totalCost += tr.Stream.CostUSD
