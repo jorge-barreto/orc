@@ -417,3 +417,138 @@ func TestRender_ToolCallTruncation(t *testing.T) {
 		}
 	})
 }
+
+func TestReadFeedbackFiles(t *testing.T) {
+	tests := []struct {
+		name   string
+		setup  func(t *testing.T, dir string)
+		pathFn func(dir string) string
+		want   []FeedbackFile
+	}{
+		{
+			name:   "dir does not exist",
+			setup:  func(t *testing.T, dir string) {},
+			pathFn: func(dir string) string { return filepath.Join(dir, "nonexistent") },
+			want:   nil,
+		},
+		{
+			name: "empty dir",
+			setup: func(t *testing.T, dir string) {
+				if err := os.MkdirAll(filepath.Join(dir, "feedback"), 0755); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: nil,
+		},
+		{
+			name: "zero size files skipped",
+			setup: func(t *testing.T, dir string) {
+				if err := os.MkdirAll(filepath.Join(dir, "feedback"), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "feedback", "from-build.md"), []byte{}, 0644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: nil,
+		},
+		{
+			name: "non-matching files filtered",
+			setup: func(t *testing.T, dir string) {
+				if err := os.MkdirAll(filepath.Join(dir, "feedback"), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "feedback", "notes.txt"), []byte("content"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "feedback", "from-build.txt"), []byte("content"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: nil,
+		},
+		{
+			name: "subdirectories skipped",
+			setup: func(t *testing.T, dir string) {
+				if err := os.MkdirAll(filepath.Join(dir, "feedback", "from-build.md"), 0755); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: nil,
+		},
+		{
+			name: "single valid file",
+			setup: func(t *testing.T, dir string) {
+				if err := os.MkdirAll(filepath.Join(dir, "feedback"), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "feedback", "from-build.md"), []byte("fix this"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: []FeedbackFile{{FromPhase: "build", Size: 8}},
+		},
+		{
+			name: "multiple files sorted",
+			setup: func(t *testing.T, dir string) {
+				if err := os.MkdirAll(filepath.Join(dir, "feedback"), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "feedback", "from-review.md"), []byte("0123456789"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "feedback", "from-build.md"), []byte("01234"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: []FeedbackFile{{FromPhase: "build", Size: 5}, {FromPhase: "review", Size: 10}},
+		},
+		{
+			name: "mixed valid and invalid",
+			setup: func(t *testing.T, dir string) {
+				if err := os.MkdirAll(filepath.Join(dir, "feedback"), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "feedback", "from-build.md"), []byte("fix this"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "feedback", "from-empty.md"), []byte{}, 0644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "feedback", "readme.txt"), []byte("hello"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: []FeedbackFile{{FromPhase: "build", Size: 8}},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			tc.setup(t, dir)
+			path := dir
+			if tc.pathFn != nil {
+				path = tc.pathFn(dir)
+			}
+			got := readFeedbackFiles(path)
+			if tc.want == nil {
+				if got != nil {
+					t.Fatalf("got %v, want nil", got)
+				}
+				return
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("len = %d, want %d", len(got), len(tc.want))
+			}
+			for i, w := range tc.want {
+				if got[i].FromPhase != w.FromPhase {
+					t.Errorf("[%d].FromPhase = %q, want %q", i, got[i].FromPhase, w.FromPhase)
+				}
+				if got[i].Size != w.Size {
+					t.Errorf("[%d].Size = %d, want %d", i, got[i].Size, w.Size)
+				}
+			}
+		})
+	}
+}
