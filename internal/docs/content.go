@@ -49,6 +49,12 @@ var topics = []Topic{
 		Summary: "Named workflow configs for different task types",
 		Content: topicWorkflows,
 	},
+	{
+		Name:    "devtools",
+		Title:   "Developer Tools",
+		Summary: "orc test, debug, improve, flow, and doctor",
+		Content: topicDevtools,
+	},
 }
 
 const topicQuickstart = `Quick Start
@@ -1127,6 +1133,107 @@ Design Principles
 - Prompt files in .orc/phases/ are shared across workflows.
 - The filesystem is the registry -- no metaconfig file.
 - Backward compatible: single config.yaml projects are unchanged.
+`
+
+const topicDevtools = `Developer Tools
+===============
+
+orc includes several commands for testing, debugging, and refining
+workflows without running the full pipeline.
+
+orc test — Single-Phase Execution
+----------------------------------
+
+Run one phase in isolation for rapid prompt iteration. Sets up the full
+environment (variables, artifacts dir) as if the workflow were running,
+dispatches only the specified phase, and does not modify state or advance
+the workflow.
+
+  orc test plan KS-42              Run just the "plan" phase
+  orc test implement KS-42         Run just "implement"
+  orc test 3 KS-42                 Run phase 3 (1-indexed)
+  orc test -w bugfix fix KS-42     Test a phase from a named workflow
+
+Flags:
+  --auto       Unattended mode (skip gates, no steering)
+  --verbose    Save raw stream-json output
+
+Notes:
+- Missing artifacts from prior phases produce a warning listing which
+  files are absent and which earlier phases normally create them.
+- Pre-run and post-run hooks do NOT run during orc test. It calls the
+  phase dispatcher directly, so hook side effects (starting/stopping
+  services) will not occur. Run the full workflow to exercise hooks.
+
+orc debug — Phase Execution Analysis
+--------------------------------------
+
+Analyze what happened during a phase execution. Shows the rendered
+prompt, tool call sequence with summaries, cost/token data, feedback
+injection, and exit status. Useful for understanding why a phase
+produced unexpected results without manually reading raw log files.
+
+  orc debug plan                    Most recent ticket's "plan" phase
+  orc debug plan KS-42              Specific ticket's phase
+  orc debug 2                       Phase by index (1-indexed)
+  orc debug -w bugfix plan KS-42    Phase from a named workflow
+
+When no ticket is specified, analyzes the most recently executed ticket.
+
+orc doctor — AI-Powered Diagnostics
+-------------------------------------
+
+Diagnoses a failed workflow run using AI. Gathers the failed phase's
+config, logs, rendered prompt, feedback files, timing data, and loop
+iteration history, then sends everything to Claude for analysis.
+Recommends whether to --retry, --from, or fix-first.
+
+  orc doctor KS-42
+
+orc improve — Workflow Refinement
+----------------------------------
+
+AI-assisted editing of your workflow config and prompt files.
+
+  orc improve "add a lint phase parallel with tests"    One-shot
+  orc improve                                            Interactive
+
+One-shot mode reads your current config and prompt files, sends them
+to Claude with your instruction, validates the output, and writes
+changed files. Interactive mode launches Claude with your workflow
+context pre-loaded for a conversational editing experience.
+
+orc flow — Workflow Visualization
+----------------------------------
+
+Visualizes the workflow config as a rich flow diagram with bracket-loop
+regions, phase icons, model badges, hook annotations, and color.
+
+  orc flow                    All workflows (colored)
+  orc flow -w bugfix          One workflow
+  orc flow --no-color         Without ANSI colors
+
+orc validate — Config Validation
+---------------------------------
+
+Validates .orc/config.yaml (or a named workflow) without running
+anything. Checks all validation rules: unique phase names, valid loop
+targets, prompt file existence, model values, output paths, variable
+names, and more.
+
+  orc validate                      Validate all workflows
+  orc validate -w bugfix            Validate one workflow
+  orc validate --config path.yaml   Validate a specific file
+
+Typical Workflow for Prompt Iteration
+--------------------------------------
+
+1. Edit a prompt file (.orc/phases/implement.md)
+2. Test it in isolation:       orc test implement KS-42
+3. Inspect what happened:      orc debug implement KS-42
+4. Repeat until satisfied
+5. Run the full workflow:      orc run KS-42
+6. If it fails:                orc doctor KS-42
 `
 
 // SchemaReference returns the combined config schema, phase types, and
