@@ -653,6 +653,11 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 
 	var firstErr error
 	var failedIdx int = -1
+	// INVARIANT: attemptCount is mutated here in the sequential channel-drain
+	// loop, NOT inside the dispatch goroutines above. This is critical for
+	// thread safety — the map has no mutex. Moving r.attemptCount[pr.idx]++
+	// into a goroutine would introduce a data race. The test
+	// TestRun_ParallelAttemptCountInvariant pins this invariant.
 	for pr := range results {
 		phase := r.Config.Phases[pr.idx]
 		// Archive every parallel attempt to audit

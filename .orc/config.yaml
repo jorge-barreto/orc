@@ -183,7 +183,7 @@ phases:
     loop:
       goto: bead-claim
       max: 5
-      check: test "$(bd ready $ORC_TICKET --json | jq -r '.total')" -gt 0
+      check: ! test "$(bd ready $ORC_TICKET --json | jq -r '.total')" -gt 0
 
   - name: wave-summary
     type: script

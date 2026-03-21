@@ -2915,3 +2915,38 @@ func TestRun_StepModeParallelRewindReturnsSentinel(t *testing.T) {
 		t.Fatalf("calls[6] = %q, want \"post\"", calls[6])
 	}
 }
+
+func TestRun_ParallelAttemptCountInvariant(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo", ParallelWith: "b"},
+			{Name: "b", Type: "script", Run: "echo"},
+		},
+	}
+
+	// Barrier ensures both dispatches are truly concurrent, maximising the
+	// window for the race detector to catch any concurrent map write.
+	var barrier sync.WaitGroup
+	barrier.Add(2)
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		barrier.Done()
+		barrier.Wait()
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+
+	r := newTestRunner(t, cfg, mock)
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Each parallel phase must have exactly 1 attempt recorded.
+	// The increment lives in the sequential drain loop (runner.go), not in the
+	// goroutines — so no mutex is needed and no race should fire.
+	if r.attemptCount[0] != 1 {
+		t.Fatalf("attemptCount[0] = %d, want 1", r.attemptCount[0])
+	}
+	if r.attemptCount[1] != 1 {
+		t.Fatalf("attemptCount[1] = %d, want 1", r.attemptCount[1])
+	}
+}
