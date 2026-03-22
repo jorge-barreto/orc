@@ -3,12 +3,17 @@ package dispatch
 import (
 	"bytes"
 	"context"
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/jorge-barreto/orc/internal/config"
+	"github.com/jorge-barreto/orc/internal/state"
 )
 
 type safeBuf struct {
@@ -139,5 +144,143 @@ func TestRunHook_ContextCancelled(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("RunHook did not return after context cancellation")
+	}
+}
+
+func TestRunHookWithLog_WritesLabel(t *testing.T) {
+	env := scriptEnv(t)
+	if err := os.MkdirAll(filepath.Join(env.ArtifactsDir, "logs"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	phase := config.Phase{Name: "test", Type: "script"}
+	code, err := RunHookWithLog(context.Background(), "echo hello", "pre-run", phase, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+	data, err := os.ReadFile(state.LogPath(env.ArtifactsDir, env.PhaseIndex))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "[orc] pre-run: echo hello") {
+		t.Fatalf("log = %q, want label '[orc] pre-run: echo hello'", string(data))
+	}
+}
+
+func TestRunHookWithLog_FailureExitCode(t *testing.T) {
+	env := scriptEnv(t)
+	if err := os.MkdirAll(filepath.Join(env.ArtifactsDir, "logs"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	phase := config.Phase{Name: "test", Type: "script"}
+	code, err := RunHookWithLog(context.Background(), "exit 1", "pre-run", phase, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+}
+
+func TestRunHookWithLog_LogFileOpenError(t *testing.T) {
+	env := scriptEnv(t)
+	// ArtifactsDir points to a path whose logs/ subdir does not exist — OpenFile will fail.
+	env.ArtifactsDir = filepath.Join(t.TempDir(), "nonexistent", "artifacts")
+	phase := config.Phase{Name: "test", Type: "script"}
+	_, err := RunHookWithLog(context.Background(), "echo hello", "pre-run", phase, env)
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("err = %v, want fs.ErrNotExist", err)
+	}
+}
+
+func TestDispatchWithHooks_NoHooks(t *testing.T) {
+	env := scriptEnv(t)
+	phase := config.Phase{Name: "test", Type: "script"}
+	called := false
+	fn := func(ctx context.Context, p config.Phase, e *Environment) (*Result, error) {
+		called = true
+		return &Result{ExitCode: 0}, nil
+	}
+	result, err := DispatchWithHooks(context.Background(), phase, env, fn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("dispatchFn was not called")
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("ExitCode = %d, want 0", result.ExitCode)
+	}
+}
+
+func TestDispatchWithHooks_PreRunFail_SkipsDispatch(t *testing.T) {
+	env := scriptEnv(t)
+	if err := os.MkdirAll(filepath.Join(env.ArtifactsDir, "logs"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	phase := config.Phase{Name: "test", Type: "script", PreRun: "exit 1"}
+	called := false
+	fn := func(ctx context.Context, p config.Phase, e *Environment) (*Result, error) {
+		called = true
+		return &Result{ExitCode: 0}, nil
+	}
+	result, err := DispatchWithHooks(context.Background(), phase, env, fn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("dispatchFn was called despite pre-run failure")
+	}
+	if result == nil || result.ExitCode != 1 {
+		t.Fatalf("ExitCode = %v, want 1", result)
+	}
+}
+
+func TestDispatchWithHooks_PostRunFail_OverridesSuccess(t *testing.T) {
+	env := scriptEnv(t)
+	if err := os.MkdirAll(filepath.Join(env.ArtifactsDir, "logs"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	phase := config.Phase{Name: "test", Type: "script", PostRun: "exit 7"}
+	fn := func(ctx context.Context, p config.Phase, e *Environment) (*Result, error) {
+		return &Result{ExitCode: 0}, nil
+	}
+	result, err := DispatchWithHooks(context.Background(), phase, env, fn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ExitCode != 7 {
+		t.Fatalf("ExitCode = %d, want 7 (post-run override)", result.ExitCode)
+	}
+}
+
+func TestDispatchWithHooks_PreRunFail_PostRunStillRuns(t *testing.T) {
+	env := scriptEnv(t)
+	if err := os.MkdirAll(filepath.Join(env.ArtifactsDir, "logs"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(t.TempDir(), "post-run-ran")
+	phase := config.Phase{
+		Name:    "test",
+		Type:    "script",
+		PreRun:  "exit 1",
+		PostRun: "touch " + sentinel,
+	}
+	called := false
+	fn := func(ctx context.Context, p config.Phase, e *Environment) (*Result, error) {
+		called = true
+		return &Result{ExitCode: 0}, nil
+	}
+	_, err := DispatchWithHooks(context.Background(), phase, env, fn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("dispatchFn was called despite pre-run failure")
+	}
+	if _, statErr := os.Stat(sentinel); os.IsNotExist(statErr) {
+		t.Fatal("post-run hook did not run (sentinel file missing)")
 	}
 }
