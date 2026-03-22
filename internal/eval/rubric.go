@@ -25,20 +25,23 @@ type CriterionResult struct {
 
 // CaseResult holds the aggregate outcome of one eval case.
 type CaseResult struct {
-	Name            string
-	Score           int
-	CostUSD         float64
-	DurationSeconds float64
-	PassCount       int
-	TotalCount      int
-	Failures        []string
-	Details         map[string]float64
-	WorkflowErr     string
+	Name            string             `json:"name"`
+	Score           int                `json:"score"`
+	CostUSD         float64            `json:"cost_usd"`
+	DurationSeconds float64            `json:"duration_seconds"`
+	PassCount       int                `json:"pass_count"`
+	TotalCount      int                `json:"total_count"`
+	Failures        []string           `json:"failures"`
+	Details         map[string]float64 `json:"details"`
+	WorkflowErr     string             `json:"workflow_err,omitempty"`
 }
 
 var scoreRegex = regexp.MustCompile(`SCORE:\s*(\d+)`)
 
 func filteredEnv(extras ...string) []string {
+	overridden := map[string]bool{
+		"ARTIFACTS_DIR": true, "WORK_DIR": true, "PROJECT_ROOT": true,
+	}
 	var env []string
 	for _, e := range os.Environ() {
 		idx := strings.IndexByte(e, '=')
@@ -46,7 +49,7 @@ func filteredEnv(extras ...string) []string {
 			continue
 		}
 		key := e[:idx]
-		if strings.HasPrefix(key, "CLAUDECODE") || strings.HasPrefix(key, "ORC_") {
+		if strings.HasPrefix(key, "CLAUDECODE") || strings.HasPrefix(key, "ORC_") || overridden[key] {
 			continue
 		}
 		env = append(env, e)
@@ -65,7 +68,7 @@ func EvaluateRubric(ctx context.Context, rubric *Rubric, artifactsDir, worktreeP
 		if c.Check != "" {
 			cmd := exec.CommandContext(ctx, "bash", "-c", c.Check)
 			cmd.Dir = worktreePath
-			cmd.Env = filteredEnv("ARTIFACTS_DIR="+artifactsDir, "WORK_DIR="+worktreePath)
+			cmd.Env = filteredEnv("ARTIFACTS_DIR="+artifactsDir, "WORK_DIR="+worktreePath, "PROJECT_ROOT="+projectRoot)
 			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 			cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) }
 			cmd.WaitDelay = 5 * time.Second
@@ -102,7 +105,7 @@ func EvaluateRubric(ctx context.Context, rubric *Rubric, artifactsDir, worktreeP
 			}
 			cmd := exec.CommandContext(ctx, "claude", "-p", "--model", "sonnet", "--output-format", "text")
 			cmd.Dir = worktreePath
-			cmd.Env = filteredEnv("ARTIFACTS_DIR="+artifactsDir, "WORK_DIR="+worktreePath)
+			cmd.Env = filteredEnv("ARTIFACTS_DIR="+artifactsDir, "WORK_DIR="+worktreePath, "PROJECT_ROOT="+projectRoot)
 			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 			cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) }
 			cmd.WaitDelay = 5 * time.Second
@@ -136,6 +139,9 @@ func EvaluateRubric(ctx context.Context, rubric *Rubric, artifactsDir, worktreeP
 			})
 		}
 	}
+	if ctx.Err() != nil {
+		return results, ctx.Err()
+	}
 	return results, nil
 }
 
@@ -156,7 +162,14 @@ func ComputeScore(results []CriterionResult, rubric *Rubric) int {
 	if totalWeight == 0 {
 		return 0
 	}
-	return int(math.Round(weightedSum / totalWeight * 100))
+	result := int(math.Round(weightedSum / totalWeight * 100))
+	if result > 100 {
+		result = 100
+	}
+	if result < 0 {
+		result = 0
+	}
+	return result
 }
 
 // parseExpect interprets the expect field and returns pass/fail.
