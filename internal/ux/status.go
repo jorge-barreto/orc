@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/jorge-barreto/orc/internal/config"
 	"github.com/jorge-barreto/orc/internal/state"
@@ -60,6 +61,15 @@ func RenderStatus(cfg *config.Config, st *state.State, artifactsDir, auditDir st
 			fmt.Printf("%sElapsed:%s %s\n", Bold, Reset, state.FormatDuration(elapsed))
 		}
 	}
+	if st.GetStatus() == state.StatusRunning && timing != nil {
+		for i := len(timing.Entries) - 1; i >= 0; i-- {
+			te := timing.Entries[i]
+			if te.End.IsZero() && !te.Start.IsZero() {
+				fmt.Printf("%sRunning:%s %s (%s)\n", Bold, Reset, te.Phase, state.FormatDuration(time.Since(te.Start)))
+				break
+			}
+		}
+	}
 	if len(loopCounts) > 0 {
 		var parts []string
 		for _, p := range cfg.Phases {
@@ -95,7 +105,11 @@ func RenderStatus(cfg *config.Config, st *state.State, artifactsDir, auditDir st
 
 			dur := te.Duration
 			if dur == "" {
-				dur = "-"
+				if te.End.IsZero() && !te.Start.IsZero() {
+					dur = state.FormatDuration(time.Since(te.Start)) + "…"
+				} else {
+					dur = "-"
+				}
 			}
 
 			// Match cost entry (costs are chronological, only for agent phases)

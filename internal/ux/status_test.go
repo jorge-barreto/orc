@@ -341,6 +341,26 @@ func TestRenderStatus(t *testing.T) {
 			wantContains: []string{"Loops:", "review: 3/5", "[iter 3/5]"},
 		},
 		{
+			name: "l running phase shows elapsed time",
+			cfg: &config.Config{Phases: []config.Phase{
+				{Name: "plan", Type: "agent"},
+				{Name: "implement", Type: "agent"},
+			}},
+			st: &state.State{PhaseIndex: 1, Ticket: "RUN-1", Status: state.StatusRunning},
+			setupAudit: func(t *testing.T, dir string) {
+				writeTiming(t, dir, &state.Timing{Entries: []state.TimingEntry{
+					{Phase: "plan", Start: time.Now().Add(-120 * time.Second), End: time.Now().Add(-60 * time.Second), Duration: "1m 00s"},
+					{Phase: "implement", Start: time.Now().Add(-30 * time.Second)}, // no End — currently running
+				}})
+			},
+			wantContains: []string{"Running:", "implement"},
+			customAssert: func(t *testing.T, out string) {
+				if !strings.Contains(out, "…") {
+					t.Errorf("expected ellipsis for running phase, got:\n%s", out)
+				}
+			},
+		},
+		{
 			name: "j non-existent artifacts dir shows none",
 			cfg: &config.Config{Phases: []config.Phase{
 				{Name: "plan", Type: "agent"},
