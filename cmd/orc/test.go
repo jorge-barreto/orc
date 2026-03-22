@@ -117,41 +117,13 @@ func testCmd() *cli.Command {
 			withHooks := cmd.Bool("with-hooks")
 			start := time.Now()
 
-			var preRunFailed bool
-			var preRunCode int
-
-			if withHooks && phase.PreRun != "" {
-				code, err := runTestHook(ctx, phase.PreRun, "pre-run", phase, env)
-				if err != nil {
-					return err
-				}
-				if code != 0 {
-					preRunFailed = true
-					preRunCode = code
-				}
-			}
-
 			var result *dispatch.Result
 			var dispatchErr error
-			if !preRunFailed {
+
+			if withHooks {
+				result, dispatchErr = dispatch.DispatchWithHooks(ctx, phase, env, dispatch.Dispatch)
+			} else {
 				result, dispatchErr = dispatch.Dispatch(ctx, phase, env)
-			}
-
-			if withHooks && phase.PostRun != "" {
-				code, err := runTestHook(ctx, phase.PostRun, "post-run", phase, env)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "warning: post-run hook error: %v\n", err)
-				} else if code != 0 {
-					if !preRunFailed && dispatchErr == nil && result != nil && result.ExitCode == 0 {
-						result.ExitCode = code
-					} else {
-						fmt.Fprintf(os.Stderr, "warning: post-run hook failed (exit %d) but phase already failed\n", code)
-					}
-				}
-			}
-
-			if preRunFailed && result == nil {
-				result = &dispatch.Result{ExitCode: preRunCode}
 			}
 
 			duration := time.Since(start)
@@ -171,18 +143,6 @@ func testCmd() *cli.Command {
 			return nil
 		},
 	}
-}
-
-// runTestHook executes a hook command and logs output to the phase log file.
-// Mirrors Runner.runHookWithLog but works without a Runner instance.
-func runTestHook(ctx context.Context, hookCmd, label string, phase config.Phase, env *dispatch.Environment) (int, error) {
-	logFile, err := os.OpenFile(state.LogPath(env.ArtifactsDir, env.PhaseIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return 0, err
-	}
-	defer logFile.Close()
-	fmt.Fprintf(logFile, "\n[orc] %s: %s\n", label, hookCmd)
-	return dispatch.RunHook(ctx, hookCmd, phase, env, logFile)
 }
 
 // checkMissingArtifacts checks for declared outputs from phases that precede

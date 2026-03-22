@@ -109,64 +109,6 @@ func TestCheckMissingArtifacts_MultiplePriorPhases(t *testing.T) {
 	}
 }
 
-func TestRunTestHook_Success(t *testing.T) {
-	artifactsDir := filepath.Join(t.TempDir(), "artifacts")
-	if err := state.EnsureDir(artifactsDir); err != nil {
-		t.Fatal(err)
-	}
-
-	phase := config.Phase{Name: "check", Type: "script", Run: "echo ok"}
-	env := &dispatch.Environment{
-		ProjectRoot:  t.TempDir(),
-		WorkDir:      t.TempDir(),
-		ArtifactsDir: artifactsDir,
-		Ticket:       "TEST-1",
-		PhaseIndex:   0,
-		PhaseCount:   1,
-	}
-
-	code, err := runTestHook(context.Background(), "echo hello", "pre-run", phase, env)
-	if err != nil {
-		t.Fatalf("runTestHook returned error: %v", err)
-	}
-	if code != 0 {
-		t.Fatalf("expected exit code 0, got %d", code)
-	}
-
-	logData, err := os.ReadFile(state.LogPath(artifactsDir, 0))
-	if err != nil {
-		t.Fatalf("failed to read log: %v", err)
-	}
-	if !strings.Contains(string(logData), "[orc] pre-run:") {
-		t.Error("expected log to contain hook label")
-	}
-}
-
-func TestRunTestHook_Failure(t *testing.T) {
-	artifactsDir := filepath.Join(t.TempDir(), "artifacts")
-	if err := state.EnsureDir(artifactsDir); err != nil {
-		t.Fatal(err)
-	}
-
-	phase := config.Phase{Name: "check", Type: "script", Run: "echo ok"}
-	env := &dispatch.Environment{
-		ProjectRoot:  t.TempDir(),
-		WorkDir:      t.TempDir(),
-		ArtifactsDir: artifactsDir,
-		Ticket:       "TEST-1",
-		PhaseIndex:   0,
-		PhaseCount:   1,
-	}
-
-	code, err := runTestHook(context.Background(), "exit 1", "pre-run", phase, env)
-	if err != nil {
-		t.Fatalf("runTestHook returned error: %v", err)
-	}
-	if code != 1 {
-		t.Fatalf("expected exit code 1, got %d", code)
-	}
-}
-
 func TestOrcTest_WithHooks_PreRunFail(t *testing.T) {
 	tmpDir := t.TempDir()
 	dispatchSentinel := filepath.Join(tmpDir, "dispatch-ran")
@@ -194,39 +136,13 @@ func TestOrcTest_WithHooks_PreRunFail(t *testing.T) {
 		PhaseCount:   1,
 	}
 
-	ctx := context.Background()
-
-	var preRunFailed bool
-	var preRunCode int
-
-	code, err := runTestHook(ctx, phase.PreRun, "pre-run", phase, env)
+	result, err := dispatch.DispatchWithHooks(context.Background(), phase, env, dispatch.Dispatch)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code != 0 {
-		preRunFailed = true
-		preRunCode = code
-	}
 
-	var result *dispatch.Result
-	if !preRunFailed {
-		result, err = dispatch.Dispatch(ctx, phase, env)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	postCode, postErr := runTestHook(ctx, phase.PostRun, "post-run", phase, env)
-	if postErr != nil {
-		t.Fatalf("post-run hook error: %v", postErr)
-	}
-
-	if preRunFailed && result == nil {
-		result = &dispatch.Result{ExitCode: preRunCode}
-	}
-
-	if !preRunFailed {
-		t.Fatal("expected pre-run to fail")
+	if result.ExitCode != 1 {
+		t.Fatalf("expected exit code 1, got %d", result.ExitCode)
 	}
 	if _, err := os.Stat(dispatchSentinel); !os.IsNotExist(err) {
 		t.Fatal("dispatch should not run when pre-run fails")
@@ -234,10 +150,6 @@ func TestOrcTest_WithHooks_PreRunFail(t *testing.T) {
 	if _, err := os.Stat(postRunSentinel); os.IsNotExist(err) {
 		t.Fatal("post-run should run even when pre-run fails")
 	}
-	if result.ExitCode != 1 {
-		t.Fatalf("expected exit code 1, got %d", result.ExitCode)
-	}
-	_ = postCode
 }
 
 func TestOrcTest_WithHooks_DispatchFailPostRunStillRuns(t *testing.T) {
@@ -266,33 +178,17 @@ func TestOrcTest_WithHooks_DispatchFailPostRunStillRuns(t *testing.T) {
 		PhaseCount:   1,
 	}
 
-	ctx := context.Background()
-
-	code, err := runTestHook(ctx, phase.PreRun, "pre-run", phase, env)
+	result, err := dispatch.DispatchWithHooks(context.Background(), phase, env, dispatch.Dispatch)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code != 0 {
-		t.Fatalf("expected pre-run to succeed, got exit code %d", code)
-	}
 
-	result, dispatchErr := dispatch.Dispatch(ctx, phase, env)
-	if dispatchErr != nil {
-		t.Fatalf("dispatch returned error: %v", dispatchErr)
+	if result.ExitCode != 42 {
+		t.Fatalf("expected exit code 42 from dispatch failure, got %d", result.ExitCode)
 	}
-	if result.ExitCode == 0 {
-		t.Fatal("expected dispatch to fail")
-	}
-
-	postCode, postErr := runTestHook(ctx, phase.PostRun, "post-run", phase, env)
-	if postErr != nil {
-		t.Fatalf("post-run hook error: %v", postErr)
-	}
-
 	if _, err := os.Stat(postRunSentinel); os.IsNotExist(err) {
 		t.Fatal("post-run should run even when dispatch fails")
 	}
-	_ = postCode
 }
 
 func TestOrcTest_WithHooks_PostRunFailOverridesSuccess(t *testing.T) {
@@ -319,31 +215,13 @@ func TestOrcTest_WithHooks_PostRunFailOverridesSuccess(t *testing.T) {
 		PhaseCount:   1,
 	}
 
-	ctx := context.Background()
-
-	result, dispatchErr := dispatch.Dispatch(ctx, phase, env)
-	if dispatchErr != nil {
-		t.Fatalf("dispatch returned error: %v", dispatchErr)
-	}
-	if result.ExitCode != 0 {
-		t.Fatalf("expected dispatch exit code 0, got %d", result.ExitCode)
-	}
-
-	code, err := runTestHook(ctx, phase.PostRun, "post-run", phase, env)
+	result, err := dispatch.DispatchWithHooks(context.Background(), phase, env, dispatch.Dispatch)
 	if err != nil {
-		t.Fatalf("post-run hook error: %v", err)
-	}
-	if code != 7 {
-		t.Fatalf("expected post-run exit code 7, got %d", code)
-	}
-
-	// Apply the same override logic as orc test --with-hooks (test.go:145-146)
-	if result.ExitCode == 0 {
-		result.ExitCode = code
+		t.Fatal(err)
 	}
 
 	if result.ExitCode != 7 {
-		t.Fatalf("expected overridden exit code 7, got %d", result.ExitCode)
+		t.Fatalf("expected exit code 7 (post-run overrides dispatch success), got %d", result.ExitCode)
 	}
 }
 
