@@ -398,6 +398,48 @@ func TestAggregate_WeeklyTrend(t *testing.T) {
 	}
 }
 
+func TestAggregate_WeeklyTrend_ZeroCostRuns(t *testing.T) {
+	base := time.Date(2026, 1, 5, 12, 0, 0, 0, time.UTC) // a Monday
+	runs := []RunData{
+		{Status: "completed", CostUSD: 0, StartTime: base},
+		{Status: "completed", CostUSD: 0, StartTime: base.Add(24 * time.Hour)},
+		{Status: "completed", CostUSD: 0, StartTime: base.Add(48 * time.Hour)},
+	}
+
+	s := Aggregate(runs)
+
+	if len(s.Weeks) != 1 {
+		t.Fatalf("expected 1 week, got %d", len(s.Weeks))
+	}
+	if s.Weeks[0].RunCount != 3 {
+		t.Errorf("expected RunCount=3, got %d", s.Weeks[0].RunCount)
+	}
+	if s.Weeks[0].AvgCost != 0 {
+		t.Errorf("expected AvgCost=0, got %f", s.Weeks[0].AvgCost)
+	}
+}
+
+func TestAggregate_WeeklyTrend_MixedCostRuns(t *testing.T) {
+	base := time.Date(2026, 1, 5, 12, 0, 0, 0, time.UTC) // a Monday
+	runs := []RunData{
+		{Status: "completed", CostUSD: 0, StartTime: base},
+		{Status: "completed", CostUSD: 0, StartTime: base.Add(24 * time.Hour)},
+		{Status: "completed", CostUSD: 6.0, StartTime: base.Add(48 * time.Hour)},
+	}
+
+	s := Aggregate(runs)
+
+	if len(s.Weeks) != 1 {
+		t.Fatalf("expected 1 week, got %d", len(s.Weeks))
+	}
+	if s.Weeks[0].RunCount != 3 {
+		t.Errorf("expected RunCount=3, got %d", s.Weeks[0].RunCount)
+	}
+	if math.Abs(s.Weeks[0].AvgCost-6.0) > 1e-9 {
+		t.Errorf("expected AvgCost=6.0, got %f", s.Weeks[0].AvgCost)
+	}
+}
+
 func TestAggregate_SingleRun(t *testing.T) {
 	runs := []RunData{
 		{

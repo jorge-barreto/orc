@@ -446,23 +446,20 @@ func Aggregate(runs []RunData) *Stats {
 	// 9. Weekly trend: last 5 weeks with data
 	// Week key = Monday of the week
 	weekCosts := make(map[time.Time][]float64)
+	weekRunCount := make(map[time.Time]int)
 	for _, r := range filtered {
 		if r.StartTime.IsZero() {
 			continue
 		}
 		monday := mondayOf(r.StartTime)
+		weekRunCount[monday]++
 		if r.CostUSD > 0 {
 			weekCosts[monday] = append(weekCosts[monday], r.CostUSD)
-		} else {
-			// Include the week even if no cost data (count the run)
-			if _, ok := weekCosts[monday]; !ok {
-				weekCosts[monday] = nil
-			}
 		}
 	}
 	// Sort weeks descending
 	var weeks []time.Time
-	for w := range weekCosts {
+	for w := range weekRunCount {
 		weeks = append(weeks, w)
 	}
 	sort.Slice(weeks, func(i, j int) bool { return weeks[i].After(weeks[j]) })
@@ -475,7 +472,7 @@ func Aggregate(runs []RunData) *Stats {
 	}
 	for _, w := range weeks {
 		wCosts := weekCosts[w]
-		ws := WeekStat{WeekStart: w, RunCount: len(wCosts)}
+		ws := WeekStat{WeekStart: w, RunCount: weekRunCount[w]}
 		if len(wCosts) > 0 {
 			var sum float64
 			for _, c := range wCosts {
