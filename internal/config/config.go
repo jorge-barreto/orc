@@ -103,6 +103,7 @@ type Config struct {
 	Cwd               string      `yaml:"cwd"`
 	Effort            string      `yaml:"effort"`
 	MaxCost           float64     `yaml:"max-cost"`
+	HistoryLimit      int         `yaml:"history-limit"`
 	Vars              OrderedVars `yaml:"vars"`
 	Phases            []Phase     `yaml:"phases"`
 }

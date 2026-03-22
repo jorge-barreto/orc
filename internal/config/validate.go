@@ -73,6 +73,12 @@ func Validate(cfg *Config, projectRoot string) error {
 	if cfg.MaxCost < 0 {
 		return fmt.Errorf("config: 'max-cost' must not be negative (got %.2f)", cfg.MaxCost)
 	}
+	if cfg.HistoryLimit < 0 {
+		return fmt.Errorf("config: 'history-limit' must not be negative (got %d)", cfg.HistoryLimit)
+	}
+	if cfg.HistoryLimit == 0 {
+		cfg.HistoryLimit = 10 // default
+	}
 
 	seen := make(map[string]bool)
 	for i := range cfg.Phases {

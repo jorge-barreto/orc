@@ -1249,3 +1249,33 @@ phases:
 		t.Fatalf("PostRun = %q", cfg.Phases[0].PostRun)
 	}
 }
+
+func TestValidate_HistoryLimit(t *testing.T) {
+	t.Run("negative errors", func(t *testing.T) {
+		cfg := minimalConfig(scriptPhase("a"))
+		cfg.HistoryLimit = -1
+		if err := Validate(cfg, t.TempDir()); err == nil || !strings.Contains(err.Error(), "must not be negative") {
+			t.Fatalf("expected negative error, got %v", err)
+		}
+	})
+	t.Run("zero defaults to 10", func(t *testing.T) {
+		cfg := minimalConfig(scriptPhase("a"))
+		cfg.HistoryLimit = 0
+		if err := Validate(cfg, t.TempDir()); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.HistoryLimit != 10 {
+			t.Fatalf("expected HistoryLimit=10 after default, got %d", cfg.HistoryLimit)
+		}
+	})
+	t.Run("explicit value retained", func(t *testing.T) {
+		cfg := minimalConfig(scriptPhase("a"))
+		cfg.HistoryLimit = 5
+		if err := Validate(cfg, t.TempDir()); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.HistoryLimit != 5 {
+			t.Fatalf("expected HistoryLimit=5, got %d", cfg.HistoryLimit)
+		}
+	})
+}
