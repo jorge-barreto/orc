@@ -46,6 +46,13 @@ func RenderStatus(cfg *config.Config, st *state.State, artifactsDir, auditDir st
 		fmt.Printf("%sState:%s   %d/%d (%s) — %s\n",
 			Bold, Reset, st.GetPhaseIndex()+1, len(cfg.Phases), phase.Name, st.GetStatus())
 	}
+	if cat := st.GetFailureCategory(); cat != "" {
+		fmt.Printf("%sFailure:%s %s", Bold, Reset, cat)
+		if detail := st.GetFailureDetail(); detail != "" {
+			fmt.Printf(" — %s", detail)
+		}
+		fmt.Println()
+	}
 	if timing != nil {
 		if elapsed := timing.TotalElapsed(); elapsed > 0 {
 			fmt.Printf("%sElapsed:%s %s\n", Bold, Reset, state.FormatDuration(elapsed))
@@ -173,9 +180,9 @@ func RenderStatusAll(cfg *config.Config, tickets []state.TicketSummary) {
 	}
 
 	if hasWorkflow {
-		fmt.Printf("%s%-14s%-14s%-14s%-17s%-10s%s%s\n", Bold, "TICKET", "WORKFLOW", "STATUS", "PHASE", "COST", "TIME", Reset)
+		fmt.Printf("%s%-14s%-14s%-30s%-17s%-10s%s%s\n", Bold, "TICKET", "WORKFLOW", "STATUS", "PHASE", "COST", "TIME", Reset)
 	} else {
-		fmt.Printf("%s%-14s%-14s%-17s%-10s%s%s\n", Bold, "TICKET", "STATUS", "PHASE", "COST", "TIME", Reset)
+		fmt.Printf("%s%-14s%-30s%-17s%-10s%s%s\n", Bold, "TICKET", "STATUS", "PHASE", "COST", "TIME", Reset)
 	}
 
 	for _, t := range tickets {
@@ -210,19 +217,24 @@ func RenderStatusAll(cfg *config.Config, tickets []state.TicketSummary) {
 			}
 		}
 
+		statusDisplay := t.State.GetStatus()
+		if cat := t.State.GetFailureCategory(); cat != "" {
+			statusDisplay += " (" + cat + ")"
+		}
+
 		if hasWorkflow {
 			wf := t.State.GetWorkflow()
 			if wf == "" {
 				wf = "-"
 			}
-			fmt.Printf("%-14s%-14s%s%-14s%s%-17s%-10s%s\n",
+			fmt.Printf("%-14s%-14s%s%-30s%s%-17s%-10s%s\n",
 				t.Ticket, wf,
-				statusColor, t.State.GetStatus(), Reset,
+				statusColor, statusDisplay, Reset,
 				phase, cost, elapsed)
 		} else {
-			fmt.Printf("%-14s%s%-14s%s%-17s%-10s%s\n",
+			fmt.Printf("%-14s%s%-30s%s%-17s%-10s%s\n",
 				t.Ticket,
-				statusColor, t.State.GetStatus(), Reset,
+				statusColor, statusDisplay, Reset,
 				phase, cost, elapsed)
 		}
 	}
