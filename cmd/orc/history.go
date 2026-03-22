@@ -6,6 +6,7 @@ import (
 
 	"github.com/jorge-barreto/orc/internal/config"
 	"github.com/jorge-barreto/orc/internal/debug"
+	"github.com/jorge-barreto/orc/internal/runner"
 	"github.com/jorge-barreto/orc/internal/state"
 	"github.com/jorge-barreto/orc/internal/ux"
 	cli "github.com/urfave/cli/v3"
@@ -21,26 +22,29 @@ func historyCmd() *cli.Command {
 			&cli.BoolFlag{Name: "prune", Usage: "Remove runs beyond the history limit"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			cfgErr := func(err error) error {
+				return &runner.ExitError{Code: runner.ExitConfigError, Err: err}
+			}
 			projectRoot, err := findProjectRoot()
 			if err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			flagWorkflow := cmd.Root().String("workflow")
 			workflowName, configPath, err := resolveWorkflow(projectRoot, flagWorkflow)
 			if err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			ticket := cmd.Args().First()
 			if ticket == "" {
 				ticket, err = debug.FindMostRecentTicket(projectRoot, workflowName)
 				if err != nil {
-					return err
+					return cfgErr(err)
 				}
 			}
 			if err := validateTicketPath(ticket); err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			artifactsDir := state.ArtifactsDirForWorkflow(projectRoot, workflowName, ticket)
