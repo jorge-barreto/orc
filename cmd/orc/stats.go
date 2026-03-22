@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jorge-barreto/orc/internal/runner"
 	"github.com/jorge-barreto/orc/internal/state"
 	"github.com/jorge-barreto/orc/internal/stats"
 	cli "github.com/urfave/cli/v3"
@@ -21,21 +22,25 @@ func statsCmd() *cli.Command {
 			&cli.BoolFlag{Name: "json", Usage: "Output as structured JSON"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			cfgErr := func(err error) error {
+				return &runner.ExitError{Code: runner.ExitConfigError, Err: err}
+			}
+
 			projectRoot, err := findProjectRoot()
 			if err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			flagWorkflow := cmd.Root().String("workflow")
 			workflowName, _, err := resolveWorkflow(projectRoot, flagWorkflow)
 			if err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			ticket := cmd.Args().First()
 			if ticket != "" {
 				if err := validateTicketPath(ticket); err != nil {
-					return err
+					return cfgErr(err)
 				}
 			}
 
