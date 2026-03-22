@@ -90,21 +90,34 @@ func Build(artifactsDir, auditDir string, st *state.State, phases []config.Phase
 		failedPhaseName = phases[st.GetPhaseIndex()].Name
 	}
 
-	costIdx := 0
+	// Build per-phase cost queues for name-based matching.
+	// Handles parallel phases (costs in completion order, timing in config order)
+	// and re-prompts (multiple cost entries for the same phase).
+	costQueues := map[string][]int{}
+	for idx, ce := range costs.Phases {
+		costQueues[ce.Name] = append(costQueues[ce.Name], idx)
+	}
+	costConsumed := map[string]int{}
+
 	for i, te := range timing.Entries {
 		phaseType := lookupPhaseType(phases, te.Phase)
 
 		var costUSD float64
 		var tokens int
 		costStr := "—"
-		if costIdx < len(costs.Phases) && costs.Phases[costIdx].Name == te.Phase {
-			ce := costs.Phases[costIdx]
-			costIdx++
-			if ce.CostUSD > 0 {
-				costStr = fmt.Sprintf("$%.2f", ce.CostUSD)
-				costUSD = ce.CostUSD
+		if indices, ok := costQueues[te.Phase]; ok {
+			ci := costConsumed[te.Phase]
+			if ci < len(indices) {
+				ce := costs.Phases[indices[ci]]
+				costConsumed[te.Phase] = ci + 1
+				if ce.CostUSD > 0 {
+					costStr = fmt.Sprintf("$%.2f", ce.CostUSD)
+					costUSD = ce.CostUSD
+				} else if ce.InputTokens+ce.OutputTokens > 0 {
+					costStr = fmt.Sprintf("%s tokens", formatTokenCount(ce.InputTokens+ce.OutputTokens))
+				}
+				tokens = ce.InputTokens + ce.OutputTokens
 			}
-			tokens = ce.InputTokens + ce.OutputTokens
 		}
 
 		dur := te.Duration
@@ -164,7 +177,7 @@ func Build(artifactsDir, auditDir string, st *state.State, phases []config.Phase
 	}
 
 	// Step 5: Build LoopActivity — sort keys for deterministic output
-	var loops []LoopActivity
+	loops := []LoopActivity{}
 	keys := make([]string, 0, len(loopCounts))
 	for k := range loopCounts {
 		keys = append(keys, k)
@@ -182,7 +195,7 @@ func Build(artifactsDir, auditDir string, st *state.State, phases []config.Phase
 		"costs.json": true, "loop-counts.json": true,
 	}
 	entries, _ := os.ReadDir(artifactsDir)
-	var artifacts []ArtifactFile
+	artifacts := []ArtifactFile{}
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -208,6 +221,8 @@ func Build(artifactsDir, auditDir string, st *state.State, phases []config.Phase
 	totalTokens := costs.TotalInputTokens + costs.TotalOutputTokens
 	if costs.TotalCostUSD > 0 {
 		totalCost = fmt.Sprintf("$%.2f (%s tokens)", costs.TotalCostUSD, formatTokenCount(totalTokens))
+	} else if totalTokens > 0 {
+		totalCost = fmt.Sprintf("%s tokens", formatTokenCount(totalTokens))
 	}
 
 	statusMap := map[string]string{
