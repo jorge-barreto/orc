@@ -228,11 +228,22 @@ orc validate --config path/to/config.yaml
 
 ### `orc cancel <ticket>`
 
-Cancels a ticket and removes its artifacts directory. Audit data (costs, timing, archived logs) is preserved by rotating to a timestamped directory.
+Cancels a ticket and archives its artifacts to history. Audit data (costs, timing, archived logs) is preserved by rotating to a timestamped directory.
 
 ```bash
 orc cancel PROJ-123
 orc cancel PROJ-123 --force    # cancel even if a run appears active
+orc cancel PROJ-123 --purge    # remove all artifacts including history
+```
+
+### `orc history [ticket]`
+
+Lists past runs for a ticket with status, date, duration, and cost. Runs are archived automatically on completion, failure, or interruption.
+
+```bash
+orc history                     # most recent ticket
+orc history PROJ-123            # specific ticket
+orc history --prune             # remove entries beyond the history limit
 ```
 
 ### `orc doctor <ticket>`
@@ -291,6 +302,7 @@ Workflows are defined in `.orc/config.yaml`.
 | `effort` | string | No | Default effort for all agent phases: `low`, `medium`, or `high`. Per-phase `effort` overrides this. |
 | `cwd` | string | No | Default working directory for script and agent phases (expanded with vars). Per-phase `cwd` overrides this. Not applied to gate phases. |
 | `max-cost` | float | No | Per-run cost budget in USD. Workflow stops if cumulative cost exceeds this. |
+| `history-limit` | int | No | Maximum archived runs per ticket (default 10) |
 | `default-allow-tools` | list | No | Tools auto-approved for all agent phases, merged with built-in defaults. |
 | `vars` | map | No | Custom variables expanded at startup (declaration order) |
 | `phases` | list | Yes | Ordered list of phases |
@@ -425,18 +437,13 @@ orc creates a `.orc/artifacts/<ticket>/` directory per ticket to store all run d
 .orc/artifacts/<ticket>/
 ├── state.json              # Current run state (phase_index, ticket, status)
 ├── costs.json              # Per-phase cost and token counts
-├── timing.json             # Start/end timestamps for each phase
-├── loop-counts.json        # Loop iteration counters per phase
-├── prompts/
-│   ├── phase-1.md          # Rendered prompt for phase 1
-│   └── ...
-├── logs/
-│   ├── phase-1.log         # Output for phase 1
-│   ├── phase-1.stream.jsonl # Raw stream-json (only with --verbose)
-│   └── ...
-├── feedback/
-│   └── from-implement.md   # Output from failed or looped phase
-└── summary.md              # Example declared output artifact
+├── timing.json             # Per-phase timing data
+├── loop-counts.json        # Persisted loop iteration counters
+├── prompts/                # Rendered prompt for each phase
+├── logs/                   # Agent output for each phase
+├── feedback/               # Loop/failure feedback
+└── history/                # Archived past runs
+    └── <run-id>/           # Timestamp-based directory (same layout as parent)
 ```
 
 **Feedback auto-injection**: When a phase loops (fails or is forced back by `min`), its output is written to `feedback/from-<phase>.md`. On the next iteration, all feedback files are automatically prepended to agent prompts — agents see prior failure context without manual intervention.
@@ -459,6 +466,10 @@ orc also maintains `.orc/audit/<ticket>/` to preserve data across cancellations 
 ```
 
 When you run `orc cancel`, the audit directory is preserved (rotated to a timestamped name). `orc status` reads from the audit directory for cost and timing data.
+
+### History Directory
+
+When a run completes, fails, or is interrupted, artifacts are archived to `.orc/artifacts/<ticket>/history/<run-id>/`. The run-id is a filesystem-safe timestamp. Old entries are pruned based on the `history-limit` config field (default 10). If a previous run wasn't properly archived (e.g., after SIGKILL), the next `orc run` auto-archives the stale artifacts before starting.
 
 ## Loops
 

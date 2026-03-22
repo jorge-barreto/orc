@@ -101,8 +101,12 @@ CLI Flags
   orc run -w bugfix <ticket>    Run a named workflow (multi-workflow projects)
   orc flow -w bugfix            Flow diagram for a specific workflow
   orc --no-color flow             Flow diagram without color (flag works on any command)
-  orc cancel <ticket>           Cancel run and remove all artifacts
+  orc cancel <ticket>           Cancel run and archive artifacts to history
+  orc cancel <ticket> --purge   Cancel and remove all artifacts including history
   orc cancel <ticket> --force   Cancel even if a run appears active
+  orc history                   List past runs for most recent ticket
+  orc history <ticket>          List past runs for a specific ticket
+  orc history --prune           Remove history beyond the configured limit
   orc status <ticket>           Show workflow status for a ticket
   orc report                    Generate a run report (most recent ticket)
   orc report <ticket>           Report for a specific ticket
@@ -152,6 +156,8 @@ Top-level fields
                                 or "high". Per-phase effort overrides this.
   max-cost            float     Per-run cost budget in USD. Workflow stops with
                                 exit code 2 if cumulative cost exceeds this.
+  history-limit       int       Maximum archived runs per ticket. Default 10.
+                                Set to prevent unbounded disk usage.
   vars                map       Custom variables expanded at startup (declaration order).
   phases              list      Required. Ordered list of phases.
 
@@ -214,6 +220,7 @@ Validation Rules
 - Output filenames must be simple filenames (no path separators, . or ..).
 - mcp-config is only valid on agent phases.
 - Gate phases cannot have a cwd field.
+- history-limit must not be negative. Defaults to 10 if unset.
 
 Example Config
 --------------
@@ -705,13 +712,14 @@ input).
 Cancelling
 ----------
 
-To permanently cancel a run and wipe all artifacts:
+orc cancel archives the current run's artifacts to history/ before
+cleaning up, so past runs are preserved:
 
   orc cancel TICKET
 
-This removes the .orc/artifacts/<ticket>/ directory for that ticket (state, timing, logs,
-prompts, feedback, and any declared outputs). The workflow config and
-prompt files under .orc/ are not affected.
+To completely remove all artifacts including history, use --purge:
+
+  orc cancel TICKET --purge
 
 If state.json shows status "running", cancel refuses by default — press
 Ctrl+C in the running terminal first, or pass --force:
@@ -734,6 +742,7 @@ Directory Structure
   .orc/artifacts/<ticket>/
   ├── state.json              Current run state
   ├── timing.json             Start/end timestamps per phase
+  ├── costs.json              Per-phase cost and token counts
   ├── loop-counts.json        Loop iteration counters per phase
   ├── prompts/
   │   ├── phase-1.md          Rendered prompt for phase 1
@@ -743,8 +752,11 @@ Directory Structure
   │   ├── phase-1.log         Agent output for phase 1
   │   ├── phase-2.log         Agent output for phase 2
   │   └── ...
-  └── feedback/
-      └── from-<phase>.md     Output from failed or looped phase
+  ├── feedback/
+  │   └── from-<phase>.md     Output from failed or looped phase
+  └── history/                Archived past runs
+      └── <run-id>/
+          └── (same layout as parent)
 
 state.json
 ----------
@@ -800,6 +812,31 @@ are archived here with iteration numbers (e.g., phase-1.iter-1.log).
 When you run orc cancel, the audit directory is preserved by rotating
 to a timestamped name. orc status reads from the audit directory for
 cost and timing data.
+
+History Directory
+-----------------
+
+When a run completes, fails, or is interrupted, orc archives the artifacts
+to .orc/artifacts/<ticket>/history/<run-id>/. The run-id is a filesystem-safe
+timestamp (e.g., 2026-03-22T14-30-05.123).
+
+  .orc/artifacts/<ticket>/
+  ├── history/
+  │   ├── 2026-03-22T14-30-05.123/
+  │   │   ├── state.json
+  │   │   ├── timing.json
+  │   │   ├── costs.json
+  │   │   └── ...
+  │   └── 2026-03-21T09-15-00.456/
+  │       └── ...
+  └── (current run files)
+
+The history directory is preserved across cancellations. Use orc history
+to list past runs. Old entries are pruned automatically based on the
+history-limit config field (default 10).
+
+If a previous run wasn't properly archived (e.g., after SIGKILL), the
+next orc run auto-archives the stale artifacts before starting.
 
 Declared Outputs
 ----------------
@@ -1198,6 +1235,21 @@ Shows status, timing, costs, phase outcomes, loop activity, and artifacts.
 
 When no ticket is specified, reports on the most recently executed ticket.
 Missing data (no costs, no timing) shows "—" placeholders.
+
+orc history — Run History
+--------------------------
+
+List past runs for a ticket. Shows run ID (timestamp), status, duration,
+and cost for each archived run.
+
+  orc history                     Most recent ticket
+  orc history PROJ-123            Specific ticket
+  orc history --prune             Remove entries beyond the history limit
+
+When no ticket is specified, uses the most recently executed ticket.
+Runs are archived automatically on completion, failure, or interruption.
+Configure the maximum number of archived runs with the history-limit
+config field (default 10).
 
 JSON Schema (schema_version: 1)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
