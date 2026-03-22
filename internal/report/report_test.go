@@ -102,6 +102,12 @@ func TestBuild_CompletedRun(t *testing.T) {
 	if artifactNames["costs.json"] {
 		t.Error("costs.json should be excluded")
 	}
+	if data.FailureCategory != "" {
+		t.Errorf("FailureCategory = %q, want empty for completed run", data.FailureCategory)
+	}
+	if data.FailureDetail != "" {
+		t.Errorf("FailureDetail = %q, want empty for completed run", data.FailureDetail)
+	}
 }
 
 func TestBuild_FailedRun(t *testing.T) {
@@ -149,6 +155,46 @@ func TestBuild_FailedRun(t *testing.T) {
 	}
 	if data.Phases[2].Result != "Fail" {
 		t.Errorf("phase[2] result = %q, want Fail", data.Phases[2].Result)
+	}
+}
+
+func TestBuild_FailedRun_IncludesFailureCategory(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+
+	writeJSON(t, dir, "state.json", map[string]any{
+		"phase_index":      1,
+		"ticket":           "KS-FC",
+		"status":           "failed",
+		"failure_category": "agent_error",
+		"failure_detail":   "non-zero exit",
+	})
+	writeJSON(t, dir, "timing.json", map[string]any{
+		"entries": []map[string]any{
+			{"phase": "plan", "start": now, "end": now.Add(30 * time.Second), "duration": "30s"},
+		},
+	})
+	writeJSON(t, dir, "costs.json", map[string]any{
+		"phases":             []map[string]any{},
+		"total_cost_usd":     0.0,
+		"total_input_tokens": 0,
+	})
+
+	phases := []config.Phase{
+		{Name: "plan", Type: "agent"},
+		{Name: "implement", Type: "agent"},
+	}
+	st, _ := state.Load(dir)
+	data, err := Build(dir, dir, st, phases)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if data.FailureCategory != "agent_error" {
+		t.Errorf("FailureCategory = %q, want agent_error", data.FailureCategory)
+	}
+	if data.FailureDetail != "non-zero exit" {
+		t.Errorf("FailureDetail = %q, want non-zero exit", data.FailureDetail)
 	}
 }
 
@@ -417,6 +463,40 @@ func TestRenderMarkdown_Format(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q", want)
 		}
+	}
+}
+
+func TestRenderMarkdown_FailureCategory(t *testing.T) {
+	r := &ReportData{
+		Ticket:          "KS-99",
+		Status:          "Failed",
+		FailureCategory: "agent_error",
+		FailureDetail:   "non-zero exit",
+		Phases:          []PhaseResult{},
+		Loops:           []LoopActivity{},
+		Artifacts:       []ArtifactFile{},
+	}
+	var buf bytes.Buffer
+	RenderMarkdown(&buf, r)
+	out := buf.String()
+	if !strings.Contains(out, "**Failure:** agent_error — non-zero exit") {
+		t.Errorf("output missing failure line, got:\n%s", out)
+	}
+}
+
+func TestRenderMarkdown_NoFailureCategory(t *testing.T) {
+	r := &ReportData{
+		Ticket:    "KS-99",
+		Status:    "Completed",
+		Phases:    []PhaseResult{},
+		Loops:     []LoopActivity{},
+		Artifacts: []ArtifactFile{},
+	}
+	var buf bytes.Buffer
+	RenderMarkdown(&buf, r)
+	out := buf.String()
+	if strings.Contains(out, "**Failure:**") {
+		t.Errorf("output should not contain **Failure:** for completed run, got:\n%s", out)
 	}
 }
 

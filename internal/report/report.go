@@ -37,17 +37,19 @@ type ArtifactFile struct {
 
 // ReportData is the top-level report structure.
 type ReportData struct {
-	SchemaVersion int            `json:"schema_version"`
-	Ticket        string         `json:"ticket"`
-	Workflow      string         `json:"workflow,omitempty"`
-	Status        string         `json:"status"`
-	Duration      string         `json:"duration"`
-	Cost          string         `json:"cost"`
-	TotalCostUSD  float64        `json:"total_cost_usd"`
-	TotalTokens   int            `json:"total_tokens"`
-	Phases        []PhaseResult  `json:"phases"`
-	Loops         []LoopActivity `json:"loops"`
-	Artifacts     []ArtifactFile `json:"artifacts"`
+	SchemaVersion   int            `json:"schema_version"`
+	Ticket          string         `json:"ticket"`
+	Workflow        string         `json:"workflow,omitempty"`
+	Status          string         `json:"status"`
+	FailureCategory string         `json:"failure_category,omitempty"`
+	FailureDetail   string         `json:"failure_detail,omitempty"`
+	Duration        string         `json:"duration"`
+	Cost            string         `json:"cost"`
+	TotalCostUSD    float64        `json:"total_cost_usd"`
+	TotalTokens     int            `json:"total_tokens"`
+	Phases          []PhaseResult  `json:"phases"`
+	Loops           []LoopActivity `json:"loops"`
+	Artifacts       []ArtifactFile `json:"artifacts"`
 }
 
 func lookupPhaseType(phases []config.Phase, name string) string {
@@ -237,17 +239,19 @@ func Build(artifactsDir, auditDir string, st *state.State, phases []config.Phase
 	}
 
 	return &ReportData{
-		SchemaVersion: 1,
-		Ticket:        st.GetTicket(),
-		Workflow:      st.GetWorkflow(),
-		Status:        displayStatus,
-		Duration:      totalDur,
-		Cost:          totalCost,
-		TotalCostUSD:  costs.TotalCostUSD,
-		TotalTokens:   totalTokens,
-		Phases:        phaseResults,
-		Loops:         loops,
-		Artifacts:     artifacts,
+		SchemaVersion:   1,
+		Ticket:          st.GetTicket(),
+		Workflow:        st.GetWorkflow(),
+		Status:          displayStatus,
+		FailureCategory: st.GetFailureCategory(),
+		FailureDetail:   st.GetFailureDetail(),
+		Duration:        totalDur,
+		Cost:            totalCost,
+		TotalCostUSD:    costs.TotalCostUSD,
+		TotalTokens:     totalTokens,
+		Phases:          phaseResults,
+		Loops:           loops,
+		Artifacts:       artifacts,
 	}, nil
 }
 
@@ -278,6 +282,13 @@ func formatTokenCount(n int) string {
 func RenderMarkdown(w io.Writer, r *ReportData) {
 	fmt.Fprintf(w, "# Run Report: %s\n\n", r.Ticket)
 	fmt.Fprintf(w, "**Status:** %s\n", r.Status)
+	if r.FailureCategory != "" {
+		fmt.Fprintf(w, "**Failure:** %s", r.FailureCategory)
+		if r.FailureDetail != "" {
+			fmt.Fprintf(w, " — %s", r.FailureDetail)
+		}
+		fmt.Fprintln(w)
+	}
 	fmt.Fprintf(w, "**Duration:** %s\n", r.Duration)
 	fmt.Fprintf(w, "**Cost:** %s\n", r.Cost)
 	fmt.Fprintf(w, "\n## Phase Summary\n\n")
