@@ -1,18 +1,22 @@
 package eval
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -65,7 +69,9 @@ func LoadFixture(caseDir string) (*Fixture, error) {
 		return nil, fmt.Errorf("eval: reading fixture.yaml: %w", err)
 	}
 	var f Fixture
-	if err := yaml.Unmarshal(data, &f); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&f); err != nil {
 		return nil, fmt.Errorf("eval: parsing fixture.yaml: %w", err)
 	}
 	if f.Ref == "" {
@@ -90,13 +96,20 @@ func LoadRubric(caseDir, projectRoot string) (*Rubric, error) {
 		return nil, fmt.Errorf("eval: reading rubric.yaml: %w", err)
 	}
 	var r Rubric
-	if err := yaml.Unmarshal(data, &r); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&r); err != nil {
 		return nil, fmt.Errorf("eval: parsing rubric.yaml: %w", err)
 	}
+	seen := make(map[string]bool)
 	for i, c := range r.Criteria {
 		if c.Name == "" {
 			return nil, fmt.Errorf("eval: rubric.yaml: criterion %d: name is required", i+1)
 		}
+		if seen[c.Name] {
+			return nil, fmt.Errorf("eval: rubric.yaml: duplicate criterion name %q", c.Name)
+		}
+		seen[c.Name] = true
 		if c.Check == "" && !c.Judge {
 			return nil, fmt.Errorf("eval: rubric.yaml: criterion %q: must have check or judge: true", c.Name)
 		}
@@ -117,6 +130,17 @@ func LoadRubric(caseDir, projectRoot string) (*Rubric, error) {
 			}
 			if !strings.HasPrefix(absPath, projectRoot+string(filepath.Separator)) {
 				return nil, fmt.Errorf("eval: rubric.yaml: criterion %q: prompt path escapes project root", c.Name)
+			}
+		}
+		if c.Expect != "" {
+			if c.Judge {
+				if !isValidJudgeExpect(c.Expect) {
+					return nil, fmt.Errorf("eval: rubric.yaml: criterion %q: invalid expect %q (use \">= N\", \"> N\", \"<= N\", \"< N\", or \"== N\")", c.Name, c.Expect)
+				}
+			} else if c.Check != "" {
+				if !isValidScriptExpect(c.Expect) {
+					return nil, fmt.Errorf("eval: rubric.yaml: criterion %q: invalid expect %q (use \"exit N\")", c.Name, c.Expect)
+				}
 			}
 		}
 	}
@@ -172,13 +196,19 @@ func CreateWorktree(ctx context.Context, projectRoot, ref, caseName string) (str
 	cmd := exec.CommandContext(ctx, "git", "worktree", "add", tmpDir, ref)
 	cmd.Dir = projectRoot
 	if out, err := cmd.CombinedOutput(); err != nil {
+		os.RemoveAll(tmpDir)
+		pruneCmd := exec.CommandContext(ctx, "git", "worktree", "prune")
+		pruneCmd.Dir = projectRoot
+		pruneCmd.Run() //nolint:errcheck
 		return "", fmt.Errorf("eval: git worktree add: %w\n%s", err, out)
 	}
 	return tmpDir, nil
 }
 
-func RemoveWorktree(projectRoot, worktreePath string) error {
-	cmd := exec.Command("git", "worktree", "remove", "--force", worktreePath)
+func RemoveWorktree(ctx context.Context, projectRoot, worktreePath string) error {
+	removeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(removeCtx, "git", "worktree", "remove", "--force", worktreePath)
 	cmd.Dir = projectRoot
 	cmd.Run() // ignore error — fallback below
 	return os.RemoveAll(worktreePath)
@@ -274,12 +304,18 @@ type History struct {
 // It never returns a non-nil error — partial results are always returned
 // so the rubric evaluator can still run.
 func RunWorkflow(ctx context.Context, worktreePath, ticket, workflowName string, vars map[string]string) (*RunResult, error) {
-	orcBinary, _ := os.Executable()
+	orcBinary, err := os.Executable()
+	if err != nil {
+		return &RunResult{Status: "failed", Err: fmt.Errorf("eval: os.Executable: %w", err)}, nil
+	}
 	args := []string{"run", ticket, "--auto"}
 	if workflowName != "" {
 		args = append(args, "-w", workflowName)
 	}
 	cmd := exec.CommandContext(ctx, orcBinary, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) }
+	cmd.WaitDelay = 5 * time.Second
 	cmd.Dir = worktreePath
 
 	// Build env: inherit, strip CLAUDECODE/ORC_*, add fixture vars
@@ -337,7 +373,7 @@ func RunWorkflow(ctx context.Context, worktreePath, ticket, workflowName string,
 func LoadHistory(projectRoot string) (*History, error) {
 	path := filepath.Join(projectRoot, ".orc", "eval-history.json")
 	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return &History{}, nil
 	}
 	if err != nil {
@@ -405,7 +441,7 @@ func (e *evalRunner) runCase(ctx context.Context, caseName string) (CaseResult, 
 	if err != nil {
 		return CaseResult{Name: caseName}, fmt.Errorf("eval: creating worktree for %q: %w", caseName, err)
 	}
-	defer RemoveWorktree(e.projectRoot, worktreePath) //nolint:errcheck
+	defer RemoveWorktree(ctx, e.projectRoot, worktreePath) //nolint:errcheck
 
 	if err := copyOrcDir(e.projectRoot, worktreePath, e.configPath, e.cfg); err != nil {
 		return CaseResult{Name: caseName}, fmt.Errorf("eval: copying .orc for %q: %w", caseName, err)
@@ -471,6 +507,9 @@ func RunEval(ctx context.Context, projectRoot, configPath, workflowName string, 
 
 	var results []CaseResult
 	for _, name := range cases {
+		if ctx.Err() != nil {
+			break
+		}
 		result, err := runner.runCase(ctx, name)
 		if err != nil {
 			fmt.Printf("  warning: case %q failed: %v\n", name, err)
@@ -483,7 +522,9 @@ func RunEval(ctx context.Context, projectRoot, configPath, workflowName string, 
 		history = &History{}
 	}
 	history.AppendResult(fingerprint, results)
-	_ = SaveHistory(projectRoot, history)
+	if err := SaveHistory(projectRoot, history); err != nil {
+		fmt.Fprintf(os.Stderr, "  warning: failed to save eval history: %v\n", err)
+	}
 
 	return fingerprint, results, nil
 }
