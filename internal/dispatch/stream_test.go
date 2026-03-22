@@ -524,6 +524,81 @@ func TestProcessStream_NilRawLog(t *testing.T) {
 	}
 }
 
+func TestProcessStream_ToolsUsed(t *testing.T) {
+	input := streamLines(
+		// Bash (first use)
+		`{"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"tool_use","name":"Bash","input":{}}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{\"command\":\"ls\"}"}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_stop"}}`,
+		// Read
+		`{"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"tool_use","name":"Read","input":{}}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{\"file_path\":\"main.go\"}"}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_stop"}}`,
+		// Bash (second use — should be deduplicated)
+		`{"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"tool_use","name":"Bash","input":{}}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{\"command\":\"pwd\"}"}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_stop"}}`,
+		`{"type":"result","total_cost_usd":0.01,"session_id":"s1","usage":{"input_tokens":100,"output_tokens":50},"permission_denials":[]}`,
+	)
+
+	result, err := ProcessStream(context.Background(), input, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.ToolsUsed) != 2 {
+		t.Fatalf("ToolsUsed = %v, want [Bash Read]", result.ToolsUsed)
+	}
+	if result.ToolsUsed[0] != "Bash" {
+		t.Fatalf("ToolsUsed[0] = %q, want %q", result.ToolsUsed[0], "Bash")
+	}
+	if result.ToolsUsed[1] != "Read" {
+		t.Fatalf("ToolsUsed[1] = %q, want %q", result.ToolsUsed[1], "Read")
+	}
+}
+
+func TestProcessStream_ToolsUsedEmpty(t *testing.T) {
+	input := streamLines(
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"just text"}}}`,
+		`{"type":"result","total_cost_usd":0.01,"session_id":"s1","usage":{"input_tokens":100,"output_tokens":50},"permission_denials":[]}`,
+	)
+
+	result, err := ProcessStream(context.Background(), input, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.ToolsUsed) != 0 {
+		t.Fatalf("ToolsUsed = %v, want empty", result.ToolsUsed)
+	}
+}
+
+func TestProcessStream_ToolsUsedExcludesAskUserQuestion(t *testing.T) {
+	input := streamLines(
+		// AskUserQuestion — should be excluded from ToolsUsed
+		`{"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"tool_use","name":"AskUserQuestion","input":{}}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{\"question\":\"Continue?\",\"options\":[\"Yes\",\"No\"]}"}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_stop"}}`,
+		// Bash — should appear in ToolsUsed
+		`{"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"tool_use","name":"Bash","input":{}}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{\"command\":\"ls\"}"}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_stop"}}`,
+		`{"type":"result","total_cost_usd":0.01,"session_id":"s1","usage":{"input_tokens":100,"output_tokens":50},"permission_denials":[]}`,
+	)
+
+	result, err := ProcessStream(context.Background(), input, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.ToolsUsed) != 1 {
+		t.Fatalf("ToolsUsed = %v, want [Bash]", result.ToolsUsed)
+	}
+	if result.ToolsUsed[0] != "Bash" {
+		t.Fatalf("ToolsUsed[0] = %q, want %q", result.ToolsUsed[0], "Bash")
+	}
+	if len(result.UserQuestions) != 1 {
+		t.Fatalf("UserQuestions len = %d, want 1", len(result.UserQuestions))
+	}
+}
+
 func TestWarnWriter(t *testing.T) {
 	var buf bytes.Buffer
 	ww := &warnWriter{w: &buf}

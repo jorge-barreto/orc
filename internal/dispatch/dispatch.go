@@ -99,6 +99,8 @@ type Result struct {
 	CacheReadInputTokens     int
 	Turns                    int
 	SessionID                string // agent session ID for --resume
+	ToolsUsed                []string
+	ToolsDenied              []string
 }
 
 // BuildEnv returns the environment variables for child processes.

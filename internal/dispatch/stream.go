@@ -37,6 +37,7 @@ type StreamResult struct {
 	Text                     string
 	PermissionDenials        []PermissionDenial
 	UserQuestions            []UserQuestion
+	ToolsUsed                []string
 	CostUSD                  float64
 	SessionID                string
 	InputTokens              int
@@ -51,6 +52,8 @@ type streamState struct {
 	inputBuf      strings.Builder
 	hadText       bool
 	userQuestions []UserQuestion
+	toolsUsed     []string
+	toolsSeen     map[string]bool
 }
 
 // warnWriter wraps an io.Writer and logs the first write error to stderr.
@@ -82,6 +85,7 @@ func ProcessStream(ctx context.Context, stdout io.Reader, display io.Writer, log
 	var result StreamResult
 	var textBuf strings.Builder
 	var ss streamState
+	ss.toolsSeen = make(map[string]bool)
 
 	var safeRawLog io.Writer
 	if rawLog != nil {
@@ -123,6 +127,7 @@ func ProcessStream(ctx context.Context, stdout io.Reader, display io.Writer, log
 
 	result.Text = textBuf.String()
 	result.UserQuestions = ss.userQuestions
+	result.ToolsUsed = ss.toolsUsed
 	return &result, nil
 }
 
@@ -229,6 +234,10 @@ func handleStreamEvent(event *streamEvent, textBuf *strings.Builder, ss *streamS
 						Options:  input.Options,
 					})
 				}
+			}
+			if ss.toolName != "AskUserQuestion" && !ss.toolsSeen[ss.toolName] {
+				ss.toolsSeen[ss.toolName] = true
+				ss.toolsUsed = append(ss.toolsUsed, ss.toolName)
 			}
 			summary := toolUseSummary(ss.toolName, ss.inputBuf.String())
 			if ss.hadText && display != nil {
