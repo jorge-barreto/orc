@@ -109,7 +109,7 @@ func RenderJSON(w io.Writer, fingerprint string, cases []CaseResult) error {
 	if err != nil {
 		return fmt.Errorf("eval: marshaling JSON: %w", err)
 	}
-	_, err = w.Write(data)
+	_, err = fmt.Fprintln(w, string(data))
 	return err
 }
 
@@ -141,7 +141,7 @@ func RenderCaseListJSON(w io.Writer, projectRoot string) error {
 		Name        string `json:"name"`
 		Description string `json:"description,omitempty"`
 	}
-	var items []caseInfo
+	items := make([]caseInfo, 0)
 	for _, name := range cases {
 		caseDir := filepath.Join(projectRoot, ".orc", "evals", name)
 		fixture, err := LoadFixture(caseDir)
@@ -155,7 +155,7 @@ func RenderCaseListJSON(w io.Writer, projectRoot string) error {
 	if err != nil {
 		return fmt.Errorf("eval: marshaling case list JSON: %w", err)
 	}
-	_, err = w.Write(data)
+	_, err = fmt.Fprintln(w, string(data))
 	return err
 }
 
@@ -165,6 +165,6 @@ func RenderHistoryJSON(w io.Writer, h *History) error {
 	if err != nil {
 		return fmt.Errorf("eval: marshaling history JSON: %w", err)
 	}
-	_, err = w.Write(data)
+	_, err = fmt.Fprintln(w, string(data))
 	return err
 }
