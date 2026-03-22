@@ -284,18 +284,7 @@ If no findings in a category, write `None.`
 
 ---
 
-## Step 5: Deduplicate Against Existing Beads
-
-Before writing findings, check what beads already exist so you don't report findings that are already tracked:
-
-```bash
-bd list --parent $TICKET --all          # all children of this wave (open and closed)
-bd list --type orphan           # search orphan beads too
-```
-
-For each candidate finding from the expert reports, check whether an existing bead already covers the same file, same issue, or same area — even if the title or wording differs. Drop any finding that is already tracked. This is critical to prevent duplicate bead creation downstream.
-
-## Step 6: Synthesize Results
+## Step 5: Synthesize Results
 
 After deduplication:
 
@@ -306,7 +295,19 @@ After deduplication:
 5. Deduplicate across experts: if 2+ experts flag the same issue, note it as "high confidence"
 6. Identify test gaps from E6 and E7 not already covered
 
-## Step 6: Write Findings
+## Step 6: Deduplicate Against Existing Beads
+
+Before writing findings, check what beads already exist so you don't report findings that are already tracked:
+
+```bash
+bd list --parent $TICKET --all          # all children of this wave (open and closed)
+bd list --type orphan           # search orphan beads too
+```
+
+For each candidate finding from the expert reports, check whether an existing bead already covers the same file, same issue, or same area — even if the title or wording differs. Drop any finding that is already tracked. This is critical to prevent duplicate bead creation downstream.
+
+
+## Step 7: Write Findings
 
 Write your findings to `$ARTIFACTS_DIR/wave-review-findings.md`:
 
