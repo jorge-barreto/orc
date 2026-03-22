@@ -325,6 +325,22 @@ func TestRenderStatus(t *testing.T) {
 			wantNotContains: []string{" .. "},
 		},
 		{
+			name: "k loop iteration counts in header and remaining",
+			cfg: &config.Config{Phases: []config.Phase{
+				{Name: "implement", Type: "agent"},
+				{Name: "review", Type: "agent", Loop: &config.Loop{Goto: "implement", Max: 5}},
+				{Name: "ship", Type: "script"},
+			}},
+			st: &state.State{PhaseIndex: 1, Ticket: "LOOP-1", Status: state.StatusRunning},
+			setupArt: func(t *testing.T, dir string) {
+				data, _ := json.Marshal(map[string]int{"review": 3})
+				if err := os.WriteFile(filepath.Join(dir, "loop-counts.json"), data, 0644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantContains: []string{"Loops:", "review: 3/5", "[iter 3/5]"},
+		},
+		{
 			name: "j non-existent artifacts dir shows none",
 			cfg: &config.Config{Phases: []config.Phase{
 				{Name: "plan", Type: "agent"},

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/jorge-barreto/orc/internal/config"
 	"github.com/jorge-barreto/orc/internal/state"
@@ -36,6 +37,7 @@ func RenderStatus(cfg *config.Config, st *state.State, artifactsDir, auditDir st
 	if err != nil {
 		costs, _ = state.LoadCosts(artifactsDir)
 	}
+	loopCounts, _ := state.LoadLoopCounts(artifactsDir)
 
 	// Header
 	fmt.Printf("%sTicket:%s  %s\n", Bold, Reset, st.GetTicket())
@@ -56,6 +58,21 @@ func RenderStatus(cfg *config.Config, st *state.State, artifactsDir, auditDir st
 	if timing != nil {
 		if elapsed := timing.TotalElapsed(); elapsed > 0 {
 			fmt.Printf("%sElapsed:%s %s\n", Bold, Reset, state.FormatDuration(elapsed))
+		}
+	}
+	if len(loopCounts) > 0 {
+		var parts []string
+		for _, p := range cfg.Phases {
+			if count, ok := loopCounts[p.Name]; ok && count > 0 {
+				if p.Loop != nil {
+					parts = append(parts, fmt.Sprintf("%s: %d/%d", p.Name, count, p.Loop.Max))
+				} else {
+					parts = append(parts, fmt.Sprintf("%s: %d", p.Name, count))
+				}
+			}
+		}
+		if len(parts) > 0 {
+			fmt.Printf("%sLoops:%s   %s\n", Bold, Reset, strings.Join(parts, ", "))
 		}
 	}
 
@@ -132,8 +149,16 @@ func RenderStatus(cfg *config.Config, st *state.State, artifactsDir, auditDir st
 			if i == st.GetPhaseIndex() {
 				marker = fmt.Sprintf("%s→%s ", Yellow, Reset)
 			}
-			fmt.Printf("  %s%s%d%s  %-20s %s(%s)%s\n",
-				marker, Dim, i+1, Reset, p.Name, Dim, p.Type, Reset)
+			loopInfo := ""
+			if p.Loop != nil {
+				if count, ok := loopCounts[p.Name]; ok {
+					loopInfo = fmt.Sprintf(" %s[iter %d/%d]%s", Dim, count, p.Loop.Max, Reset)
+				} else {
+					loopInfo = fmt.Sprintf(" %s[loop: max %d]%s", Dim, p.Loop.Max, Reset)
+				}
+			}
+			fmt.Printf("  %s%s%d%s  %-20s %s(%s)%s%s\n",
+				marker, Dim, i+1, Reset, p.Name, Dim, p.Type, Reset, loopInfo)
 		}
 	}
 
