@@ -225,6 +225,26 @@ func runCmd() *cli.Command {
 				return nil
 			}
 
+			// Archive stale artifacts from a prior run before saving fresh state.
+			// Must happen before st.Save() overwrites the on-disk state.
+			// Only fires for genuinely stale state, not --resume/--retry/--from.
+			if !resumeFlag && retryVal == "" && fromVal == "" && state.HasState(artifactsDir) {
+				existing, existErr := state.Load(artifactsDir)
+				if existErr == nil {
+					archiveStale := false
+					switch existing.GetStatus() {
+					case state.StatusCompleted:
+						archiveStale = true
+					case state.StatusRunning:
+						archiveStale = existing.GetPhaseIndex() > 0
+					}
+					if archiveStale {
+						state.ArchiveRun(artifactsDir) // best-effort
+						state.PruneHistory(artifactsDir, cfg.HistoryLimit)
+					}
+				}
+			}
+
 			// Ensure artifacts directory exists and save initial state
 			if err := state.EnsureDir(artifactsDir); err != nil {
 				return cfgErr(err)
@@ -279,6 +299,29 @@ func cancelCmd() *cli.Command {
 				return nil
 			}
 
+			// Check if there's a current run state to cancel
+			if !state.HasState(artifactsDir) {
+				if cmd.Bool("purge") {
+					// Still honor --purge even without current state (cleans up history/)
+					// Rotate audit dir first so cost/timing data is preserved
+					auditDir := state.AuditDirForWorkflow(projectRoot, workflowName, ticket)
+					if _, err := os.Stat(auditDir); err == nil {
+						ts := time.Now().Format("060102-150405")
+						rotated := filepath.Join(state.AuditBaseDirForWorkflow(projectRoot, workflowName), fmt.Sprintf("%s-%s", ticket, ts))
+						if err := os.Rename(auditDir, rotated); err != nil {
+							fmt.Fprintf(os.Stderr, "warning: failed to rotate audit dir: %v\n", err)
+						}
+					}
+					if err := os.RemoveAll(artifactsDir); err != nil {
+						return fmt.Errorf("removing artifacts: %w", err)
+					}
+					fmt.Printf("%s✓ Cancelled ticket %s — all artifacts purged%s\n", ux.Green, ticket, ux.Reset)
+					return nil
+				}
+				fmt.Printf("Nothing to cancel for ticket %s (no active run found).\n", ticket)
+				return nil
+			}
+
 			// Load state to validate ticket and check status
 			st, err := state.Load(artifactsDir)
 			if err != nil {
@@ -293,6 +336,7 @@ func cancelCmd() *cli.Command {
 				return fmt.Errorf("ticket %s appears to be running — Ctrl+C the process first, or use --force", ticket)
 			}
 
+			archiveOK := true
 			if cmd.Bool("purge") {
 				if err := os.RemoveAll(artifactsDir); err != nil {
 					return fmt.Errorf("removing artifacts: %w", err)
@@ -300,6 +344,7 @@ func cancelCmd() *cli.Command {
 			} else {
 				if _, err := state.ArchiveRun(artifactsDir); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: failed to archive run to history: %v\n", err)
+					archiveOK = false
 				}
 				limit := 10
 				if configPath != "" {
@@ -324,8 +369,10 @@ func cancelCmd() *cli.Command {
 
 			if cmd.Bool("purge") {
 				fmt.Printf("%s✓ Cancelled ticket %s — all artifacts purged%s\n", ux.Green, ticket, ux.Reset)
-			} else {
+			} else if archiveOK {
 				fmt.Printf("%s✓ Cancelled ticket %s — artifacts archived to history%s\n", ux.Green, ticket, ux.Reset)
+			} else {
+				fmt.Printf("%s✓ Cancelled ticket %s — artifacts left in place (archive failed)%s\n", ux.Green, ticket, ux.Reset)
 			}
 			return nil
 		},
