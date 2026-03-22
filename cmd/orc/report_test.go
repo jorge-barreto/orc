@@ -51,3 +51,23 @@ func TestResolveStateDir_NoRun(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 }
+
+func TestResolveStateDir_PreferLiveOverHistory(t *testing.T) {
+	dir := t.TempDir()
+	// Live state exists
+	writeStateJSON(t, dir)
+	// History entry also exists
+	histEntry := filepath.Join(dir, "history", "20260322T120000")
+	if err := os.MkdirAll(histEntry, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeStateJSON(t, histEntry)
+
+	got, err := resolveStateDir(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != dir {
+		t.Fatalf("expected live dir %q, got %q", dir, got)
+	}
+}

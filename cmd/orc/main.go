@@ -433,16 +433,17 @@ func statusCmd() *cli.Command {
 			}
 
 			artifactsDir := state.ArtifactsDirForWorkflow(projectRoot, workflowName, ticket)
-			if !state.HasState(artifactsDir) {
+			stateDir, err := resolveStateDir(artifactsDir)
+			if err != nil {
 				return fmt.Errorf("no run found for ticket %s", ticket)
 			}
-			st, err := state.Load(artifactsDir)
+			st, err := state.Load(stateDir)
 			if err != nil {
 				return fmt.Errorf("loading state: %w", err)
 			}
 
 			auditDir := state.AuditDirForWorkflow(projectRoot, workflowName, ticket)
-			ux.RenderStatus(cfg, st, artifactsDir, auditDir)
+			ux.RenderStatus(cfg, st, stateDir, auditDir)
 			return nil
 		},
 	}
