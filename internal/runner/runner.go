@@ -959,53 +959,6 @@ func evalCondition(ctx context.Context, phase config.Phase, env *dispatch.Enviro
 	return cmd.Run() == nil
 }
 
-func (r *Runner) runHookWithLog(ctx context.Context, hookCmd, label string, phase config.Phase, env *dispatch.Environment) (int, error) {
-	logFile, err := os.OpenFile(state.LogPath(env.ArtifactsDir, env.PhaseIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return 0, err
-	}
-	defer logFile.Close()
-	fmt.Fprintf(logFile, "\n[orc] %s: %s\n", label, hookCmd)
-	return dispatch.RunHook(ctx, hookCmd, phase, env, logFile)
-}
-
 func (r *Runner) dispatchWithHooks(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
-	var preRunFailed bool
-	var preRunCode int
-
-	if phase.PreRun != "" {
-		code, err := r.runHookWithLog(ctx, phase.PreRun, "pre-run", phase, env)
-		if err != nil {
-			return nil, err
-		}
-		if code != 0 {
-			preRunFailed = true
-			preRunCode = code
-		}
-	}
-
-	var result *dispatch.Result
-	var dispatchErr error
-	if !preRunFailed {
-		result, dispatchErr = r.Dispatcher.Dispatch(ctx, phase, env)
-	}
-
-	if phase.PostRun != "" {
-		code, err := r.runHookWithLog(ctx, phase.PostRun, "post-run", phase, env)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: post-run hook error: %v\n", err)
-		} else if code != 0 {
-			if !preRunFailed && dispatchErr == nil && result != nil && result.ExitCode == 0 {
-				result.ExitCode = code
-			} else {
-				fmt.Fprintf(os.Stderr, "warning: post-run hook failed (exit %d) but phase already failed\n", code)
-			}
-		}
-	}
-
-	if preRunFailed && result == nil {
-		result = &dispatch.Result{ExitCode: preRunCode}
-	}
-
-	return result, dispatchErr
+	return dispatch.DispatchWithHooks(ctx, phase, env, r.Dispatcher.Dispatch)
 }
