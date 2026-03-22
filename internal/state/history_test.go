@@ -298,6 +298,46 @@ func TestCopyEntry_PreservesPermissions(t *testing.T) {
 	}
 }
 
+func TestLatestHistoryDir(t *testing.T) {
+	tempDir := t.TempDir()
+	histDir := filepath.Join(tempDir, "history")
+	for _, name := range []string{
+		"2026-01-01T00-00-00.001",
+		"2026-01-02T00-00-00.001",
+		"2026-01-03T00-00-00.001",
+	} {
+		if err := os.MkdirAll(filepath.Join(histDir, name), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := LatestHistoryDir(tempDir)
+	if err != nil {
+		t.Fatalf("LatestHistoryDir: %v", err)
+	}
+	if filepath.Base(got) != "2026-01-03T00-00-00.001" {
+		t.Errorf("expected newest dir, got %s", got)
+	}
+}
+
+func TestLatestHistoryDir_Empty(t *testing.T) {
+	tempDir := t.TempDir()
+	got, err := LatestHistoryDir(tempDir)
+	if got != "" || err != nil {
+		t.Errorf("expected (\"\", nil), got (%q, %v)", got, err)
+	}
+}
+
+func TestLatestHistoryDir_EmptyHistoryDir(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, "history"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LatestHistoryDir(tempDir)
+	if got != "" || err != nil {
+		t.Errorf("expected (\"\", nil), got (%q, %v)", got, err)
+	}
+}
+
 func TestArchiveRun_MillisecondPrecision(t *testing.T) {
 	dir1 := t.TempDir()
 	dir2 := t.TempDir()

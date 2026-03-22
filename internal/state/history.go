@@ -27,6 +27,28 @@ func HistoryDir(artifactsDir string) string {
 	return filepath.Join(artifactsDir, "history")
 }
 
+// LatestHistoryDir returns the path to the most recent history entry
+// (newest timestamped subdirectory) within artifactsDir/history/.
+// Returns ("", nil) if no history entries exist.
+func LatestHistoryDir(artifactsDir string) (string, error) {
+	histDir := HistoryDir(artifactsDir)
+	entries, err := os.ReadDir(histDir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", nil
+		}
+		return "", err
+	}
+	// ReadDir returns entries sorted alphabetically; timestamp-based names
+	// sort chronologically, so the last entry is the newest.
+	for i := len(entries) - 1; i >= 0; i-- {
+		if entries[i].IsDir() {
+			return filepath.Join(histDir, entries[i].Name()), nil
+		}
+	}
+	return "", nil
+}
+
 // copyEntry recursively copies src to dst.
 func copyEntry(src, dst string) error {
 	info, err := os.Lstat(src)
