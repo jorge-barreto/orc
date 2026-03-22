@@ -17,10 +17,10 @@ import (
 
 // CriterionResult holds the outcome of evaluating one rubric criterion.
 type CriterionResult struct {
-	Name   string
-	Score  float64 // 0.0–1.0
-	Pass   bool
-	Detail string
+	Name   string  `json:"name"`
+	Score  float64 `json:"score"`
+	Pass   bool    `json:"pass"`
+	Detail string  `json:"detail"`
 }
 
 // CaseResult holds the aggregate outcome of one eval case.
@@ -31,7 +31,7 @@ type CaseResult struct {
 	DurationSeconds float64            `json:"duration_seconds"`
 	PassCount       int                `json:"pass_count"`
 	TotalCount      int                `json:"total_count"`
-	Failures        []string           `json:"failures"`
+	Failures        []string           `json:"failures,omitempty"`
 	Details         map[string]float64 `json:"details"`
 	WorkflowErr     string             `json:"workflow_err,omitempty"`
 }
@@ -40,7 +40,8 @@ var scoreRegex = regexp.MustCompile(`SCORE:\s*(\d+)`)
 
 func filteredEnv(extras ...string) []string {
 	overridden := map[string]bool{
-		"ARTIFACTS_DIR": true, "WORK_DIR": true, "PROJECT_ROOT": true,
+		"TICKET": true, "ARTIFACTS_DIR": true, "WORK_DIR": true,
+		"PROJECT_ROOT": true, "WORKFLOW": true,
 	}
 	var env []string
 	for _, e := range os.Environ() {

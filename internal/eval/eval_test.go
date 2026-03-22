@@ -790,3 +790,93 @@ criteria:
 		t.Errorf("error = %v, want message containing 'invalid expect'", err)
 	}
 }
+
+func TestLoadRubric_WeightZero(t *testing.T) {
+	dir := t.TempDir()
+	projectRoot := t.TempDir()
+	writeFile(t, filepath.Join(dir, "rubric.yaml"), `
+criteria:
+  - name: tests-pass
+    check: "exit 0"
+    weight: 0
+`)
+	_, err := LoadRubric(dir, projectRoot)
+	if err == nil {
+		t.Fatal("expected error for weight 0")
+	}
+	if !strings.Contains(err.Error(), "weight must be > 0") {
+		t.Errorf("error = %v, want message containing 'weight must be > 0'", err)
+	}
+}
+
+func TestLoadRubric_WeightNegative(t *testing.T) {
+	dir := t.TempDir()
+	projectRoot := t.TempDir()
+	writeFile(t, filepath.Join(dir, "rubric.yaml"), `
+criteria:
+  - name: tests-pass
+    check: "exit 0"
+    weight: -1
+`)
+	_, err := LoadRubric(dir, projectRoot)
+	if err == nil {
+		t.Fatal("expected error for negative weight")
+	}
+	if !strings.Contains(err.Error(), "weight must be > 0") {
+		t.Errorf("error = %v, want message containing 'weight must be > 0'", err)
+	}
+}
+
+func TestLoadRubric_MissingName(t *testing.T) {
+	dir := t.TempDir()
+	projectRoot := t.TempDir()
+	writeFile(t, filepath.Join(dir, "rubric.yaml"), `
+criteria:
+  - check: "exit 0"
+    weight: 1
+`)
+	_, err := LoadRubric(dir, projectRoot)
+	if err == nil {
+		t.Fatal("expected error for missing criterion name")
+	}
+	if !strings.Contains(err.Error(), "name is required") {
+		t.Errorf("error = %v, want message containing 'name is required'", err)
+	}
+}
+
+func TestLoadRubric_JudgeWithoutPrompt(t *testing.T) {
+	dir := t.TempDir()
+	projectRoot := t.TempDir()
+	writeFile(t, filepath.Join(dir, "rubric.yaml"), `
+criteria:
+  - name: quality
+    judge: true
+    weight: 1
+`)
+	_, err := LoadRubric(dir, projectRoot)
+	if err == nil {
+		t.Fatal("expected error for judge criterion missing prompt")
+	}
+	if !strings.Contains(err.Error(), "require a prompt file") {
+		t.Errorf("error = %v, want message containing 'require a prompt file'", err)
+	}
+}
+
+func TestLoadRubric_InvalidScriptExpect(t *testing.T) {
+	dir := t.TempDir()
+	projectRoot := t.TempDir()
+	writeFile(t, filepath.Join(dir, "rubric.yaml"), `
+criteria:
+  - name: tests-pass
+    check: "exit 0"
+    weight: 1
+    expect: "pass"
+`)
+	_, err := LoadRubric(dir, projectRoot)
+	if err == nil {
+		t.Fatal("expected error for invalid script expect")
+	}
+	if !strings.Contains(err.Error(), "invalid expect") {
+		t.Errorf("error = %v, want message containing 'invalid expect'", err)
+	}
+}
