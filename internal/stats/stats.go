@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -232,4 +233,268 @@ func FilterRuns(runs []RunData, ticket string, last int) []RunData {
 	}
 
 	return filtered
+}
+
+// Aggregate computes aggregate statistics from a slice of RunData.
+// Only terminal runs (completed, failed, interrupted) are counted.
+func Aggregate(runs []RunData) *Stats {
+	// 1. Filter to terminal statuses only
+	var filtered []RunData
+	for _, r := range runs {
+		if r.Status == "completed" || r.Status == "failed" || r.Status == "interrupted" {
+			filtered = append(filtered, r)
+		}
+	}
+
+	s := &Stats{TotalRuns: len(filtered)}
+	if len(filtered) == 0 {
+		return s
+	}
+
+	// 2. TotalTickets = unique ticket count
+	tickets := make(map[string]struct{})
+	for _, r := range filtered {
+		tickets[r.Ticket] = struct{}{}
+	}
+	s.TotalTickets = len(tickets)
+
+	// 3. DateRange from earliest/latest StartTime
+	var earliest, latest time.Time
+	for _, r := range filtered {
+		if r.StartTime.IsZero() {
+			continue
+		}
+		if earliest.IsZero() || r.StartTime.Before(earliest) {
+			earliest = r.StartTime
+		}
+		if r.StartTime.After(latest) {
+			latest = r.StartTime
+		}
+	}
+	if !earliest.IsZero() {
+		if earliest.Year() == latest.Year() && earliest.YearDay() == latest.YearDay() {
+			s.DateRange = earliest.Format("Jan 2, 2006")
+		} else {
+			s.DateRange = earliest.Format("Jan 2") + " – " + latest.Format("Jan 2, 2006")
+		}
+	}
+
+	// 4. SuccessCount / SuccessRate
+	for _, r := range filtered {
+		if r.Status == "completed" {
+			s.SuccessCount++
+		}
+	}
+	s.SuccessRate = float64(s.SuccessCount) / float64(len(filtered)) * 100
+
+	// 5. Avg cost / P95 cost (exclude zero-cost runs from avg)
+	var costs []float64
+	for _, r := range filtered {
+		if r.CostUSD > 0 {
+			costs = append(costs, r.CostUSD)
+		}
+	}
+	if len(costs) > 0 {
+		var sum float64
+		for _, c := range costs {
+			sum += c
+		}
+		s.AvgCostUSD = sum / float64(len(costs))
+		if len(costs) >= 2 {
+			sorted := make([]float64, len(costs))
+			copy(sorted, costs)
+			sort.Float64s(sorted)
+			idx := int(math.Ceil(0.95*float64(len(sorted)))) - 1
+			s.P95CostUSD = sorted[idx]
+		} else {
+			s.P95CostUSD = costs[0]
+		}
+	}
+
+	// 6. Avg duration / P95 duration (exclude zero-duration runs)
+	var durations []time.Duration
+	for _, r := range filtered {
+		if r.Duration > 0 {
+			durations = append(durations, r.Duration)
+		}
+	}
+	if len(durations) > 0 {
+		var sum time.Duration
+		for _, d := range durations {
+			sum += d
+		}
+		s.AvgDuration = sum / time.Duration(len(durations))
+		if len(durations) >= 2 {
+			sorted := make([]time.Duration, len(durations))
+			copy(sorted, durations)
+			sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+			idx := int(math.Ceil(0.95*float64(len(sorted)))) - 1
+			s.P95Duration = sorted[idx]
+		} else {
+			s.P95Duration = durations[0]
+		}
+	}
+
+	// 7. Phase breakdown
+	// Collect all phase names in order of first appearance
+	type phaseAccum struct {
+		costSum   float64
+		costCount int
+		durSum    time.Duration
+		durCount  int
+		loopCount int // runs where iterations > 1
+		iterSum   float64
+		iterCount int // runs where iterations > 1
+		runCount  int
+		firstSeen int // order for sorting
+	}
+	phaseMap := make(map[string]*phaseAccum)
+	phaseOrder := []string{}
+	for _, r := range filtered {
+		// Collect all phase names seen in this run
+		phasesSeen := make(map[string]struct{})
+		for name := range r.PhaseCosts {
+			phasesSeen[name] = struct{}{}
+		}
+		for name := range r.PhaseDurations {
+			phasesSeen[name] = struct{}{}
+		}
+		for name := range r.PhaseIterations {
+			phasesSeen[name] = struct{}{}
+		}
+		for name := range phasesSeen {
+			if _, ok := phaseMap[name]; !ok {
+				phaseMap[name] = &phaseAccum{firstSeen: len(phaseOrder)}
+				phaseOrder = append(phaseOrder, name)
+			}
+			pa := phaseMap[name]
+			pa.runCount++
+			if c, ok := r.PhaseCosts[name]; ok && c > 0 {
+				pa.costSum += c
+				pa.costCount++
+			}
+			if d, ok := r.PhaseDurations[name]; ok && d > 0 {
+				pa.durSum += d
+				pa.durCount++
+			}
+			iters := r.PhaseIterations[name]
+			if iters > 1 {
+				pa.loopCount++
+				pa.iterSum += float64(iters)
+				pa.iterCount++
+			}
+		}
+	}
+	for _, name := range phaseOrder {
+		pa := phaseMap[name]
+		ps := PhaseStat{Name: name, RunCount: pa.runCount}
+		if pa.costCount > 0 {
+			ps.AvgCostUSD = pa.costSum / float64(pa.costCount)
+		}
+		if pa.durCount > 0 {
+			ps.AvgDuration = pa.durSum / time.Duration(pa.durCount)
+		}
+		if pa.runCount > 0 {
+			ps.LoopRate = float64(pa.loopCount) / float64(pa.runCount)
+		}
+		if pa.iterCount > 0 {
+			ps.AvgIters = pa.iterSum / float64(pa.iterCount)
+		}
+		s.Phases = append(s.Phases, ps)
+	}
+
+	// 8. Failure breakdown
+	failedRuns := 0
+	failCounts := make(map[string]int)
+	for _, r := range filtered {
+		if r.Status == "failed" || r.Status == "interrupted" {
+			failedRuns++
+			cat := r.FailureCategory
+			if cat == "" {
+				cat = "unclassified"
+			}
+			failCounts[cat]++
+		}
+	}
+	// Sort by count descending, then alphabetically
+	type catCount struct {
+		cat   string
+		count int
+	}
+	var catCounts []catCount
+	for cat, cnt := range failCounts {
+		catCounts = append(catCounts, catCount{cat, cnt})
+	}
+	sort.Slice(catCounts, func(i, j int) bool {
+		if catCounts[i].count != catCounts[j].count {
+			return catCounts[i].count > catCounts[j].count
+		}
+		return catCounts[i].cat < catCounts[j].cat
+	})
+	for _, cc := range catCounts {
+		pct := 0.0
+		if failedRuns > 0 {
+			pct = float64(cc.count) / float64(failedRuns) * 100
+		}
+		s.Failures = append(s.Failures, FailureStat{
+			Category: cc.cat,
+			Count:    cc.count,
+			Percent:  pct,
+		})
+	}
+
+	// 9. Weekly trend: last 5 weeks with data
+	// Week key = Monday of the week
+	weekCosts := make(map[time.Time][]float64)
+	for _, r := range filtered {
+		if r.StartTime.IsZero() {
+			continue
+		}
+		monday := mondayOf(r.StartTime)
+		if r.CostUSD > 0 {
+			weekCosts[monday] = append(weekCosts[monday], r.CostUSD)
+		} else {
+			// Include the week even if no cost data (count the run)
+			if _, ok := weekCosts[monday]; !ok {
+				weekCosts[monday] = nil
+			}
+		}
+	}
+	// Sort weeks descending
+	var weeks []time.Time
+	for w := range weekCosts {
+		weeks = append(weeks, w)
+	}
+	sort.Slice(weeks, func(i, j int) bool { return weeks[i].After(weeks[j]) })
+	// Take last 5, then reverse to chronological order
+	if len(weeks) > 5 {
+		weeks = weeks[:5]
+	}
+	for i, j := 0, len(weeks)-1; i < j; i, j = i+1, j-1 {
+		weeks[i], weeks[j] = weeks[j], weeks[i]
+	}
+	for _, w := range weeks {
+		wCosts := weekCosts[w]
+		ws := WeekStat{WeekStart: w, RunCount: len(wCosts)}
+		if len(wCosts) > 0 {
+			var sum float64
+			for _, c := range wCosts {
+				sum += c
+			}
+			ws.AvgCost = sum / float64(len(wCosts))
+		}
+		s.Weeks = append(s.Weeks, ws)
+	}
+
+	return s
+}
+
+// mondayOf returns the Monday of the week containing t (UTC).
+func mondayOf(t time.Time) time.Time {
+	t = t.UTC().Truncate(24 * time.Hour)
+	weekday := int(t.Weekday())
+	if weekday == 0 {
+		weekday = 7 // Sunday → 7
+	}
+	return t.AddDate(0, 0, -(weekday - 1))
 }

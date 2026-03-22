@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -213,5 +214,254 @@ func TestFilterRuns_Combined(t *testing.T) {
 	}
 	if result[1].StartTime != t4 {
 		t.Errorf("expected result[1].StartTime=%v, got %v", t4, result[1].StartTime)
+	}
+}
+
+func TestAggregate_BasicMetrics(t *testing.T) {
+	now := time.Now()
+	runs := make([]RunData, 10)
+	for i := 0; i < 8; i++ {
+		runs[i] = RunData{
+			Status:    "completed",
+			CostUSD:   float64(i+1) * 1.0,
+			Duration:  time.Duration(i+1) * time.Minute,
+			StartTime: now.Add(time.Duration(i) * time.Hour),
+		}
+	}
+	runs[8] = RunData{Status: "failed", CostUSD: 9.0, Duration: 9 * time.Minute, StartTime: now.Add(8 * time.Hour)}
+	runs[9] = RunData{Status: "failed", CostUSD: 10.0, Duration: 10 * time.Minute, StartTime: now.Add(9 * time.Hour)}
+
+	s := Aggregate(runs)
+
+	if s.TotalRuns != 10 {
+		t.Errorf("expected TotalRuns=10, got %d", s.TotalRuns)
+	}
+	if s.SuccessCount != 8 {
+		t.Errorf("expected SuccessCount=8, got %d", s.SuccessCount)
+	}
+	if s.SuccessRate != 80.0 {
+		t.Errorf("expected SuccessRate=80, got %f", s.SuccessRate)
+	}
+
+	// All 10 runs have cost > 0
+	expectedAvgCost := (1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10.0) / 10
+	if math.Abs(s.AvgCostUSD-expectedAvgCost) > 1e-9 {
+		t.Errorf("expected AvgCostUSD=%f, got %f", expectedAvgCost, s.AvgCostUSD)
+	}
+
+	// P95: ceil(0.95*10)-1 = ceil(9.5)-1 = 10-1 = 9 → sorted[9] = 10.0
+	if s.P95CostUSD != 10.0 {
+		t.Errorf("expected P95CostUSD=10.0, got %f", s.P95CostUSD)
+	}
+
+	// sum(1..10)=55, count=10 → 55/10 minutes = 5m30s
+	expectedAvgDur := 55 * time.Minute / 10
+	if s.AvgDuration != expectedAvgDur {
+		t.Errorf("expected AvgDuration=%v, got %v", expectedAvgDur, s.AvgDuration)
+	}
+
+	// P95 duration: sorted[9] = 10min
+	if s.P95Duration != 10*time.Minute {
+		t.Errorf("expected P95Duration=10m, got %v", s.P95Duration)
+	}
+}
+
+func TestAggregate_PhaseBreakdown(t *testing.T) {
+	runs := []RunData{
+		{
+			Status:          "completed",
+			PhaseIterations: map[string]int{"implement": 1},
+			PhaseCosts:      map[string]float64{},
+			PhaseDurations:  map[string]time.Duration{},
+		},
+		{
+			Status:          "completed",
+			PhaseIterations: map[string]int{"implement": 3},
+			PhaseCosts:      map[string]float64{},
+			PhaseDurations:  map[string]time.Duration{},
+		},
+		{
+			Status:          "completed",
+			PhaseIterations: map[string]int{"implement": 2},
+			PhaseCosts:      map[string]float64{},
+			PhaseDurations:  map[string]time.Duration{},
+		},
+	}
+
+	s := Aggregate(runs)
+
+	if len(s.Phases) != 1 {
+		t.Fatalf("expected 1 phase, got %d", len(s.Phases))
+	}
+	ps := s.Phases[0]
+	if ps.Name != "implement" {
+		t.Errorf("expected phase Name=implement, got %q", ps.Name)
+	}
+	if ps.RunCount != 3 {
+		t.Errorf("expected RunCount=3, got %d", ps.RunCount)
+	}
+	// LoopRate: 2 out of 3 runs had iterations > 1
+	expectedLoopRate := 2.0 / 3.0
+	if math.Abs(ps.LoopRate-expectedLoopRate) > 1e-9 {
+		t.Errorf("expected LoopRate≈%f, got %f", expectedLoopRate, ps.LoopRate)
+	}
+	// AvgIters: (3+2)/2 = 2.5 (only runs with iters > 1)
+	if math.Abs(ps.AvgIters-2.5) > 1e-9 {
+		t.Errorf("expected AvgIters=2.5, got %f", ps.AvgIters)
+	}
+}
+
+func TestAggregate_FailureBreakdown(t *testing.T) {
+	runs := []RunData{
+		{Status: "failed", FailureCategory: "loop_exhaustion"},
+		{Status: "failed", FailureCategory: "loop_exhaustion"},
+		{Status: "interrupted", FailureCategory: "script_failure"},
+		{Status: "failed", FailureCategory: ""},
+	}
+
+	s := Aggregate(runs)
+
+	if len(s.Failures) != 3 {
+		t.Fatalf("expected 3 failure categories, got %d", len(s.Failures))
+	}
+
+	// First entry should be loop_exhaustion (count=2)
+	if s.Failures[0].Category != "loop_exhaustion" {
+		t.Errorf("expected first category=loop_exhaustion, got %q", s.Failures[0].Category)
+	}
+	if s.Failures[0].Count != 2 {
+		t.Errorf("expected loop_exhaustion Count=2, got %d", s.Failures[0].Count)
+	}
+	if math.Abs(s.Failures[0].Percent-50.0) > 1e-9 {
+		t.Errorf("expected loop_exhaustion Percent=50, got %f", s.Failures[0].Percent)
+	}
+
+	// Find script_failure and unclassified
+	cats := make(map[string]FailureStat)
+	for _, f := range s.Failures {
+		cats[f.Category] = f
+	}
+	sf, ok := cats["script_failure"]
+	if !ok {
+		t.Fatal("expected script_failure in Failures")
+	}
+	if sf.Count != 1 {
+		t.Errorf("expected script_failure Count=1, got %d", sf.Count)
+	}
+	if math.Abs(sf.Percent-25.0) > 1e-9 {
+		t.Errorf("expected script_failure Percent=25, got %f", sf.Percent)
+	}
+	uc, ok := cats["unclassified"]
+	if !ok {
+		t.Fatal("expected unclassified in Failures")
+	}
+	if uc.Count != 1 {
+		t.Errorf("expected unclassified Count=1, got %d", uc.Count)
+	}
+	if math.Abs(uc.Percent-25.0) > 1e-9 {
+		t.Errorf("expected unclassified Percent=25, got %f", uc.Percent)
+	}
+}
+
+func TestAggregate_WeeklyTrend(t *testing.T) {
+	// Create 6 weeks of runs (6 distinct Mondays)
+	base := time.Date(2026, 1, 5, 12, 0, 0, 0, time.UTC) // a Monday
+	runs := make([]RunData, 6)
+	for i := 0; i < 6; i++ {
+		runs[i] = RunData{
+			Status:    "completed",
+			CostUSD:   float64(i+1) * 2.0,
+			StartTime: base.Add(time.Duration(i) * 7 * 24 * time.Hour),
+		}
+	}
+
+	s := Aggregate(runs)
+
+	if len(s.Weeks) != 5 {
+		t.Fatalf("expected 5 weeks (last 5), got %d", len(s.Weeks))
+	}
+
+	// Verify chronological order
+	for i := 1; i < len(s.Weeks); i++ {
+		if !s.Weeks[i].WeekStart.After(s.Weeks[i-1].WeekStart) {
+			t.Errorf("weeks not in chronological order at index %d", i)
+		}
+	}
+
+	// The last week (index 4) corresponds to runs[5]: cost=12.0
+	lastWeek := s.Weeks[4]
+	if math.Abs(lastWeek.AvgCost-12.0) > 1e-9 {
+		t.Errorf("expected last week AvgCost=12.0, got %f", lastWeek.AvgCost)
+	}
+}
+
+func TestAggregate_SingleRun(t *testing.T) {
+	runs := []RunData{
+		{
+			Status:    "completed",
+			CostUSD:   5.0,
+			Duration:  10 * time.Minute,
+			StartTime: time.Now(),
+		},
+	}
+
+	s := Aggregate(runs)
+
+	if s.TotalRuns != 1 {
+		t.Errorf("expected TotalRuns=1, got %d", s.TotalRuns)
+	}
+	if s.SuccessRate != 100.0 {
+		t.Errorf("expected SuccessRate=100, got %f", s.SuccessRate)
+	}
+	if s.AvgCostUSD != 5.0 {
+		t.Errorf("expected AvgCostUSD=5.0, got %f", s.AvgCostUSD)
+	}
+	if s.P95CostUSD != 5.0 {
+		t.Errorf("expected P95CostUSD=5.0, got %f", s.P95CostUSD)
+	}
+	if s.AvgDuration != 10*time.Minute {
+		t.Errorf("expected AvgDuration=10m, got %v", s.AvgDuration)
+	}
+	if s.P95Duration != 10*time.Minute {
+		t.Errorf("expected P95Duration=10m, got %v", s.P95Duration)
+	}
+}
+
+func TestAggregate_NoCompletedRuns(t *testing.T) {
+	runs := []RunData{
+		{Status: "failed", FailureCategory: "script_failure"},
+		{Status: "failed", FailureCategory: "loop_exhaustion"},
+		{Status: "interrupted", FailureCategory: "script_failure"},
+	}
+
+	s := Aggregate(runs)
+
+	if s.TotalRuns != 3 {
+		t.Errorf("expected TotalRuns=3, got %d", s.TotalRuns)
+	}
+	if s.SuccessCount != 0 {
+		t.Errorf("expected SuccessCount=0, got %d", s.SuccessCount)
+	}
+	if s.SuccessRate != 0.0 {
+		t.Errorf("expected SuccessRate=0, got %f", s.SuccessRate)
+	}
+	if len(s.Failures) == 0 {
+		t.Error("expected non-empty Failures")
+	}
+}
+
+func TestAggregate_SkipsRunning(t *testing.T) {
+	runs := []RunData{
+		{Status: "completed"},
+		{Status: "running"},
+		{Status: "running"},
+		{Status: "failed"},
+	}
+
+	s := Aggregate(runs)
+
+	// Only completed + failed = 2 terminal runs
+	if s.TotalRuns != 2 {
+		t.Errorf("expected TotalRuns=2 (excluding running), got %d", s.TotalRuns)
 	}
 }
