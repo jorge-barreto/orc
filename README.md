@@ -238,7 +238,7 @@ orc cancel PROJ-123 --purge    # remove all artifacts including history
 
 ### `orc history [ticket]`
 
-Lists past runs for a ticket with status, date, duration, and cost. Runs are archived automatically on successful completion. Failed or interrupted runs stay in place for --resume; use orc cancel to archive them.
+Lists past runs for a ticket with status, date, duration, and cost. Completed runs are archived immediately. Failed or interrupted runs stay in place for --resume/--retry, and are archived automatically when the next fresh `orc run` starts.
 
 ```bash
 orc history                     # most recent ticket
@@ -469,7 +469,7 @@ When you run `orc cancel`, the audit directory is preserved (rotated to a timest
 
 ### History Directory
 
-When a run completes, fails, or is interrupted, artifacts are archived to `.orc/artifacts/<ticket>/history/<run-id>/`. The run-id is a filesystem-safe timestamp. Old entries are pruned based on the `history-limit` config field (default 10). If a previous run wasn't properly archived (e.g., after SIGKILL), the next `orc run` auto-archives the stale artifacts before starting.
+When a run completes, artifacts are archived immediately. Failed or interrupted runs stay in place for `--resume`/`--retry`, and are archived automatically when the next fresh `orc run` starts. The run-id is a filesystem-safe timestamp. Old entries are pruned based on the `history-limit` config field (default 10).
 
 ## Loops
 

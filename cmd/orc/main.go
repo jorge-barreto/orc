@@ -237,9 +237,13 @@ func runCmd() *cli.Command {
 						archiveStale = true
 					case state.StatusRunning:
 						archiveStale = existing.GetPhaseIndex() > 0
+					case state.StatusFailed, state.StatusInterrupted:
+						archiveStale = true
 					}
 					if archiveStale {
-						state.ArchiveRun(artifactsDir) // best-effort
+						if _, archiveErr := state.ArchiveRun(artifactsDir); archiveErr != nil {
+							fmt.Fprintf(os.Stderr, "warning: failed to archive stale run: %v\n", archiveErr)
+						}
 						state.PruneHistory(artifactsDir, cfg.HistoryLimit)
 					}
 				}

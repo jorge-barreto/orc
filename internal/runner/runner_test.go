@@ -3152,7 +3152,7 @@ func TestRun_ArchivesOnFailure(t *testing.T) {
 	}
 }
 
-func TestRun_ArchivesStaleOnStart(t *testing.T) {
+func TestRun_DoesNotArchiveStaleOnStart(t *testing.T) {
 	cfg := &config.Config{
 		Name: "test",
 		Phases: []config.Phase{
