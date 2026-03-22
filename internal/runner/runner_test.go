@@ -78,7 +78,8 @@ func newTestRunner(t *testing.T, cfg *config.Config, mock dispatch.Dispatcher) *
 			Ticket:       "TEST-1",
 			PhaseCount:   len(cfg.Phases),
 		},
-		Dispatcher: mock,
+		Dispatcher:   mock,
+		HistoryLimit: 10,
 	}
 }
 
@@ -258,7 +259,12 @@ func TestRun_LoopCounterPersisted(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	counts, err := state.LoadLoopCounts(r.Env.ArtifactsDir)
+	histEntries, err := os.ReadDir(filepath.Join(r.Env.ArtifactsDir, "history"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runDir := filepath.Join(r.Env.ArtifactsDir, "history", histEntries[len(histEntries)-1].Name())
+	counts, err := state.LoadLoopCounts(runDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,7 +347,12 @@ func TestRun_LoopOnExhaust(t *testing.T) {
 		t.Fatalf("status = %q", r.State.GetStatus())
 	}
 
-	counts, err := state.LoadLoopCounts(r.Env.ArtifactsDir)
+	histEntries, err := os.ReadDir(filepath.Join(r.Env.ArtifactsDir, "history"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runDir := filepath.Join(r.Env.ArtifactsDir, "history", histEntries[len(histEntries)-1].Name())
+	counts, err := state.LoadLoopCounts(runDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -745,7 +756,12 @@ func TestRun_SavesStatePersistently(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	loaded, err := state.Load(r.Env.ArtifactsDir)
+	histEntries, err := os.ReadDir(filepath.Join(r.Env.ArtifactsDir, "history"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runDir := filepath.Join(r.Env.ArtifactsDir, "history", histEntries[len(histEntries)-1].Name())
+	loaded, err := state.Load(runDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1639,7 +1655,12 @@ func TestRun_LoopCheckWithOnExhaust(t *testing.T) {
 	}
 	assertExitCode(t, err, ExitRetryable)
 
-	counts, err := state.LoadLoopCounts(r.Env.ArtifactsDir)
+	histEntries, err := os.ReadDir(filepath.Join(r.Env.ArtifactsDir, "history"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runDir := filepath.Join(r.Env.ArtifactsDir, "history", histEntries[len(histEntries)-1].Name())
+	counts, err := state.LoadLoopCounts(runDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1853,7 +1874,12 @@ func TestRun_OuterLoopResetsIntermediateCounters(t *testing.T) {
 
 	// After run, review's loop counter should reflect only the second outer iteration.
 	// Without the fix, it would accumulate across both iterations.
-	counts, err := state.LoadLoopCounts(r.Env.ArtifactsDir)
+	histEntries, err := os.ReadDir(filepath.Join(r.Env.ArtifactsDir, "history"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runDir := filepath.Join(r.Env.ArtifactsDir, "history", histEntries[len(histEntries)-1].Name())
+	counts, err := state.LoadLoopCounts(runDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2188,7 +2214,12 @@ func TestRun_PersistsSessionIDOnFailure(t *testing.T) {
 	}
 
 	// Load state from disk and verify session ID was persisted
-	st, loadErr := state.Load(r.Env.ArtifactsDir)
+	histEntries, histErr := os.ReadDir(filepath.Join(r.Env.ArtifactsDir, "history"))
+	if histErr != nil {
+		t.Fatal(histErr)
+	}
+	runDir := filepath.Join(r.Env.ArtifactsDir, "history", histEntries[len(histEntries)-1].Name())
+	st, loadErr := state.Load(runDir)
 	if loadErr != nil {
 		t.Fatal(loadErr)
 	}
@@ -3039,5 +3070,138 @@ func TestRun_StepModeParallelAbort(t *testing.T) {
 	sort.Strings(pair)
 	if pair[0] != "b" || pair[1] != "c" {
 		t.Fatalf("calls[1:3] = %v, want b+c in any order", calls[1:3])
+	}
+}
+
+func TestRun_ArchivesOnCompletion(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	artDir := r.Env.ArtifactsDir
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// history/ should exist with exactly one entry
+	histDir := filepath.Join(artDir, "history")
+	entries, err := os.ReadDir(histDir)
+	if err != nil {
+		t.Fatalf("reading history dir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 history entry, got %d", len(entries))
+	}
+
+	runDir := filepath.Join(histDir, entries[0].Name())
+
+	// state.json should exist with status "completed"
+	st, err := state.Load(runDir)
+	if err != nil {
+		t.Fatalf("loading archived state: %v", err)
+	}
+	if st.GetStatus() != state.StatusCompleted {
+		t.Fatalf("archived status = %q, want %q", st.GetStatus(), state.StatusCompleted)
+	}
+
+	// timing.json and costs.json should be present
+	if _, err := os.Stat(filepath.Join(runDir, "timing.json")); err != nil {
+		t.Fatalf("timing.json missing from archive: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, "costs.json")); err != nil {
+		t.Fatalf("costs.json missing from archive: %v", err)
+	}
+
+	// top-level state.json should be gone
+	if _, err := os.Stat(filepath.Join(artDir, "state.json")); !os.IsNotExist(err) {
+		t.Fatal("top-level state.json should have been archived away")
+	}
+}
+
+func TestRun_ArchivesOnFailure(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	mock.results["a"] = &dispatch.Result{ExitCode: 1}
+	r := newTestRunner(t, cfg, mock)
+	artDir := r.Env.ArtifactsDir
+
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected failure")
+	}
+
+	histDir := filepath.Join(artDir, "history")
+	entries, err := os.ReadDir(histDir)
+	if err != nil {
+		t.Fatalf("reading history dir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 history entry, got %d", len(entries))
+	}
+
+	runDir := filepath.Join(histDir, entries[0].Name())
+
+	st, err := state.Load(runDir)
+	if err != nil {
+		t.Fatalf("loading archived state: %v", err)
+	}
+	if st.GetStatus() != state.StatusFailed {
+		t.Fatalf("archived status = %q, want %q", st.GetStatus(), state.StatusFailed)
+	}
+
+	if _, err := os.Stat(filepath.Join(runDir, "timing.json")); err != nil {
+		t.Fatalf("timing.json missing from archive: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, "costs.json")); err != nil {
+		t.Fatalf("costs.json missing from archive: %v", err)
+	}
+}
+
+func TestRun_ArchivesStaleOnStart(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	artDir := r.Env.ArtifactsDir
+
+	// Pre-create artifacts dir and a stale state.json
+	if err := os.MkdirAll(artDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	staleState := &state.State{Status: state.StatusRunning}
+	if err := staleState.Save(artDir); err != nil {
+		t.Fatal(err)
+	}
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// history/ should have 2 entries: stale + new run
+	histDir := filepath.Join(artDir, "history")
+	entries, err := os.ReadDir(histDir)
+	if err != nil {
+		t.Fatalf("reading history dir: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 history entries (stale + new run), got %d", len(entries))
 	}
 }

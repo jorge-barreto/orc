@@ -33,6 +33,7 @@ type Runner struct {
 	Timing       *state.Timing
 	Costs        *state.CostData
 	StepMode     bool
+	HistoryLimit int
 	StepPromptFn func(artifactsDir string, phaseIdx int, phaseName string) ux.StepAction
 	RePromptFn   func(ctx context.Context, phase config.Phase, env *dispatch.Environment, prompt, sessionID string) (*dispatch.Result, error)
 	skipped      map[string]bool
@@ -67,10 +68,24 @@ func (r *Runner) failAndHint(status string, exitCode int, err error) error {
 		if flushErr := r.Timing.Flush(r.auditDir); flushErr != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to flush timing: %v\n", flushErr)
 		}
+		if flushErr := r.Timing.Flush(r.Env.ArtifactsDir); flushErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to flush timing to artifacts: %v\n", flushErr)
+		}
 	}
 	if r.Costs != nil {
 		if flushErr := r.Costs.Flush(r.auditDir); flushErr != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to flush costs: %v\n", flushErr)
+		}
+		if flushErr := r.Costs.Flush(r.Env.ArtifactsDir); flushErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to flush costs to artifacts: %v\n", flushErr)
+		}
+	}
+	if r.Env != nil {
+		if _, archiveErr := state.ArchiveRun(r.Env.ArtifactsDir); archiveErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to archive run: %v\n", archiveErr)
+		}
+		if pruneErr := state.PruneHistory(r.Env.ArtifactsDir, r.HistoryLimit); pruneErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to prune history: %v\n", pruneErr)
 		}
 	}
 	ux.ResumeHint(r.State.GetTicket(), r.State.GetSessionID() != "")
@@ -93,6 +108,16 @@ func (r *Runner) Run(ctx context.Context) error {
 
 	if err := state.EnsureDir(r.Env.ArtifactsDir); err != nil {
 		return setupErr(err)
+	}
+
+	// Archive stale artifacts from a previous run (e.g., after SIGKILL/OOM).
+	if state.HasState(r.Env.ArtifactsDir) {
+		state.ArchiveRun(r.Env.ArtifactsDir) // best-effort, ignore error
+		state.PruneHistory(r.Env.ArtifactsDir, r.HistoryLimit)
+		// Re-create directories that ArchiveRun removed
+		if err := state.EnsureDir(r.Env.ArtifactsDir); err != nil {
+			return setupErr(err)
+		}
 	}
 
 	// Initialize audit dir for costs, timing, and log archives
@@ -458,7 +483,23 @@ mainLoop:
 	if err := r.Costs.Flush(r.auditDir); err != nil {
 		return fmt.Errorf("flushing costs: %w", err)
 	}
+	// Flush timing and costs to artifacts dir so they are included in the archive
+	if flushErr := r.Timing.Flush(r.Env.ArtifactsDir); flushErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to flush timing to artifacts: %v\n", flushErr)
+	}
+	if flushErr := r.Costs.Flush(r.Env.ArtifactsDir); flushErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to flush costs to artifacts: %v\n", flushErr)
+	}
 	r.printRunSummary(-1)
+	// Archive run to history
+	if runID, archiveErr := state.ArchiveRun(r.Env.ArtifactsDir); archiveErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to archive run: %v\n", archiveErr)
+	} else {
+		fmt.Printf("  %sRun archived:%s %s\n", ux.Dim, ux.Reset, runID)
+	}
+	if pruneErr := state.PruneHistory(r.Env.ArtifactsDir, r.HistoryLimit); pruneErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to prune history: %v\n", pruneErr)
+	}
 	return nil
 }
 
