@@ -28,9 +28,14 @@ func HistoryDir(artifactsDir string) string {
 
 // copyEntry recursively copies src to dst.
 func copyEntry(src, dst string) error {
-	info, err := os.Stat(src)
+	info, err := os.Lstat(src)
 	if err != nil {
 		return err
+	}
+	// Skip symlinks — artifacts shouldn't contain them, and following
+	// them during archive could be surprising.
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil
 	}
 	if info.IsDir() {
 		if err := os.MkdirAll(dst, 0755); err != nil {
@@ -53,13 +58,20 @@ func copyEntry(src, dst string) error {
 		return err
 	}
 	defer in.Close()
-	out, err := os.Create(dst)
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
 	if err != nil {
 		return err
 	}
-	defer out.Close()
 	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
 		return fmt.Errorf("copying %s: %w", src, err)
+	}
+	if err := out.Sync(); err != nil {
+		out.Close()
+		return fmt.Errorf("syncing %s: %w", dst, err)
+	}
+	if err := out.Close(); err != nil {
+		return fmt.Errorf("closing %s: %w", dst, err)
 	}
 	return nil
 }
@@ -146,6 +158,10 @@ func ListHistory(artifactsDir string) ([]HistoryEntry, error) {
 			continue
 		}
 		entryDir := filepath.Join(histDir, e.Name())
+
+		if !HasState(entryDir) {
+			continue // skip entries without state.json
+		}
 
 		st, err := Load(entryDir)
 		if err != nil {

@@ -161,6 +161,26 @@ func TestPruneHistory_NoDir(t *testing.T) {
 	}
 }
 
+func TestPruneHistory_ZeroLimit(t *testing.T) {
+	tempDir := t.TempDir()
+	histDir := filepath.Join(tempDir, "history")
+	for _, name := range []string{"a", "b", "c"} {
+		if err := os.MkdirAll(filepath.Join(histDir, name), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := PruneHistory(tempDir, 0); err != nil {
+		t.Fatalf("PruneHistory with limit=0: %v", err)
+	}
+	entries, err := os.ReadDir(histDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected 0 entries after prune with limit=0, got %d", len(entries))
+	}
+}
+
 func TestListHistory(t *testing.T) {
 	tempDir := t.TempDir()
 	histDir := filepath.Join(tempDir, "history")
@@ -222,6 +242,59 @@ func TestListHistory_Empty(t *testing.T) {
 	entries, err := ListHistory(tempDir)
 	if entries != nil || err != nil {
 		t.Errorf("expected (nil, nil), got (%v, %v)", entries, err)
+	}
+}
+
+func TestListHistory_MissingStateJSON(t *testing.T) {
+	tempDir := t.TempDir()
+	histDir := filepath.Join(tempDir, "history")
+
+	// Entry with state.json
+	entry1 := filepath.Join(histDir, "2026-01-01T00-00-00.001")
+	if err := os.MkdirAll(entry1, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestArtifacts(t, entry1, "completed", "T-1")
+
+	// Entry without state.json (empty dir)
+	entry2 := filepath.Join(histDir, "2026-01-02T00-00-00.001")
+	if err := os.MkdirAll(entry2, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := ListHistory(tempDir)
+	if err != nil {
+		t.Fatalf("ListHistory: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry (skipping dir without state.json), got %d", len(entries))
+	}
+	if entries[0].RunID != "2026-01-01T00-00-00.001" {
+		t.Errorf("expected entry 2026-01-01T00-00-00.001, got %s", entries[0].RunID)
+	}
+}
+
+func TestCopyEntry_PreservesPermissions(t *testing.T) {
+	srcDir := t.TempDir()
+	dstDir := t.TempDir()
+
+	src := filepath.Join(srcDir, "exec.sh")
+	if err := os.WriteFile(src, []byte("#!/bin/bash"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	dst := filepath.Join(dstDir, "exec.sh")
+	if err := copyEntry(src, dst); err != nil {
+		t.Fatalf("copyEntry: %v", err)
+	}
+
+	info, err := os.Stat(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Check executable bit is preserved (accounting for umask)
+	if info.Mode().Perm()&0100 == 0 {
+		t.Errorf("expected executable permission preserved, got %o", info.Mode().Perm())
 	}
 }
 
