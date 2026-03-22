@@ -45,6 +45,7 @@ func main() {
 			cancelCmd(),
 			statusCmd(),
 			historyCmd(),
+			statsCmd(),
 			reportCmd(),
 			doctorCmd(),
 			docsCmd(),
