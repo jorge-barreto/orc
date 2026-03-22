@@ -117,6 +117,9 @@ func TestRun_AllPhasesSucceed(t *testing.T) {
 	if len(calls) != 3 || calls[0] != "a" || calls[1] != "b" || calls[2] != "c" {
 		t.Fatalf("calls = %v", calls)
 	}
+	if got := r.State.GetFailureCategory(); got != "" {
+		t.Fatalf("FailureCategory = %q, want empty for successful run", got)
+	}
 }
 
 func TestRun_FailNoLoop(t *testing.T) {
@@ -139,6 +142,9 @@ func TestRun_FailNoLoop(t *testing.T) {
 	assertExitCode(t, err, ExitRetryable)
 	if r.State.GetStatus() != state.StatusFailed {
 		t.Fatalf("status = %q", r.State.GetStatus())
+	}
+	if got := r.State.GetFailureCategory(); got != state.FailCategoryScriptFailure {
+		t.Fatalf("FailureCategory = %q, want %q", got, state.FailCategoryScriptFailure)
 	}
 	calls := mock.callNames()
 	// c should never be called
@@ -3186,5 +3192,141 @@ func TestRun_DoesNotArchiveStaleOnStart(t *testing.T) {
 	}
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 history entry (completion only), got %d", len(entries))
+	}
+}
+
+func TestRun_FailureCategory_AgentError(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet"},
+		},
+	}
+	mock := newMock()
+	mock.results["a"] = &dispatch.Result{ExitCode: 1}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if got := r.State.GetFailureCategory(); got != state.FailCategoryAgentError {
+		t.Fatalf("FailureCategory = %q, want %q", got, state.FailCategoryAgentError)
+	}
+}
+
+func TestRun_FailureCategory_GateRejection(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "approve", Type: "gate"},
+		},
+	}
+	mock := newMock()
+	mock.results["approve"] = &dispatch.Result{ExitCode: 1, Output: "no"}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected error for gate denial")
+	}
+	assertExitCode(t, err, ExitHumanNeeded)
+	if got := r.State.GetFailureCategory(); got != state.FailCategoryGateRejection {
+		t.Fatalf("FailureCategory = %q, want %q", got, state.FailCategoryGateRejection)
+	}
+}
+
+func TestRun_FailureCategory_LoopExhaustion(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo", Loop: &config.Loop{Goto: "a", Min: 1, Max: 3}},
+		},
+	}
+	alwaysFail := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		if phase.Name == "b" {
+			return &dispatch.Result{ExitCode: 1, Output: "fail"}, nil
+		}
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+	r := newTestRunner(t, cfg, alwaysFail)
+
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected loop exhaustion error")
+	}
+	if got := r.State.GetFailureCategory(); got != state.FailCategoryLoopExhaustion {
+		t.Fatalf("FailureCategory = %q, want %q", got, state.FailCategoryLoopExhaustion)
+	}
+}
+
+func TestRun_FailureCategory_CostOverrun(t *testing.T) {
+	cfg := &config.Config{
+		Name:    "test",
+		MaxCost: 0.01,
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet"},
+			{Name: "b", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	mock.results["a"] = &dispatch.Result{ExitCode: 0, CostUSD: 1.0, InputTokens: 1, OutputTokens: 1, Turns: 1}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected cost overrun error")
+	}
+	assertExitCode(t, err, ExitHumanNeeded)
+	if got := r.State.GetFailureCategory(); got != state.FailCategoryCostOverrun {
+		t.Fatalf("FailureCategory = %q, want %q", got, state.FailCategoryCostOverrun)
+	}
+}
+
+func TestRun_FailureCategory_OutputMissing(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet", Outputs: []string{"result.md"}},
+		},
+	}
+	mock := newMock()
+	// Agent succeeds but doesn't create result.md
+	mock.results["a"] = &dispatch.Result{ExitCode: 0}
+	r := newTestRunner(t, cfg, mock)
+	// Override RePromptFn to also not create the file
+	r.RePromptFn = func(ctx context.Context, phase config.Phase, env *dispatch.Environment, prompt, sessionID string) (*dispatch.Result, error) {
+		return &dispatch.Result{ExitCode: 0}, nil
+	}
+
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected missing outputs error")
+	}
+	if got := r.State.GetFailureCategory(); got != state.FailCategoryOutputMissing {
+		t.Fatalf("FailureCategory = %q, want %q", got, state.FailCategoryOutputMissing)
+	}
+}
+
+func TestRun_FailureCategory_Interrupted(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	err := r.Run(ctx)
+	if err == nil {
+		t.Fatal("expected interrupted error")
+	}
+	if got := r.State.GetFailureCategory(); got != state.FailCategoryInterrupted {
+		t.Fatalf("FailureCategory = %q, want %q", got, state.FailCategoryInterrupted)
 	}
 }

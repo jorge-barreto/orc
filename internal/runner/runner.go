@@ -84,6 +84,12 @@ func (r *Runner) failAndHint(status string, exitCode int, err error) error {
 	return &ExitError{Code: exitCode, Err: err}
 }
 
+// failWithCategory sets the failure category and detail, then delegates to failAndHint.
+func (r *Runner) failWithCategory(status string, exitCode int, category, detail string, err error) error {
+	r.State.SetFailure(category, detail)
+	return r.failAndHint(status, exitCode, err)
+}
+
 // printRunSummary prints the run summary table if timing data is available.
 func (r *Runner) printRunSummary(failedPhase int) {
 	if r.Timing == nil {
@@ -144,13 +150,14 @@ mainLoop:
 			if i > 0 {
 				r.printRunSummary(-1)
 			}
-			return r.failAndHint(state.StatusInterrupted, ExitSignal, ctx.Err())
+			return r.failWithCategory(state.StatusInterrupted, ExitSignal, state.FailCategoryInterrupted, ctx.Err().Error(), ctx.Err())
 		}
 
 		// Check run-level cost limit before starting next phase
 		if r.Config.MaxCost > 0 && r.Costs.TotalCost() > r.Config.MaxCost {
 			r.printRunSummary(i)
-			return r.failAndHint(state.StatusFailed, ExitHumanNeeded,
+			return r.failWithCategory(state.StatusFailed, ExitHumanNeeded, state.FailCategoryCostOverrun,
+				fmt.Sprintf("run cost $%.2f exceeded limit $%.2f", r.Costs.TotalCost(), r.Config.MaxCost),
 				fmt.Errorf("run exceeded cost limit: $%.2f > $%.2f", r.Costs.TotalCost(), r.Config.MaxCost))
 		}
 
@@ -217,7 +224,7 @@ mainLoop:
 			r.Timing.AddEnd(phase.Name)
 			appendPhaseLog(r.Env.ArtifactsDir, i, fmt.Sprintf("\n[orc] phase interrupted: %v\n", ctx.Err()))
 			r.printRunSummary(i)
-			return r.failAndHint(state.StatusInterrupted, ExitSignal, ctx.Err())
+			return r.failWithCategory(state.StatusInterrupted, ExitSignal, state.FailCategoryInterrupted, ctx.Err().Error(), ctx.Err())
 		}
 
 		// Record cost data for agent phases (cost is incurred regardless of success/failure)
@@ -236,7 +243,8 @@ mainLoop:
 				if phaseCost > phase.MaxCost {
 					r.Timing.AddEnd(phase.Name)
 					r.printRunSummary(i)
-					return r.failAndHint(state.StatusFailed, ExitHumanNeeded,
+					return r.failWithCategory(state.StatusFailed, ExitHumanNeeded, state.FailCategoryCostOverrun,
+						fmt.Sprintf("phase %q cost $%.2f exceeded limit $%.2f", phase.Name, phaseCost, phase.MaxCost),
 						fmt.Errorf("phase %q exceeded cost limit: $%.2f > $%.2f", phase.Name, phaseCost, phase.MaxCost))
 				}
 			}
@@ -275,12 +283,18 @@ mainLoop:
 			}
 
 			// No loop: stop
+			category := state.FailCategoryScriptFailure
+			if phase.Type == "agent" {
+				category = state.FailCategoryAgentError
+			} else if phase.Type == "gate" {
+				category = state.FailCategoryGateRejection
+			}
 			exitCode := ExitRetryable
 			if phase.Type == "gate" {
 				exitCode = ExitHumanNeeded
 			}
 			r.printRunSummary(i)
-			return r.failAndHint(state.StatusFailed, exitCode, fmt.Errorf("phase %q failed", phase.Name))
+			return r.failWithCategory(state.StatusFailed, exitCode, category, errMsg, fmt.Errorf("phase %q failed", phase.Name))
 		}
 
 		// Check declared outputs
@@ -328,7 +342,8 @@ mainLoop:
 				}
 				r.Timing.AddEnd(phase.Name)
 				r.printRunSummary(i)
-				return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("phase %q: %s", phase.Name, errMsg))
+				return r.failWithCategory(state.StatusFailed, ExitRetryable, state.FailCategoryOutputMissing, errMsg,
+					fmt.Errorf("phase %q: %s", phase.Name, errMsg))
 			}
 		}
 
@@ -423,7 +438,8 @@ mainLoop:
 				switch action.Type {
 				case "abort":
 					r.printRunSummary(-1)
-					return r.failAndHint(state.StatusInterrupted, ExitSignal,
+					return r.failWithCategory(state.StatusInterrupted, ExitSignal, state.FailCategoryInterrupted,
+						"aborted by user in step-through mode",
 						fmt.Errorf("aborted by user in step-through mode"))
 				case "rewind":
 					idx, err := config.ResolvePhaseRef(action.Target, r.Config.Phases)
@@ -517,7 +533,8 @@ func (r *Runner) handleLoopFailure(i int, phase config.Phase, loopCounts map[str
 				fmt.Printf("\n  Phase %q: loop exhausted after %d iterations, recovery exhausted after %d attempts. Manual intervention needed.\n",
 					phase.Name, iteration, phase.Loop.OnExhaust.Max)
 				r.printRunSummary(i)
-				return false, r.failAndHint(state.StatusFailed, ExitRetryable,
+				return false, r.failWithCategory(state.StatusFailed, ExitRetryable, state.FailCategoryLoopExhaustion,
+					fmt.Sprintf("phase %q: loop exhausted (%d iterations) and recovery exhausted (%d attempts)", phase.Name, iteration, phase.Loop.OnExhaust.Max),
 					fmt.Errorf("phase %q: loop exhausted (%d iterations) and recovery exhausted (%d attempts)", phase.Name, iteration, phase.Loop.OnExhaust.Max))
 			}
 			loopCounts[exhaustKey] = exhaustCount
@@ -560,7 +577,8 @@ func (r *Runner) handleLoopFailure(i int, phase config.Phase, loopCounts map[str
 		fmt.Printf("\n  Phase %q failed after %d iterations. Manual intervention needed.\n",
 			phase.Name, iteration)
 		r.printRunSummary(i)
-		return false, r.failAndHint(state.StatusFailed, ExitRetryable,
+		return false, r.failWithCategory(state.StatusFailed, ExitRetryable, state.FailCategoryLoopExhaustion,
+			fmt.Sprintf("phase %q: failed after %d iterations", phase.Name, iteration),
 			fmt.Errorf("phase %q: failed after %d iterations", phase.Name, iteration))
 	}
 
@@ -633,7 +651,8 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 	// Check run-level cost limit before starting parallel phases
 	if r.Config.MaxCost > 0 && r.Costs.TotalCost() > r.Config.MaxCost {
 		r.printRunSummary(idx1)
-		return r.failAndHint(state.StatusFailed, ExitHumanNeeded,
+		return r.failWithCategory(state.StatusFailed, ExitHumanNeeded, state.FailCategoryCostOverrun,
+			fmt.Sprintf("run cost $%.2f exceeded limit $%.2f", r.Costs.TotalCost(), r.Config.MaxCost),
 			fmt.Errorf("run exceeded cost limit: $%.2f > $%.2f", r.Costs.TotalCost(), r.Config.MaxCost))
 	}
 
@@ -720,10 +739,17 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 	if firstErr != nil {
 		if parentCtx.Err() != nil {
 			r.printRunSummary(failedIdx)
-			return r.failAndHint(state.StatusInterrupted, ExitSignal, parentCtx.Err())
+			return r.failWithCategory(state.StatusInterrupted, ExitSignal, state.FailCategoryInterrupted, parentCtx.Err().Error(), parentCtx.Err())
 		}
 		r.printRunSummary(failedIdx)
-		return r.failAndHint(state.StatusFailed, ExitRetryable, firstErr)
+		failedPhase := r.Config.Phases[failedIdx]
+		category := state.FailCategoryScriptFailure
+		if failedPhase.Type == "agent" {
+			category = state.FailCategoryAgentError
+		} else if failedPhase.Type == "gate" {
+			category = state.FailCategoryGateRejection
+		}
+		return r.failWithCategory(state.StatusFailed, ExitRetryable, category, firstErr.Error(), firstErr)
 	}
 
 	// Flush costs and check cost limits after parallel phases complete
@@ -738,14 +764,16 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 			phaseCost := r.Costs.PhaseCost(pi.phase.Name)
 			if phaseCost > pi.phase.MaxCost {
 				r.printRunSummary(pi.idx)
-				return r.failAndHint(state.StatusFailed, ExitHumanNeeded,
+				return r.failWithCategory(state.StatusFailed, ExitHumanNeeded, state.FailCategoryCostOverrun,
+					fmt.Sprintf("phase %q cost $%.2f exceeded limit $%.2f", pi.phase.Name, phaseCost, pi.phase.MaxCost),
 					fmt.Errorf("phase %q exceeded cost limit: $%.2f > $%.2f", pi.phase.Name, phaseCost, pi.phase.MaxCost))
 			}
 		}
 	}
 	if r.Config.MaxCost > 0 && r.Costs.TotalCost() > r.Config.MaxCost {
 		r.printRunSummary(idx1)
-		return r.failAndHint(state.StatusFailed, ExitHumanNeeded,
+		return r.failWithCategory(state.StatusFailed, ExitHumanNeeded, state.FailCategoryCostOverrun,
+			fmt.Sprintf("run cost $%.2f exceeded limit $%.2f", r.Costs.TotalCost(), r.Config.MaxCost),
 			fmt.Errorf("run exceeded cost limit: $%.2f > $%.2f", r.Costs.TotalCost(), r.Config.MaxCost))
 	}
 
@@ -759,7 +787,8 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 			if len(missing) > 0 {
 				errMsg := fmt.Sprintf("missing outputs: %v", missing)
 				ux.PhaseFail(pi.idx, pi.phase.Name, errMsg)
-				return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("phase %q: %s", pi.phase.Name, errMsg))
+				return r.failWithCategory(state.StatusFailed, ExitRetryable, state.FailCategoryOutputMissing, errMsg,
+					fmt.Errorf("phase %q: %s", pi.phase.Name, errMsg))
 			}
 		}
 	}
@@ -789,7 +818,8 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 			switch action.Type {
 			case "abort":
 				r.printRunSummary(-1)
-				return r.failAndHint(state.StatusInterrupted, ExitSignal,
+				return r.failWithCategory(state.StatusInterrupted, ExitSignal, state.FailCategoryInterrupted,
+					"aborted by user in step-through mode",
 					fmt.Errorf("aborted by user in step-through mode"))
 			case "rewind":
 				idx, err := config.ResolvePhaseRef(action.Target, r.Config.Phases)
