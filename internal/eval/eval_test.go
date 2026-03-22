@@ -2,6 +2,7 @@ package eval
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -607,6 +608,70 @@ func TestLoadFixture_StrictYAML(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "parsing fixture.yaml") {
 		t.Errorf("error = %v, want message containing 'parsing fixture.yaml'", err)
+	}
+}
+
+func TestLoadFixture_VarShadowsBuiltin(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "fixture.yaml"),
+		"ref: abc123\nticket: T-001\nvars:\n  TICKET: override\n")
+	_, err := LoadFixture(dir)
+	if err == nil {
+		t.Fatal("expected error for var overriding built-in")
+	}
+	if !strings.Contains(err.Error(), "overrides a built-in variable") {
+		t.Errorf("error = %v, want message containing 'overrides a built-in variable'", err)
+	}
+}
+
+func TestLoadFixture_VarShadowsArtifactsDir(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "fixture.yaml"),
+		"ref: abc123\nticket: T-001\nvars:\n  ARTIFACTS_DIR: x\n")
+	_, err := LoadFixture(dir)
+	if err == nil {
+		t.Fatal("expected error for var overriding built-in")
+	}
+	if !strings.Contains(err.Error(), "overrides a built-in variable") {
+		t.Errorf("error = %v, want message containing 'overrides a built-in variable'", err)
+	}
+}
+
+func TestLoadRubric_JudgePromptNotFound(t *testing.T) {
+	dir := t.TempDir()
+	projectRoot := t.TempDir()
+	writeFile(t, filepath.Join(dir, "rubric.yaml"), `
+criteria:
+  - name: test
+    judge: true
+    weight: 1
+    prompt: .orc/prompts/nonexistent.md
+`)
+	_, err := LoadRubric(dir, projectRoot)
+	if err == nil {
+		t.Fatal("expected error for missing prompt file")
+	}
+	if !strings.Contains(err.Error(), "does not exist") {
+		t.Errorf("error = %v, want message containing 'does not exist'", err)
+	}
+}
+
+func TestRunEval_CaseNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".orc", "evals", "real-case"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(tmpDir, ".orc", "config.yaml")
+	writeFile(t, configPath, "phases: []\n")
+	_, _, err := RunEval(context.Background(), tmpDir, configPath, "", &config.Config{}, "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent case")
+	}
+	if !strings.Contains(err.Error(), "case not found") {
+		t.Errorf("error = %v, want message containing 'case not found'", err)
+	}
+	if !strings.Contains(err.Error(), "real-case") {
+		t.Errorf("error = %v, want message containing 'real-case'", err)
 	}
 }
 

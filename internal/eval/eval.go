@@ -90,6 +90,17 @@ func LoadFixture(caseDir string) (*Fixture, error) {
 	if !refRegex.MatchString(f.Ref) {
 		return nil, fmt.Errorf("eval: fixture.yaml: ref %q contains invalid characters", f.Ref)
 	}
+	builtins := map[string]bool{
+		"TICKET": true, "ARTIFACTS_DIR": true,
+		"WORK_DIR": true, "PROJECT_ROOT": true,
+		"PHASE_INDEX": true, "PHASE_COUNT": true,
+		"WORKFLOW": true,
+	}
+	for k := range f.Vars {
+		if builtins[k] {
+			return nil, fmt.Errorf("eval: fixture.yaml: var %q overrides a built-in variable", k)
+		}
+	}
 	return &f, nil
 }
 
@@ -133,6 +144,9 @@ func LoadRubric(caseDir, projectRoot string) (*Rubric, error) {
 			}
 			if !strings.HasPrefix(absPath, projectRoot+string(filepath.Separator)) {
 				return nil, fmt.Errorf("eval: rubric.yaml: criterion %q: prompt path escapes project root", c.Name)
+			}
+			if _, err := os.Stat(absPath); err != nil {
+				return nil, fmt.Errorf("eval: rubric.yaml: criterion %q: prompt file %q does not exist", c.Name, c.Prompt)
 			}
 		}
 		if c.Expect != "" {
@@ -203,7 +217,9 @@ func CreateWorktree(ctx context.Context, projectRoot, ref, caseName string) (str
 	cmd.WaitDelay = 5 * time.Second
 	if out, err := cmd.CombinedOutput(); err != nil {
 		os.RemoveAll(tmpDir)
-		pruneCmd := exec.CommandContext(ctx, "git", "worktree", "prune")
+		pruneCtx, pruneCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer pruneCancel()
+		pruneCmd := exec.CommandContext(pruneCtx, "git", "worktree", "prune")
 		pruneCmd.Dir = projectRoot
 		pruneCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 		pruneCmd.Cancel = func() error { return syscall.Kill(-pruneCmd.Process.Pid, syscall.SIGTERM) }
@@ -214,7 +230,7 @@ func CreateWorktree(ctx context.Context, projectRoot, ref, caseName string) (str
 	return tmpDir, nil
 }
 
-func RemoveWorktree(ctx context.Context, projectRoot, worktreePath string) error {
+func RemoveWorktree(projectRoot, worktreePath string) error {
 	removeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(removeCtx, "git", "worktree", "remove", "--force", worktreePath)
@@ -453,7 +469,7 @@ func (e *evalRunner) runCase(ctx context.Context, caseName string) (CaseResult, 
 	if err != nil {
 		return CaseResult{Name: caseName}, fmt.Errorf("eval: creating worktree for %q: %w", caseName, err)
 	}
-	defer RemoveWorktree(ctx, e.projectRoot, worktreePath) //nolint:errcheck
+	defer RemoveWorktree(e.projectRoot, worktreePath) //nolint:errcheck
 
 	if err := copyOrcDir(e.projectRoot, worktreePath, e.configPath, e.cfg); err != nil {
 		return CaseResult{Name: caseName}, fmt.Errorf("eval: copying .orc for %q: %w", caseName, err)
@@ -503,6 +519,16 @@ func RunEval(ctx context.Context, projectRoot, configPath, workflowName string, 
 
 	cases := allCases
 	if caseName != "" {
+		found := false
+		for _, c := range allCases {
+			if c == caseName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return "", nil, fmt.Errorf("eval: case not found %q (available: %s)", caseName, strings.Join(allCases, ", "))
+		}
 		cases = []string{caseName}
 	}
 
