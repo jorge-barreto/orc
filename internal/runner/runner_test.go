@@ -1655,12 +1655,8 @@ func TestRun_LoopCheckWithOnExhaust(t *testing.T) {
 	}
 	assertExitCode(t, err, ExitRetryable)
 
-	histEntries, err := os.ReadDir(filepath.Join(r.Env.ArtifactsDir, "history"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	runDir := filepath.Join(r.Env.ArtifactsDir, "history", histEntries[len(histEntries)-1].Name())
-	counts, err := state.LoadLoopCounts(runDir)
+	// Failed runs are not archived; load loop counts directly from artifacts dir.
+	counts, err := state.LoadLoopCounts(r.Env.ArtifactsDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2213,13 +2209,9 @@ func TestRun_PersistsSessionIDOnFailure(t *testing.T) {
 		t.Fatal("expected error")
 	}
 
-	// Load state from disk and verify session ID was persisted
-	histEntries, histErr := os.ReadDir(filepath.Join(r.Env.ArtifactsDir, "history"))
-	if histErr != nil {
-		t.Fatal(histErr)
-	}
-	runDir := filepath.Join(r.Env.ArtifactsDir, "history", histEntries[len(histEntries)-1].Name())
-	st, loadErr := state.Load(runDir)
+	// Load state from disk and verify session ID was persisted.
+	// Failed runs are not archived; load directly from artifacts dir.
+	st, loadErr := state.Load(r.Env.ArtifactsDir)
 	if loadErr != nil {
 		t.Fatal(loadErr)
 	}
@@ -3143,30 +3135,20 @@ func TestRun_ArchivesOnFailure(t *testing.T) {
 		t.Fatal("expected failure")
 	}
 
-	histDir := filepath.Join(artDir, "history")
-	entries, err := os.ReadDir(histDir)
-	if err != nil {
-		t.Fatalf("reading history dir: %v", err)
-	}
-	if len(entries) != 1 {
-		t.Fatalf("expected 1 history entry, got %d", len(entries))
-	}
-
-	runDir := filepath.Join(histDir, entries[0].Name())
-
-	st, err := state.Load(runDir)
-	if err != nil {
-		t.Fatalf("loading archived state: %v", err)
+	// state.json should still exist in the artifacts root (not archived)
+	st, loadErr := state.Load(artDir)
+	if loadErr != nil {
+		t.Fatalf("loading state: %v", loadErr)
 	}
 	if st.GetStatus() != state.StatusFailed {
-		t.Fatalf("archived status = %q, want %q", st.GetStatus(), state.StatusFailed)
+		t.Fatalf("status = %q, want %q", st.GetStatus(), state.StatusFailed)
 	}
 
-	if _, err := os.Stat(filepath.Join(runDir, "timing.json")); err != nil {
-		t.Fatalf("timing.json missing from archive: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(runDir, "costs.json")); err != nil {
-		t.Fatalf("costs.json missing from archive: %v", err)
+	// history/ should NOT exist — failed runs are not archived
+	histDir := filepath.Join(artDir, "history")
+	if _, err := os.Stat(histDir); err == nil {
+		entries, _ := os.ReadDir(histDir)
+		t.Fatalf("expected no history dir after failure, but found %d entries", len(entries))
 	}
 }
 
@@ -3181,11 +3163,11 @@ func TestRun_ArchivesStaleOnStart(t *testing.T) {
 	r := newTestRunner(t, cfg, mock)
 	artDir := r.Env.ArtifactsDir
 
-	// Pre-create artifacts dir and a stale state.json
+	// Pre-create artifacts dir with a stale state.json
 	if err := os.MkdirAll(artDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	staleState := &state.State{Status: state.StatusRunning}
+	staleState := &state.State{Status: state.StatusRunning, PhaseIndex: 1}
 	if err := staleState.Save(artDir); err != nil {
 		t.Fatal(err)
 	}
@@ -3195,13 +3177,14 @@ func TestRun_ArchivesStaleOnStart(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// history/ should have 2 entries: stale + new run
+	// Runner no longer archives stale state (moved to main.go).
+	// history/ should have exactly 1 entry (from successful completion only).
 	histDir := filepath.Join(artDir, "history")
 	entries, err := os.ReadDir(histDir)
 	if err != nil {
 		t.Fatalf("reading history dir: %v", err)
 	}
-	if len(entries) != 2 {
-		t.Fatalf("expected 2 history entries (stale + new run), got %d", len(entries))
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 history entry (completion only), got %d", len(entries))
 	}
 }

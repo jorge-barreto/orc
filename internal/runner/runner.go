@@ -80,14 +80,6 @@ func (r *Runner) failAndHint(status string, exitCode int, err error) error {
 			fmt.Fprintf(os.Stderr, "warning: failed to flush costs to artifacts: %v\n", flushErr)
 		}
 	}
-	if r.Env != nil {
-		if _, archiveErr := state.ArchiveRun(r.Env.ArtifactsDir); archiveErr != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to archive run: %v\n", archiveErr)
-		}
-		if pruneErr := state.PruneHistory(r.Env.ArtifactsDir, r.HistoryLimit); pruneErr != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to prune history: %v\n", pruneErr)
-		}
-	}
 	ux.ResumeHint(r.State.GetTicket(), r.State.GetSessionID() != "")
 	return &ExitError{Code: exitCode, Err: err}
 }
@@ -108,16 +100,6 @@ func (r *Runner) Run(ctx context.Context) error {
 
 	if err := state.EnsureDir(r.Env.ArtifactsDir); err != nil {
 		return setupErr(err)
-	}
-
-	// Archive stale artifacts from a previous run (e.g., after SIGKILL/OOM).
-	if state.HasState(r.Env.ArtifactsDir) {
-		state.ArchiveRun(r.Env.ArtifactsDir) // best-effort, ignore error
-		state.PruneHistory(r.Env.ArtifactsDir, r.HistoryLimit)
-		// Re-create directories that ArchiveRun removed
-		if err := state.EnsureDir(r.Env.ArtifactsDir); err != nil {
-			return setupErr(err)
-		}
 	}
 
 	// Initialize audit dir for costs, timing, and log archives
