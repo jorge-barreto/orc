@@ -1226,7 +1226,7 @@ Each phases[] entry:
   cost        string   Formatted cost or "—"
   cost_usd    float    Raw cost in USD
   tokens      int      Total tokens (input + output)
-  result      string   "Pass", "Fail", "Skipped", "Approved", or "Interrupted"
+  result      string   "Pass", "Fail", "Approved", or "Interrupted"
 
 Each loops[] entry:
   phase       string   Phase name
