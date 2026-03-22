@@ -52,7 +52,7 @@ var topics = []Topic{
 	{
 		Name:    "devtools",
 		Title:   "Developer Tools",
-		Summary: "orc test, debug, improve, flow, and doctor",
+		Summary: "orc test, debug, report, improve, flow, and doctor",
 		Content: topicDevtools,
 	},
 }
@@ -104,6 +104,9 @@ CLI Flags
   orc cancel <ticket>           Cancel run and remove all artifacts
   orc cancel <ticket> --force   Cancel even if a run appears active
   orc status <ticket>           Show workflow status for a ticket
+  orc report                    Generate a run report (most recent ticket)
+  orc report <ticket>           Report for a specific ticket
+  orc report --json             Structured JSON output
   orc doctor <ticket>           Diagnose a failed run using AI
   orc init                      Initialize .orc/ directory (AI-powered)
   orc init "description"        Guide AI generation with a description
@@ -1182,6 +1185,73 @@ produced unexpected results without manually reading raw log files.
   orc debug -w bugfix plan KS-42    Phase from a named workflow
 
 When no ticket is specified, analyzes the most recently executed ticket.
+
+orc report — Run Report
+------------------------
+Generate a readable summary of a completed, failed, or interrupted run.
+Shows status, timing, costs, phase outcomes, loop activity, and artifacts.
+
+  orc report                      Most recent ticket
+  orc report PROJ-123             Specific ticket
+  orc report --json               Structured JSON for tooling
+  orc report -w bugfix PROJ-123   Report for a named workflow
+
+When no ticket is specified, reports on the most recently executed ticket.
+Missing data (no costs, no timing) shows "—" placeholders.
+
+JSON Schema (schema_version: 1)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The --json output is a stable integration contract for CI pipelines and
+dashboards. Consumers should check the schema_version field to detect
+breaking changes.
+
+Top-level fields:
+  schema_version  int      Always 1 for this version
+  ticket          string   Ticket identifier (e.g. "PROJ-123")
+  workflow        string   Workflow name (omitted if default)
+  status          string   "Completed", "Failed", "Interrupted", or "Running"
+  duration        string   Total elapsed time (e.g. "23m 45s") or "—"
+  cost            string   Formatted cost + tokens (e.g. "$2.29 (90,000 tokens)") or "—"
+  total_cost_usd  float    Raw total cost in USD
+  total_tokens    int      Total input + output tokens
+  phases          array    Per-phase results (see below)
+  loops           array    Loop activity entries
+  artifacts       array    Artifact file names and sizes
+
+Each phases[] entry:
+  number      int      1-indexed phase number
+  name        string   Phase name
+  type        string   "agent", "script", or "gate"
+  duration    string   Formatted duration or "—"
+  cost        string   Formatted cost or "—"
+  cost_usd    float    Raw cost in USD
+  tokens      int      Total tokens (input + output)
+  result      string   "Pass", "Fail", "Skipped", "Approved", or "Interrupted"
+
+Each loops[] entry:
+  phase       string   Phase name
+  iterations  int      Number of loop iterations
+
+Each artifacts[] entry:
+  name        string   File name
+  size        string   Human-readable size (e.g. "4.2 KB")
+
+Example (abbreviated):
+  {
+    "schema_version": 1,
+    "ticket": "KS-42",
+    "status": "Completed",
+    "duration": "23m 45s",
+    "cost": "$2.29 (90,000 tokens)",
+    "total_cost_usd": 2.29,
+    "total_tokens": 90000,
+    "phases": [
+      {"number": 1, "name": "plan", "type": "agent", "duration": "4m 30s",
+       "cost": "$0.42", "cost_usd": 0.42, "tokens": 30000, "result": "Pass"}
+    ],
+    "loops": [],
+    "artifacts": [{"name": "plan.md", "size": "4.2 KB"}]
+  }
 
 orc doctor — AI-Powered Diagnostics
 -------------------------------------

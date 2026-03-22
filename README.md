@@ -47,6 +47,7 @@ You define your workflow as a series of **phases** in a YAML config file. Each p
 
 ### Observability
 - **Full audit trail**: Rendered prompts, agent logs, cost/token data, timing, and state all saved to `.orc/artifacts/`
+- **`orc report`**: Generate a run summary with timing, costs, phase outcomes, loop activity, and artifact listing — markdown or JSON
 - **Structured exit codes**: 0 (success), 1 (retryable), 2 (human needed), 3 (config error), 130 (interrupted)
 
 ## Prerequisites
@@ -174,6 +175,21 @@ Shows workflow progress. With a ticket argument, shows detailed phase-by-phase e
 orc status               # list all tickets
 orc status PROJ-123      # detailed view for one ticket
 ```
+
+### `orc report [ticket]`
+
+Generate a readable summary of a completed, failed, or interrupted run.
+
+```bash
+orc report                    # report for most recent ticket
+orc report PROJ-123           # report for a specific ticket
+orc report --json             # structured JSON output for tooling
+orc report -w bugfix PROJ-123 # report for a named workflow
+```
+
+Shows status, duration, cost, per-phase results, loop activity, and artifact listing.
+Missing data (no costs.json, no timing.json) shows "—" placeholders.
+Use `--json` for a stable, versioned JSON schema suitable for CI pipelines and dashboards.
 
 ### `orc docs [topic]`
 
