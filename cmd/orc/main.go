@@ -46,6 +46,7 @@ func main() {
 			statusCmd(),
 			historyCmd(),
 			statsCmd(),
+			evalCmd(),
 			reportCmd(),
 			doctorCmd(),
 			docsCmd(),
