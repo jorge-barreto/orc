@@ -130,3 +130,41 @@ func RenderCaseList(w io.Writer, projectRoot string) error {
 	}
 	return nil
 }
+
+// RenderCaseListJSON writes eval cases as JSON to w.
+func RenderCaseListJSON(w io.Writer, projectRoot string) error {
+	cases, err := DiscoverCases(projectRoot)
+	if err != nil {
+		return err
+	}
+	type caseInfo struct {
+		Name        string `json:"name"`
+		Description string `json:"description,omitempty"`
+	}
+	var items []caseInfo
+	for _, name := range cases {
+		caseDir := filepath.Join(projectRoot, ".orc", "evals", name)
+		fixture, err := LoadFixture(caseDir)
+		desc := ""
+		if err == nil {
+			desc = fixture.Description
+		}
+		items = append(items, caseInfo{Name: name, Description: desc})
+	}
+	data, err := json.MarshalIndent(items, "", "  ")
+	if err != nil {
+		return fmt.Errorf("eval: marshaling case list JSON: %w", err)
+	}
+	_, err = w.Write(data)
+	return err
+}
+
+// RenderHistoryJSON writes eval history as JSON to w.
+func RenderHistoryJSON(w io.Writer, h *History) error {
+	data, err := json.MarshalIndent(h, "", "  ")
+	if err != nil {
+		return fmt.Errorf("eval: marshaling history JSON: %w", err)
+	}
+	_, err = w.Write(data)
+	return err
+}

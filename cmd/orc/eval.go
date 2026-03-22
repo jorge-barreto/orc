@@ -24,7 +24,7 @@ func evalCmd() *cli.Command {
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			if os.Getenv("CLAUDECODE") != "" {
-				return fmt.Errorf("orc cannot run inside Claude Code")
+				return fmt.Errorf("orc cannot run inside Claude Code (CLAUDECODE env var is set). Run from a regular terminal")
 			}
 
 			projectRoot, err := findProjectRoot()
@@ -36,12 +36,18 @@ func evalCmd() *cli.Command {
 			// they are workflow-agnostic and must work in multi-workflow projects
 			// without -w flag.
 			if cmd.Bool("list") {
+				if cmd.Bool("json") {
+					return eval.RenderCaseListJSON(os.Stdout, projectRoot)
+				}
 				return eval.RenderCaseList(os.Stdout, projectRoot)
 			}
 			if cmd.Bool("report") {
 				h, err := eval.LoadHistory(projectRoot)
 				if err != nil {
 					return err
+				}
+				if cmd.Bool("json") {
+					return eval.RenderHistoryJSON(os.Stdout, h)
 				}
 				eval.RenderHistoryReport(os.Stdout, h)
 				return nil
