@@ -176,7 +176,7 @@ phases:
     description: Triage wave review findings into beads
     prompt: .orc/phases/triage.md
     model: sonnet
-    timeout: 5
+    timeout: 10
     condition: '[ "$(cat "$ORC_ARTIFACTS_DIR/run-mode.txt" 2>/dev/null)" = "wave" ]'
     outputs:
       - triage-results.md
