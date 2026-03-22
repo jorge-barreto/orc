@@ -10,6 +10,7 @@ import (
 
 	"github.com/jorge-barreto/orc/internal/config"
 	"github.com/jorge-barreto/orc/internal/eval"
+	"github.com/jorge-barreto/orc/internal/runner"
 	cli "github.com/urfave/cli/v3"
 )
 
@@ -25,17 +26,21 @@ func evalCmd() *cli.Command {
 			&cli.BoolFlag{Name: "json", Usage: "Output as structured JSON"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			cfgErr := func(err error) error {
+				return &runner.ExitError{Code: runner.ExitConfigError, Err: err}
+			}
+
 			if os.Getenv("CLAUDECODE") != "" {
-				return fmt.Errorf("orc cannot run inside Claude Code (CLAUDECODE env var is set). Run from a regular terminal")
+				return cfgErr(fmt.Errorf("orc cannot run inside Claude Code (CLAUDECODE env var is set). Run from a regular terminal"))
 			}
 
 			projectRoot, err := findProjectRoot()
 			if err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			if cmd.Bool("list") && cmd.Bool("report") {
-				return fmt.Errorf("--list and --report are mutually exclusive")
+				return cfgErr(fmt.Errorf("--list and --report are mutually exclusive"))
 			}
 
 			// --list and --report early-return BEFORE resolveWorkflow() —
@@ -65,18 +70,18 @@ func evalCmd() *cli.Command {
 			flagWorkflow := cmd.Root().String("workflow")
 			workflowName, configPath, err := resolveWorkflow(projectRoot, flagWorkflow)
 			if err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			cfg, err := config.Load(configPath, projectRoot)
 			if err != nil {
-				return fmt.Errorf("loading config: %w", err)
+				return cfgErr(fmt.Errorf("loading config: %w", err))
 			}
 
 			caseName := cmd.Args().First()
 			if caseName != "" {
 				if caseName != filepath.Base(caseName) || caseName == ".." || caseName == "." {
-					return fmt.Errorf("invalid case name %q: must not contain path separators", caseName)
+					return cfgErr(fmt.Errorf("invalid case name %q: must not contain path separators", caseName))
 				}
 			}
 
