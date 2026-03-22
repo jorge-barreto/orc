@@ -55,9 +55,9 @@ type PhaseStat struct {
 
 // FailureStat holds per-category failure statistics.
 type FailureStat struct {
-	Category string
-	Count    int
-	Percent  float64
+	Category string  `json:"category"`
+	Count    int     `json:"count"`
+	Percent  float64 `json:"percent"`
 }
 
 // WeekStat holds per-week aggregate statistics.

@@ -1,9 +1,12 @@
 package stats
 
 import (
+	"bytes"
+	"encoding/json"
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -463,5 +466,73 @@ func TestAggregate_SkipsRunning(t *testing.T) {
 	// Only completed + failed = 2 terminal runs
 	if s.TotalRuns != 2 {
 		t.Errorf("expected TotalRuns=2 (excluding running), got %d", s.TotalRuns)
+	}
+}
+
+func TestRenderJSON_RoundTrips(t *testing.T) {
+	s := &Stats{
+		TotalRuns:    5,
+		TotalTickets: 3,
+		DateRange:    "Mar 1 – Mar 22, 2026",
+		SuccessCount: 4,
+		SuccessRate:  80.0,
+		AvgCostUSD:   3.50,
+		P95CostUSD:   7.00,
+		AvgDuration:  10 * time.Minute,
+		P95Duration:  20 * time.Minute,
+		Phases: []PhaseStat{
+			{Name: "implement", AvgCostUSD: 1.5, AvgDuration: 5 * time.Minute, LoopRate: 0.4, AvgIters: 2.1, RunCount: 5},
+		},
+		Failures: []FailureStat{
+			{Category: "loop_exhaustion", Count: 1, Percent: 100.0},
+		},
+		Weeks: []WeekStat{
+			{WeekStart: time.Date(2026, 3, 16, 0, 0, 0, 0, time.UTC), AvgCost: 3.5, RunCount: 5},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := RenderJSON(&buf, s); err != nil {
+		t.Fatalf("RenderJSON error: %v", err)
+	}
+
+	var out map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("JSON unmarshal error: %v", err)
+	}
+
+	if got := out["total_runs"]; got != float64(5) {
+		t.Errorf("expected total_runs=5, got %v", got)
+	}
+	if got := out["success_rate"]; got != float64(80.0) {
+		t.Errorf("expected success_rate=80, got %v", got)
+	}
+	// Duration should be a string, not a number
+	if dur, ok := out["avg_duration"].(string); !ok || dur == "" {
+		t.Errorf("expected avg_duration to be a non-empty string, got %v", out["avg_duration"])
+	}
+	phases, ok := out["phases"].([]interface{})
+	if !ok || len(phases) != 1 {
+		t.Fatalf("expected 1 phase in JSON, got %v", out["phases"])
+	}
+	ph := phases[0].(map[string]interface{})
+	if ph["name"] != "implement" {
+		t.Errorf("expected phase name=implement, got %v", ph["name"])
+	}
+	if _, ok := ph["avg_duration"].(string); !ok {
+		t.Errorf("expected phase avg_duration to be a string, got %T", ph["avg_duration"])
+	}
+}
+
+func TestRenderText_NoRuns(t *testing.T) {
+	// Stats with zero runs should produce output with "—" placeholders (no panic)
+	s := &Stats{} // TotalRuns == 0
+
+	var buf bytes.Buffer
+	RenderText(&buf, s)
+	output := buf.String()
+
+	if !strings.Contains(output, "No audited runs found") {
+		t.Errorf("expected 'No audited runs found' in output, got:\n%s", output)
 	}
 }
