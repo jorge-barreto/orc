@@ -16,13 +16,25 @@ const (
 	StatusInterrupted = "interrupted"
 )
 
+const (
+	FailCategoryLoopExhaustion = "loop_exhaustion"
+	FailCategoryCostOverrun    = "cost_overrun"
+	FailCategoryGateRejection  = "gate_rejection"
+	FailCategoryScriptFailure  = "script_failure"
+	FailCategoryOutputMissing  = "output_missing"
+	FailCategoryInterrupted    = "interrupted"
+	FailCategoryAgentError     = "agent_error"
+)
+
 type State struct {
-	mu             sync.RWMutex
-	PhaseIndex     int    `json:"phase_index"`
-	Ticket         string `json:"ticket"`
-	Workflow       string `json:"workflow,omitempty"`
-	Status         string `json:"status"` // running, completed, failed, interrupted
-	PhaseSessionID string `json:"phase_session_id,omitempty"`
+	mu              sync.RWMutex
+	PhaseIndex      int    `json:"phase_index"`
+	Ticket          string `json:"ticket"`
+	Workflow        string `json:"workflow,omitempty"`
+	Status          string `json:"status"` // running, completed, failed, interrupted
+	PhaseSessionID  string `json:"phase_session_id,omitempty"`
+	FailureCategory string `json:"failure_category,omitempty"`
+	FailureDetail   string `json:"failure_detail,omitempty"`
 }
 
 func statePath(artifactsDir string) string {
@@ -140,6 +152,28 @@ func (s *State) SetSessionID(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.PhaseSessionID = id
+}
+
+// SetFailure sets the failure category and detail.
+func (s *State) SetFailure(category, detail string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.FailureCategory = category
+	s.FailureDetail = detail
+}
+
+// GetFailureCategory returns the failure category.
+func (s *State) GetFailureCategory() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.FailureCategory
+}
+
+// GetFailureDetail returns the failure detail.
+func (s *State) GetFailureDetail() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.FailureDetail
 }
 
 // TicketSummary holds the loaded state and cost data for one ticket.

@@ -98,6 +98,30 @@ func TestSaveAndLoad_RoundTrip_WithSessionID(t *testing.T) {
 	}
 }
 
+func TestSaveAndLoad_RoundTrip_WithFailure(t *testing.T) {
+	dir := t.TempDir()
+	original := &State{
+		PhaseIndex:      1,
+		Ticket:          "T-1",
+		Status:          StatusFailed,
+		FailureCategory: FailCategoryAgentError,
+		FailureDetail:   "non-zero exit",
+	}
+	if err := original.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.GetFailureCategory() != FailCategoryAgentError {
+		t.Fatalf("FailureCategory = %q, want %q", loaded.GetFailureCategory(), FailCategoryAgentError)
+	}
+	if loaded.GetFailureDetail() != "non-zero exit" {
+		t.Fatalf("FailureDetail = %q, want %q", loaded.GetFailureDetail(), "non-zero exit")
+	}
+}
+
 func TestSaveAndLoad_RoundTrip_WithWorkflow(t *testing.T) {
 	dir := t.TempDir()
 	original := &State{
@@ -153,6 +177,25 @@ func TestLoad_BackwardsCompatible_NoSessionID(t *testing.T) {
 	}
 	if st.PhaseSessionID != "" {
 		t.Fatalf("PhaseSessionID = %q, want empty for old format", st.PhaseSessionID)
+	}
+}
+
+func TestLoad_BackwardsCompatible_NoFailureCategory(t *testing.T) {
+	dir := t.TempDir()
+	// Write a state.json without failure fields (old format)
+	data := []byte(`{"phase_index":1,"ticket":"T-1","status":"failed"}`)
+	if err := os.WriteFile(filepath.Join(dir, "state.json"), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.GetFailureCategory() != "" {
+		t.Fatalf("FailureCategory = %q, want empty for old format", st.GetFailureCategory())
+	}
+	if st.GetFailureDetail() != "" {
+		t.Fatalf("FailureDetail = %q, want empty for old format", st.GetFailureDetail())
 	}
 }
 
@@ -371,7 +414,7 @@ func TestState_ConcurrentAccess(t *testing.T) {
 	s := &State{PhaseIndex: 0, Ticket: "T-1", Status: StatusRunning}
 	dir := t.TempDir()
 	var wg sync.WaitGroup
-	wg.Add(7)
+	wg.Add(8)
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 100; i++ {
@@ -417,6 +460,14 @@ func TestState_ConcurrentAccess(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < 100; i++ {
 			s.SetPhase(i % 10)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			s.SetFailure(FailCategoryAgentError, "test detail")
+			s.GetFailureCategory()
+			s.GetFailureDetail()
 		}
 	}()
 	wg.Wait()
