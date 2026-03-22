@@ -8,6 +8,7 @@ import (
 	"github.com/jorge-barreto/orc/internal/config"
 	"github.com/jorge-barreto/orc/internal/debug"
 	"github.com/jorge-barreto/orc/internal/report"
+	"github.com/jorge-barreto/orc/internal/runner"
 	"github.com/jorge-barreto/orc/internal/state"
 	cli "github.com/urfave/cli/v3"
 )
@@ -22,22 +23,26 @@ func reportCmd() *cli.Command {
 			&cli.BoolFlag{Name: "json", Usage: "Output as structured JSON"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			cfgErr := func(err error) error {
+				return &runner.ExitError{Code: runner.ExitConfigError, Err: err}
+			}
+
 			// 1. Find project root
 			projectRoot, err := findProjectRoot()
 			if err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			// 2. Resolve workflow
 			workflowName, configPath, err := resolveWorkflow(projectRoot, cmd.Root().String("workflow"))
 			if err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			// 3. Load config
 			cfg, err := config.Load(configPath, projectRoot)
 			if err != nil {
-				return fmt.Errorf("loading config: %w", err)
+				return cfgErr(fmt.Errorf("loading config: %w", err))
 			}
 
 			// 4. Resolve ticket: auto-discover if not provided
@@ -45,16 +50,16 @@ func reportCmd() *cli.Command {
 			if ticket == "" {
 				ticket, err = debug.FindMostRecentTicket(projectRoot, workflowName)
 				if err != nil {
-					return err
+					return cfgErr(err)
 				}
 			}
 
 			// 5. Validate ticket (both user-provided and auto-discovered)
 			if err := validateTicketPath(ticket); err != nil {
-				return err
+				return cfgErr(err)
 			}
 			if err := config.ValidateTicket(cfg.TicketPattern, ticket); err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			// 6. Compute directories
