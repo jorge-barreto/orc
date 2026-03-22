@@ -205,7 +205,7 @@ orc docs variables     # template variables and custom vars
 orc docs phases        # phase type details
 ```
 
-Topics: `quickstart`, `config`, `phases`, `variables`, `runner`, `artifacts`, `quality-loops`, `workflows`.
+Topics: `quickstart`, `config`, `phases`, `variables`, `runner`, `artifacts`, `quality-loops`, `workflows`, `eval`.
 
 ### `orc improve [instruction]`
 
