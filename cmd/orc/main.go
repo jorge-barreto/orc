@@ -44,6 +44,7 @@ func main() {
 			flowCmd(),
 			cancelCmd(),
 			statusCmd(),
+			historyCmd(),
 			reportCmd(),
 			doctorCmd(),
 			docsCmd(),
@@ -210,11 +211,12 @@ func runCmd() *cli.Command {
 			}
 
 			r := &runner.Runner{
-				Config:     cfg,
-				State:      st,
-				Env:        env,
-				Dispatcher: &dispatch.DefaultDispatcher{},
-				StepMode:   stepMode,
+				Config:       cfg,
+				State:        st,
+				Env:          env,
+				Dispatcher:   &dispatch.DefaultDispatcher{},
+				StepMode:     stepMode,
+				HistoryLimit: cfg.HistoryLimit,
 			}
 
 			// Handle --dry-run
@@ -243,10 +245,11 @@ func runCmd() *cli.Command {
 func cancelCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "cancel",
-		Usage:     "Cancel a ticket and remove all artifacts",
+		Usage:     "Cancel a ticket and archive artifacts to history (use --purge to remove everything)",
 		ArgsUsage: "<ticket>",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{Name: "force", Usage: "Cancel even if a run appears active"},
+			&cli.BoolFlag{Name: "purge", Usage: "Remove all artifacts including history"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			ticket := cmd.Args().First()
@@ -263,7 +266,7 @@ func cancelCmd() *cli.Command {
 			}
 
 			flagWorkflow := cmd.Root().String("workflow")
-			workflowName, _, err := resolveWorkflow(projectRoot, flagWorkflow)
+			workflowName, configPath, err := resolveWorkflow(projectRoot, flagWorkflow)
 			if err != nil {
 				return err
 			}
@@ -290,8 +293,23 @@ func cancelCmd() *cli.Command {
 				return fmt.Errorf("ticket %s appears to be running — Ctrl+C the process first, or use --force", ticket)
 			}
 
-			if err := os.RemoveAll(artifactsDir); err != nil {
-				return fmt.Errorf("removing artifacts: %w", err)
+			if cmd.Bool("purge") {
+				if err := os.RemoveAll(artifactsDir); err != nil {
+					return fmt.Errorf("removing artifacts: %w", err)
+				}
+			} else {
+				if _, err := state.ArchiveRun(artifactsDir); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to archive run to history: %v\n", err)
+				}
+				limit := 10
+				if configPath != "" {
+					if cfg, loadErr := config.Load(configPath, projectRoot); loadErr == nil {
+						limit = cfg.HistoryLimit
+					}
+				}
+				if pruneErr := state.PruneHistory(artifactsDir, limit); pruneErr != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to prune history: %v\n", pruneErr)
+				}
 			}
 
 			// Rotate audit dir so it's preserved but distinguishable from future runs
@@ -304,7 +322,11 @@ func cancelCmd() *cli.Command {
 				}
 			}
 
-			fmt.Printf("%s✓ Cancelled ticket %s — artifacts removed%s\n", ux.Green, ticket, ux.Reset)
+			if cmd.Bool("purge") {
+				fmt.Printf("%s✓ Cancelled ticket %s — all artifacts purged%s\n", ux.Green, ticket, ux.Reset)
+			} else {
+				fmt.Printf("%s✓ Cancelled ticket %s — artifacts archived to history%s\n", ux.Green, ticket, ux.Reset)
+			}
 			return nil
 		},
 	}
