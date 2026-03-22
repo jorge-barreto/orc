@@ -52,6 +52,42 @@ func appendPhaseLog(artifactsDir string, phaseIdx int, msg string) {
 	fmt.Fprint(f, msg)
 }
 
+// writePhaseMetadata writes structured metadata for a completed phase.
+// Errors are logged as warnings — metadata should not break the run.
+func writePhaseMetadata(artifactsDir string, phaseIdx int, meta *state.PhaseMetadata) {
+	if err := state.SaveMetadata(state.MetaPath(artifactsDir, phaseIdx), meta); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to write phase metadata: %v\n", err)
+	}
+}
+
+// buildPhaseMetadata constructs a PhaseMetadata from phase config and dispatch result.
+func buildPhaseMetadata(phase config.Phase, phaseIdx int, result *dispatch.Result, start time.Time) *state.PhaseMetadata {
+	end := time.Now()
+	meta := &state.PhaseMetadata{
+		PhaseName:    phase.Name,
+		PhaseType:    phase.Type,
+		PhaseIndex:   phaseIdx,
+		StartTime:    start,
+		EndTime:      end,
+		DurationSecs: end.Sub(start).Seconds(),
+	}
+	if phase.Type == "agent" {
+		meta.Model = phase.Model
+		meta.Effort = phase.Effort
+	}
+	if result != nil {
+		meta.ExitCode = result.ExitCode
+		meta.TimedOut = result.TimedOut
+		meta.SessionID = result.SessionID
+		meta.CostUSD = result.CostUSD
+		meta.InputTokens = result.InputTokens
+		meta.OutputTokens = result.OutputTokens
+		meta.ToolsUsed = result.ToolsUsed
+		meta.ToolsDenied = result.ToolsDenied
+	}
+	return meta
+}
+
 // failAndHint sets the failure status, saves state (warning on error),
 // flushes timing, prints a resume hint, and returns the given error.
 func (r *Runner) failAndHint(status string, exitCode int, err error) error {
@@ -213,6 +249,9 @@ mainLoop:
 		// Clear resume session ID after first dispatch (don't resume again on loop iterations)
 		r.Env.ResumeSessionID = ""
 
+		// Write structured metadata before archiving
+		writePhaseMetadata(r.Env.ArtifactsDir, i, buildPhaseMetadata(phase, i, result, start))
+
 		// Archive every attempt to audit (before any error/interrupt handling)
 		r.attemptCount[i]++
 		archivePhaseFiles(r.Env.ArtifactsDir, r.auditDir, i, r.attemptCount[i], phase.Outputs)
@@ -317,6 +356,7 @@ mainLoop:
 				if rePromptFn == nil {
 					rePromptFn = dispatch.RunAgentWithPrompt
 				}
+				reStart := time.Now()
 				reResult, reErr := rePromptFn(ctx, phase, r.Env, prompt, sessionID)
 				if reErr != nil {
 					fmt.Fprintf(os.Stderr, "warning: re-prompt for missing outputs failed: %v\n", reErr)
@@ -326,6 +366,10 @@ mainLoop:
 					if flushErr := r.Costs.Flush(r.auditDir); flushErr != nil {
 						fmt.Fprintf(os.Stderr, "warning: failed to flush costs: %v\n", flushErr)
 					}
+				}
+				// Write metadata for re-prompt dispatch
+				if reResult != nil {
+					writePhaseMetadata(r.Env.ArtifactsDir, i, buildPhaseMetadata(phase, i, reResult, reStart))
 				}
 				r.attemptCount[i]++
 				archivePhaseFiles(r.Env.ArtifactsDir, r.auditDir, i, r.attemptCount[i], phase.Outputs)
@@ -702,6 +746,8 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 	// TestRun_ParallelAttemptCountInvariant pins this invariant.
 	for pr := range results {
 		phase := r.Config.Phases[pr.idx]
+		// Write metadata before archiving
+		writePhaseMetadata(r.Env.ArtifactsDir, pr.idx, buildPhaseMetadata(phase, pr.idx, pr.result, start))
 		// Archive every parallel attempt to audit
 		r.attemptCount[pr.idx]++
 		archivePhaseFiles(r.Env.ArtifactsDir, r.auditDir, pr.idx, r.attemptCount[pr.idx], phase.Outputs)
@@ -856,6 +902,7 @@ func archivePhaseFiles(artifactsDir, auditDir string, phaseIdx, iteration int, o
 	copyFile(state.LogPath(artifactsDir, phaseIdx), state.AuditLogPath(auditDir, phaseIdx, iteration))
 	copyFile(state.PromptPath(artifactsDir, phaseIdx), state.AuditPromptPath(auditDir, phaseIdx, iteration))
 	copyFile(state.StreamLogPath(artifactsDir, phaseIdx), state.AuditStreamLogPath(auditDir, phaseIdx, iteration))
+	copyFile(state.MetaPath(artifactsDir, phaseIdx), state.AuditMetaPath(auditDir, phaseIdx, iteration))
 	for _, o := range outputs {
 		copyFile(filepath.Join(artifactsDir, o), state.AuditOutputPath(auditDir, phaseIdx, iteration, o))
 	}

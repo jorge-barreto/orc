@@ -3330,3 +3330,48 @@ func TestRun_FailureCategory_Interrupted(t *testing.T) {
 		t.Fatalf("FailureCategory = %q, want %q", got, state.FailCategoryInterrupted)
 	}
 }
+
+func TestRun_WritesPhaseMetadata(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "plan", Type: "agent", Prompt: "unused.md", Model: "sonnet"},
+		},
+	}
+	mock := newMock()
+	mock.results["plan"] = &dispatch.Result{
+		ExitCode:    0,
+		ToolsUsed:   []string{"Read", "Edit"},
+		ToolsDenied: []string{"Bash"},
+	}
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// After Run completes, ArchiveRun moves logs/ into history/.
+	// The audit dir has a stable copy of the meta file.
+	auditDir := state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket)
+	auditMetaPath := state.AuditMetaPath(auditDir, 0, 1)
+	meta, err := state.LoadMetadata(auditMetaPath)
+	if err != nil {
+		t.Fatalf("LoadMetadata from audit: %v", err)
+	}
+	if meta == nil {
+		t.Fatal("audit meta file not found at", auditMetaPath)
+	}
+	if meta.PhaseName != "plan" {
+		t.Errorf("PhaseName = %q, want %q", meta.PhaseName, "plan")
+	}
+	if meta.PhaseType != "agent" {
+		t.Errorf("PhaseType = %q, want %q", meta.PhaseType, "agent")
+	}
+	if len(meta.ToolsUsed) != 2 || meta.ToolsUsed[0] != "Read" || meta.ToolsUsed[1] != "Edit" {
+		t.Errorf("ToolsUsed = %v, want [Read Edit]", meta.ToolsUsed)
+	}
+	if len(meta.ToolsDenied) != 1 || meta.ToolsDenied[0] != "Bash" {
+		t.Errorf("ToolsDenied = %v, want [Bash]", meta.ToolsDenied)
+	}
+}
