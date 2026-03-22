@@ -81,6 +81,9 @@ func LoadFixture(caseDir string) (*Fixture, error) {
 		return nil, fmt.Errorf("eval: fixture.yaml: ticket is required")
 	}
 	// Path traversal check: ticket must be a simple filename, not a path
+	if f.Ticket == ".." || f.Ticket == "." {
+		return nil, fmt.Errorf("eval: fixture.yaml: ticket %q is not allowed", f.Ticket)
+	}
 	if f.Ticket != filepath.Base(f.Ticket) {
 		return nil, fmt.Errorf("eval: fixture.yaml: ticket %q must not contain path separators", f.Ticket)
 	}
@@ -195,10 +198,16 @@ func CreateWorktree(ctx context.Context, projectRoot, ref, caseName string) (str
 
 	cmd := exec.CommandContext(ctx, "git", "worktree", "add", tmpDir, ref)
 	cmd.Dir = projectRoot
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) }
+	cmd.WaitDelay = 5 * time.Second
 	if out, err := cmd.CombinedOutput(); err != nil {
 		os.RemoveAll(tmpDir)
 		pruneCmd := exec.CommandContext(ctx, "git", "worktree", "prune")
 		pruneCmd.Dir = projectRoot
+		pruneCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		pruneCmd.Cancel = func() error { return syscall.Kill(-pruneCmd.Process.Pid, syscall.SIGTERM) }
+		pruneCmd.WaitDelay = 5 * time.Second
 		pruneCmd.Run() //nolint:errcheck
 		return "", fmt.Errorf("eval: git worktree add: %w\n%s", err, out)
 	}
@@ -206,10 +215,13 @@ func CreateWorktree(ctx context.Context, projectRoot, ref, caseName string) (str
 }
 
 func RemoveWorktree(ctx context.Context, projectRoot, worktreePath string) error {
-	removeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	removeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(removeCtx, "git", "worktree", "remove", "--force", worktreePath)
 	cmd.Dir = projectRoot
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) }
+	cmd.WaitDelay = 5 * time.Second
 	cmd.Run() // ignore error — fallback below
 	return os.RemoveAll(worktreePath)
 }
@@ -448,7 +460,10 @@ func (e *evalRunner) runCase(ctx context.Context, caseName string) (CaseResult, 
 	}
 
 	runResult, _ := RunWorkflow(ctx, worktreePath, fixture.Ticket, e.workflowName, fixture.Vars)
-	criterionResults, _ := EvaluateRubric(ctx, rubric, runResult.ArtifactsDir, worktreePath, e.projectRoot)
+	criterionResults, rubricErr := EvaluateRubric(ctx, rubric, runResult.ArtifactsDir, worktreePath, e.projectRoot)
+	if rubricErr != nil {
+		fmt.Fprintf(os.Stderr, "  warning: rubric evaluation error for %q: %v\n", caseName, rubricErr)
+	}
 	score := ComputeScore(criterionResults, rubric)
 
 	details := make(map[string]float64)
@@ -519,11 +534,12 @@ func RunEval(ctx context.Context, projectRoot, configPath, workflowName string, 
 
 	history, err := LoadHistory(projectRoot)
 	if err != nil {
-		history = &History{}
-	}
-	history.AppendResult(fingerprint, results)
-	if err := SaveHistory(projectRoot, history); err != nil {
-		fmt.Fprintf(os.Stderr, "  warning: failed to save eval history: %v\n", err)
+		fmt.Fprintf(os.Stderr, "  warning: cannot load eval history, skipping save: %v\n", err)
+	} else {
+		history.AppendResult(fingerprint, results)
+		if err := SaveHistory(projectRoot, history); err != nil {
+			fmt.Fprintf(os.Stderr, "  warning: failed to save eval history: %v\n", err)
+		}
 	}
 
 	return fingerprint, results, nil
