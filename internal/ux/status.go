@@ -49,6 +49,19 @@ func RenderStatus(cfg *config.Config, st *state.State, artifactsDir, auditDir st
 		fmt.Printf("%sState:%s   %d/%d (%s) — %s\n",
 			Bold, Reset, st.GetPhaseIndex()+1, len(cfg.Phases), phase.Name, st.GetStatus())
 	}
+	if len(cfg.Phases) > 0 {
+		var bar string
+		var pct int
+		if st.GetPhaseIndex() >= len(cfg.Phases) {
+			pct = 100
+			bar = strings.Repeat("█", 20)
+		} else {
+			pct = (st.GetPhaseIndex() * 100) / len(cfg.Phases)
+			filled := (pct * 20) / 100
+			bar = strings.Repeat("█", filled) + strings.Repeat("░", 20-filled)
+		}
+		fmt.Printf("%sProgress:%s [%s] %d%%\n", Bold, Reset, bar, pct)
+	}
 	if cat := st.GetFailureCategory(); cat != "" {
 		fmt.Printf("%sFailure:%s %s", Bold, Reset, cat)
 		if detail := st.GetFailureDetail(); detail != "" {

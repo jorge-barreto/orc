@@ -376,6 +376,34 @@ func TestRenderStatus(t *testing.T) {
 			wantContains:    []string{"(none)"},
 			wantNotContains: []string{"Remaining:"},
 		},
+		{
+			name: "m progress bar for in-progress workflow",
+			cfg: &config.Config{Phases: []config.Phase{
+				{Name: "plan", Type: "agent"},
+				{Name: "implement", Type: "agent"},
+				{Name: "test", Type: "script"},
+				{Name: "review", Type: "agent"},
+			}},
+			st:           &state.State{PhaseIndex: 2, Ticket: "PROG-1", Status: state.StatusRunning},
+			wantContains: []string{"Progress:", "50%", "█", "░"},
+		},
+		{
+			name: "n completed workflow shows 100 percent",
+			cfg: &config.Config{Phases: []config.Phase{
+				{Name: "plan", Type: "agent"},
+				{Name: "implement", Type: "agent"},
+			}},
+			st: &state.State{PhaseIndex: 2, Ticket: "DONE-1", Status: state.StatusCompleted},
+			setupAudit: func(t *testing.T, dir string) {
+				now := time.Now()
+				writeTiming(t, dir, &state.Timing{Entries: []state.TimingEntry{
+					{Phase: "plan", Start: now, End: now.Add(60 * time.Second), Duration: "1m 00s"},
+					{Phase: "implement", Start: now, End: now.Add(90 * time.Second), Duration: "1m 30s"},
+				}})
+			},
+			wantContains:    []string{"Progress:", "100%"},
+			wantNotContains: []string{"░"},
+		},
 	}
 
 	for _, tt := range tests {
