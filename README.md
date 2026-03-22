@@ -337,7 +337,7 @@ Workflows are defined in `.orc/config.yaml`.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `name` | string | — | Unique phase name (required) |
+| `name` | string | — | Unique phase name (required). Must not contain path separators. |
 | `type` | string | — | `script`, `agent`, or `gate` (required) |
 | `description` | string | — | Human-readable description |
 | `run` | string | — | Shell command (required for `script`) |

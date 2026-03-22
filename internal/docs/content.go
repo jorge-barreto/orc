@@ -170,7 +170,8 @@ Top-level fields
 Phase fields
 ------------
 
-  name             string    Required. Unique phase name.
+  name             string    Required. Unique phase name. Must be a simple
+                             name (no path separators or '.' / '..').
   type             string    Required. "script", "agent", or "gate".
   description      string    Human-readable description.
   run              string    Shell command (required for script phases).
@@ -216,6 +217,7 @@ Validation Rules
 ----------------
 
 - Phase names must be unique.
+- Phase names must not contain path separators or be '.' / '..'.
 - loop.goto must reference an earlier phase (no forward jumps).
 - loop.max is required and means total iterations (not retries).
 - loop.on-exhaust.goto must reference an earlier phase.
