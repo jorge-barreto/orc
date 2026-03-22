@@ -284,16 +284,27 @@ If no findings in a category, write `None.`
 
 ---
 
-## Step 5: Synthesize Results
+## Step 5: Deduplicate Against Existing Beads
 
-After all subagents complete:
+Before writing findings, check what beads already exist so you don't report findings that are already tracked:
+
+```bash
+bd list --parent $TICKET --all          # all children of this wave (open and closed)
+bd list --type orphan           # search orphan beads too
+```
+
+For each candidate finding from the expert reports, check whether an existing bead already covers the same file, same issue, or same area — even if the title or wording differs. Drop any finding that is already tracked. This is critical to prevent duplicate bead creation downstream.
+
+## Step 6: Synthesize Results
+
+After deduplication:
 
 1. Read all report files from `$ARTIFACTS_DIR/reviews/`
-2. Compile all BLOCKING findings → these become **Bugs** (current wave beads)
-3. Compile all WARNING findings → evaluate: bugs or improvements?
-4. Compile all NOTE findings → these become **Improvements** (future work)
-5. Deduplicate: if 2+ experts flag the same issue, note it as "high confidence"
-6. Identify test gaps from E6 and E7
+2. Compile all BLOCKING findings not already covered by existing beads → **Bugs**
+3. Compile all WARNING findings not already covered → evaluate: bugs or improvements?
+4. Compile all NOTE findings not already covered → **Improvements**
+5. Deduplicate across experts: if 2+ experts flag the same issue, note it as "high confidence"
+6. Identify test gaps from E6 and E7 not already covered
 
 ## Step 6: Write Findings
 
