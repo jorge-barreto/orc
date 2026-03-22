@@ -435,7 +435,7 @@ orc creates a `.orc/artifacts/<ticket>/` directory per ticket to store all run d
 
 ```
 .orc/artifacts/<ticket>/
-├── state.json              # Current run state (phase_index, ticket, status)
+├── state.json              # Current run state (phase_index, ticket, status, failure_category)
 ├── costs.json              # Per-phase cost and token counts
 ├── timing.json             # Per-phase timing data
 ├── loop-counts.json        # Persisted loop iteration counters

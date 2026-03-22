@@ -762,8 +762,11 @@ state.json
 ----------
 
 Tracks the current phase index, ticket identifier, workflow status
-(running, completed, failed, interrupted), and the Claude session ID
-for interrupted agent phases (used by --resume). Written atomically
+(running, completed, failed, interrupted), the Claude session ID
+for interrupted agent phases (used by --resume), and for failed/interrupted
+runs, a failure_category (loop_exhaustion, cost_overrun, gate_rejection,
+script_failure, output_missing, interrupted, agent_error) and optional
+failure_detail with a human-readable description. Written atomically
 after every phase.
 
 timing.json
