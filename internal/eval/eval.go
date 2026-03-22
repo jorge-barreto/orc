@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -12,10 +13,12 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/jorge-barreto/orc/internal/config"
+	"github.com/jorge-barreto/orc/internal/state"
 )
 
 type Fixture struct {
@@ -236,4 +239,251 @@ func copyFile(src, dst string) error {
 		return fmt.Errorf("eval: copyFile: reading %s: %w", src, err)
 	}
 	return os.WriteFile(dst, data, 0o644)
+}
+
+// RunResult holds the outcome of running orc in a worktree.
+type RunResult struct {
+	ArtifactsDir    string
+	CostUSD         float64
+	DurationSeconds float64
+	Status          string
+	Err             error
+}
+
+// HistoryEntry holds one eval run's summary.
+type HistoryEntry struct {
+	Timestamp         string                      `json:"timestamp"`
+	ConfigFingerprint string                      `json:"config_fingerprint"`
+	Cases             map[string]CaseHistoryEntry `json:"cases"`
+}
+
+// CaseHistoryEntry holds the persisted result for one case.
+type CaseHistoryEntry struct {
+	Score           int                `json:"score"`
+	CostUSD         float64            `json:"cost_usd"`
+	DurationSeconds float64            `json:"duration_seconds"`
+	Details         map[string]float64 `json:"details"`
+}
+
+// History holds all historical eval runs.
+type History struct {
+	Runs []HistoryEntry `json:"runs"`
+}
+
+// RunWorkflow executes orc in the given worktree and returns the result.
+// It never returns a non-nil error — partial results are always returned
+// so the rubric evaluator can still run.
+func RunWorkflow(ctx context.Context, worktreePath, ticket, workflowName string, vars map[string]string) (*RunResult, error) {
+	orcBinary, _ := os.Executable()
+	args := []string{"run", ticket, "--auto"}
+	if workflowName != "" {
+		args = append(args, "-w", workflowName)
+	}
+	cmd := exec.CommandContext(ctx, orcBinary, args...)
+	cmd.Dir = worktreePath
+
+	// Build env: inherit, strip CLAUDECODE/ORC_*, add fixture vars
+	env := make([]string, 0, len(os.Environ())+len(vars)*2)
+	for _, kv := range os.Environ() {
+		idx := strings.IndexByte(kv, '=')
+		if idx < 0 {
+			continue
+		}
+		key := kv[:idx]
+		if strings.HasPrefix(key, "CLAUDECODE") || strings.HasPrefix(key, "ORC_") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	for k, v := range vars {
+		env = append(env, k+"="+v)
+		env = append(env, "ORC_"+k+"="+v)
+	}
+	cmd.Env = env
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	runErr := cmd.Run()
+
+	artifactsDir := state.ArtifactsDirForWorkflow(worktreePath, workflowName, ticket)
+	costs, _ := state.LoadCosts(artifactsDir)
+	timing, _ := state.LoadTiming(artifactsDir)
+
+	status := "failed"
+	if runErr == nil {
+		if st, err := state.Load(artifactsDir); err == nil {
+			status = st.GetStatus()
+		} else {
+			status = "completed"
+		}
+	}
+
+	result := &RunResult{
+		ArtifactsDir: artifactsDir,
+		Status:       status,
+		Err:          runErr,
+	}
+	if costs != nil {
+		result.CostUSD = costs.TotalCostUSD
+	}
+	if timing != nil {
+		result.DurationSeconds = timing.TotalElapsed().Seconds()
+	}
+	return result, nil
+}
+
+// LoadHistory reads the eval history from projectRoot/.orc/eval-history.json.
+// Returns an empty History if the file does not exist.
+func LoadHistory(projectRoot string) (*History, error) {
+	path := filepath.Join(projectRoot, ".orc", "eval-history.json")
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return &History{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("eval: reading eval-history.json: %w", err)
+	}
+	var h History
+	if err := json.Unmarshal(data, &h); err != nil {
+		return nil, fmt.Errorf("eval: parsing eval-history.json: %w", err)
+	}
+	return &h, nil
+}
+
+// SaveHistory writes the eval history atomically.
+func SaveHistory(projectRoot string, h *History) error {
+	path := filepath.Join(projectRoot, ".orc", "eval-history.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("eval: creating .orc dir: %w", err)
+	}
+	data, err := json.MarshalIndent(h, "", "  ")
+	if err != nil {
+		return fmt.Errorf("eval: marshaling history: %w", err)
+	}
+	return state.WriteFileAtomic(path, data, 0644)
+}
+
+// AppendResult adds a new history entry from the given case results.
+func (h *History) AppendResult(fingerprint string, cases []CaseResult) {
+	entry := HistoryEntry{
+		Timestamp:         time.Now().UTC().Format(time.RFC3339),
+		ConfigFingerprint: fingerprint,
+		Cases:             make(map[string]CaseHistoryEntry),
+	}
+	for _, c := range cases {
+		entry.Cases[c.Name] = CaseHistoryEntry{
+			Score:           c.Score,
+			CostUSD:         c.CostUSD,
+			DurationSeconds: c.DurationSeconds,
+			Details:         c.Details,
+		}
+	}
+	h.Runs = append(h.Runs, entry)
+}
+
+// evalRunner scopes per-case execution so defer works correctly.
+type evalRunner struct {
+	projectRoot  string
+	configPath   string
+	workflowName string
+	cfg          *config.Config
+}
+
+func (e *evalRunner) runCase(ctx context.Context, caseName string) (CaseResult, error) {
+	caseDir := filepath.Join(e.projectRoot, ".orc", "evals", caseName)
+
+	fixture, err := LoadFixture(caseDir)
+	if err != nil {
+		return CaseResult{Name: caseName}, fmt.Errorf("eval: loading fixture for %q: %w", caseName, err)
+	}
+	rubric, err := LoadRubric(caseDir, e.projectRoot)
+	if err != nil {
+		return CaseResult{Name: caseName}, fmt.Errorf("eval: loading rubric for %q: %w", caseName, err)
+	}
+
+	worktreePath, err := CreateWorktree(ctx, e.projectRoot, fixture.Ref, caseName)
+	if err != nil {
+		return CaseResult{Name: caseName}, fmt.Errorf("eval: creating worktree for %q: %w", caseName, err)
+	}
+	defer RemoveWorktree(e.projectRoot, worktreePath) //nolint:errcheck
+
+	if err := copyOrcDir(e.projectRoot, worktreePath, e.configPath, e.cfg); err != nil {
+		return CaseResult{Name: caseName}, fmt.Errorf("eval: copying .orc for %q: %w", caseName, err)
+	}
+
+	runResult, _ := RunWorkflow(ctx, worktreePath, fixture.Ticket, e.workflowName, fixture.Vars)
+	criterionResults, _ := EvaluateRubric(ctx, rubric, runResult.ArtifactsDir, worktreePath, e.projectRoot)
+	score := ComputeScore(criterionResults, rubric)
+
+	details := make(map[string]float64)
+	var failures []string
+	passCount := 0
+	for _, cr := range criterionResults {
+		details[cr.Name] = cr.Score
+		if cr.Pass {
+			passCount++
+		} else {
+			failures = append(failures, cr.Name+": "+cr.Detail)
+		}
+	}
+
+	result := CaseResult{
+		Name:            caseName,
+		Score:           score,
+		CostUSD:         runResult.CostUSD,
+		DurationSeconds: runResult.DurationSeconds,
+		PassCount:       passCount,
+		TotalCount:      len(criterionResults),
+		Failures:        failures,
+		Details:         details,
+	}
+	if runResult.Err != nil {
+		result.WorkflowErr = runResult.Err.Error()
+	}
+	return result, nil
+}
+
+// RunEval discovers eval cases, runs each sequentially, persists history, and returns results.
+func RunEval(ctx context.Context, projectRoot, configPath, workflowName string, cfg *config.Config, caseName string) (string, []CaseResult, error) {
+	allCases, err := DiscoverCases(projectRoot)
+	if err != nil {
+		return "", nil, err
+	}
+
+	cases := allCases
+	if caseName != "" {
+		cases = []string{caseName}
+	}
+
+	fingerprint, err := ConfigFingerprint(configPath, cfg, projectRoot)
+	if err != nil {
+		return "", nil, fmt.Errorf("eval: computing fingerprint: %w", err)
+	}
+
+	fmt.Printf("\n  orc eval — %d cases, config fingerprint %s\n\n", len(cases), fingerprint)
+
+	runner := &evalRunner{
+		projectRoot:  projectRoot,
+		configPath:   configPath,
+		workflowName: workflowName,
+		cfg:          cfg,
+	}
+
+	var results []CaseResult
+	for _, name := range cases {
+		result, err := runner.runCase(ctx, name)
+		if err != nil {
+			fmt.Printf("  warning: case %q failed: %v\n", name, err)
+		}
+		results = append(results, result)
+	}
+
+	history, err := LoadHistory(projectRoot)
+	if err != nil {
+		history = &History{}
+	}
+	history.AppendResult(fingerprint, results)
+	_ = SaveHistory(projectRoot, history)
+
+	return fingerprint, results, nil
 }
