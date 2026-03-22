@@ -379,3 +379,29 @@ func TestStreamLogPath(t *testing.T) {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }
+
+func TestMetaPath(t *testing.T) {
+	got := MetaPath("/art", 0)
+	want := filepath.Join("/art", "logs", "phase-1.meta.json")
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	got = MetaPath("/art", 4)
+	want = filepath.Join("/art", "logs", "phase-5.meta.json")
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestAuditMetaPath(t *testing.T) {
+	got := AuditMetaPath("/audit", 0, 1)
+	want := filepath.Join("/audit", "logs", "phase-1.iter-1.meta.json")
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	got = AuditMetaPath("/audit", 4, 3)
+	want = filepath.Join("/audit", "logs", "phase-5.iter-3.meta.json")
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}

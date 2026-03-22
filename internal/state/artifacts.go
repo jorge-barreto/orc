@@ -205,6 +205,16 @@ func StreamLogPath(artifactsDir string, idx int) string {
 	return filepath.Join(artifactsDir, "logs", fmt.Sprintf("phase-%d.stream.jsonl", idx+1))
 }
 
+// MetaPath returns the path for a phase metadata file.
+func MetaPath(artifactsDir string, idx int) string {
+	return filepath.Join(artifactsDir, "logs", fmt.Sprintf("phase-%d.meta.json", idx+1))
+}
+
+// AuditMetaPath returns the path for an archived metadata file in the audit dir.
+func AuditMetaPath(auditDir string, phaseIdx, iteration int) string {
+	return filepath.Join(auditDir, "logs", fmt.Sprintf("phase-%d.iter-%d.meta.json", phaseIdx+1, iteration))
+}
+
 // AuditBaseDir returns the base audit directory for the project.
 func AuditBaseDir(projectRoot string) string {
 	return filepath.Join(projectRoot, ".orc", "audit")
