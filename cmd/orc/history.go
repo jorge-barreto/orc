@@ -69,8 +69,8 @@ func historyCmd() *cli.Command {
 			}
 
 			fmt.Printf("\n  %sRun history for %s%s (%d entries)\n\n", ux.Bold, ticket, ux.Reset, len(entries))
-			fmt.Printf("  %-26s  %-12s  %-10s  %s\n", "Run ID", "Status", "Duration", "Cost")
-			fmt.Printf("  %-26s  %-12s  %-10s  %s\n", "------", "------", "--------", "----")
+			fmt.Printf("  %-26s  %-30s  %-10s  %s\n", "Run ID", "Status", "Duration", "Cost")
+			fmt.Printf("  %-26s  %-30s  %-10s  %s\n", "------", "------", "--------", "----")
 			for _, e := range entries {
 				elapsed := "—"
 				if e.Elapsed > 0 {
@@ -80,7 +80,11 @@ func historyCmd() *cli.Command {
 				if e.CostUSD > 0 {
 					cost = fmt.Sprintf("$%.2f", e.CostUSD)
 				}
-				fmt.Printf("  %-26s  %-12s  %-10s  %s\n", e.RunID, e.Status, elapsed, cost)
+				status := e.Status
+				if e.FailureCategory != "" {
+					status += " (" + e.FailureCategory + ")"
+				}
+				fmt.Printf("  %-26s  %-30s  %-10s  %s\n", e.RunID, status, elapsed, cost)
 			}
 			fmt.Println()
 			return nil

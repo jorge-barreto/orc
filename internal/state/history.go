@@ -13,12 +13,13 @@ import (
 
 // HistoryEntry holds metadata for a single archived run.
 type HistoryEntry struct {
-	RunID   string
-	Dir     string
-	Status  string
-	Ticket  string
-	Elapsed time.Duration
-	CostUSD float64
+	RunID           string
+	Dir             string
+	Status          string
+	Ticket          string
+	Elapsed         time.Duration
+	CostUSD         float64
+	FailureCategory string
 }
 
 // HistoryDir returns the path to the history directory within artifactsDir.
@@ -181,12 +182,13 @@ func ListHistory(artifactsDir string) ([]HistoryEntry, error) {
 		}
 
 		result = append(result, HistoryEntry{
-			RunID:   e.Name(),
-			Dir:     entryDir,
-			Status:  st.GetStatus(),
-			Ticket:  st.GetTicket(),
-			Elapsed: elapsed,
-			CostUSD: costUSD,
+			RunID:           e.Name(),
+			Dir:             entryDir,
+			Status:          st.GetStatus(),
+			Ticket:          st.GetTicket(),
+			Elapsed:         elapsed,
+			CostUSD:         costUSD,
+			FailureCategory: st.GetFailureCategory(),
 		})
 	}
 
