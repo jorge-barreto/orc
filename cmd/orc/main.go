@@ -44,6 +44,7 @@ func main() {
 			flowCmd(),
 			cancelCmd(),
 			statusCmd(),
+			reportCmd(),
 			doctorCmd(),
 			docsCmd(),
 			improveCmd(),
