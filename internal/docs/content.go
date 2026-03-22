@@ -52,8 +52,14 @@ var topics = []Topic{
 	{
 		Name:    "devtools",
 		Title:   "Developer Tools",
-		Summary: "orc test, debug, report, improve, flow, and doctor",
+		Summary: "orc test, debug, report, improve, eval, flow, and doctor",
 		Content: topicDevtools,
+	},
+	{
+		Name:    "eval",
+		Title:   "Eval Framework",
+		Summary: "Measure workflow quality with eval cases and rubrics",
+		Content: topicEval,
 	},
 }
 
@@ -1384,6 +1390,132 @@ Typical Workflow for Prompt Iteration
 4. Repeat until satisfied
 5. Run the full workflow:      orc run KS-42
 6. If it fails:                orc doctor KS-42
+`
+
+const topicEval = `Eval Framework
+==============
+
+orc eval measures workflow quality empirically. Define eval cases under
+.orc/evals/ — each case pins to a known git ref, runs the workflow in an
+isolated git worktree, and scores results against a rubric. Track scores,
+cost, and duration across config changes.
+
+Why it matters: it's easy to accidentally regress quality when tweaking
+prompts. orc eval gives you a before/after score so you can iterate with
+confidence.
+
+  orc eval                     Run all eval cases
+  orc eval bug-fix             Run a specific case
+  orc eval --report            Show score history across config versions
+  orc eval --list              List available eval cases
+  orc eval --json              Structured JSON output
+
+Eval Case Structure
+-------------------
+
+Each case lives in .orc/evals/<case-name>/:
+
+  .orc/evals/
+  └── bug-fix/
+      ├── fixture.yaml     Git ref + ticket to replay
+      └── rubric.yaml      Scoring criteria
+
+fixture.yaml
+------------
+
+  ref: abc123f              Git ref to check out (branch, tag, commit SHA)
+  ticket: BUG-42            Ticket identifier passed to orc run
+  description: "Fix the parser bug"   Optional human-readable description
+  vars:                     Optional extra variables passed to the workflow
+    EXTRA: value
+
+Fields:
+  ref        Required. Any valid git ref — branch, tag, or commit SHA.
+             Must match ^[A-Za-z0-9._/~^{}-]+$ (no shell metacharacters).
+  ticket     Required. Must be a simple name (no path separators).
+  description Optional. Shown by orc eval --list.
+  vars       Optional. Key-value pairs injected as env vars into the workflow
+             (available as both KEY and ORC_KEY).
+
+rubric.yaml
+-----------
+
+  criteria:
+    - name: tests-pass
+      check: "test -f $ARTIFACTS_DIR/test-results.txt && grep -q PASS $ARTIFACTS_DIR/test-results.txt"
+      expect: "exit 0"
+      weight: 3
+
+    - name: quality
+      judge: true
+      prompt: .orc/evals/bug-fix/quality-prompt.md
+      expect: ">= 7"
+      weight: 2
+
+Criterion types:
+
+  script criteria (check field):
+    check     Bash command run in the worktree with ARTIFACTS_DIR and WORK_DIR set.
+    expect    "exit 0" — pass if the command exits with code 0.
+    weight    Relative weight for composite score (e.g. 3 = 3x as important as weight 1).
+
+  judge criteria (judge: true):
+    judge     true — use Claude sonnet as a judge.
+    prompt    Path to a judge prompt file (relative to project root).
+              The prompt should instruct the judge to output "SCORE: N" (0-10).
+    expect    Comparison against the raw score: ">= 7", "> 5", "<= 3", "< 5", "== 10".
+    weight    Relative weight for composite score.
+
+Score Report
+------------
+
+orc eval prints a score table after running all cases:
+
+  orc eval — 3 cases, config fingerprint a1b2c3
+
+  CASE            SCORE    COST      TIME       PASS/FAIL
+  bug-fix         85/100   $1.20     8m 12s     5/5 pass
+  new-feature     62/100   $4.80     22m 03s    3/5 pass (tests-pass: FAIL, quality: 4/10)
+  refactor        78/100   $2.10     14m 30s    4/5 pass (quality: 6/10)
+
+  Totals: 75/100 avg, $8.10 total cost, 44m 45s total time
+
+SCORE is a weighted composite (0-100). Each criterion contributes
+criterion_score * weight / total_weight * 100, rounded to the nearest integer.
+
+Config Fingerprint
+------------------
+
+The config fingerprint is a short hash (8 hex chars) of the workflow config
+and all referenced prompt files. It changes whenever you edit config.yaml or
+any prompt — making it easy to correlate score changes to config changes in
+the history report.
+
+History Tracking
+----------------
+
+Results are persisted to .orc/eval-history.json after every run, keyed by
+config fingerprint. Use --report to view score trends:
+
+  orc eval --report
+
+  orc eval --report — score history
+
+  FINGERPRINT  DATE          AVG SCORE  TOTAL COST  TOTAL TIME
+  a1b2c3       Mar 01 15:30  75/100     $8.10       44m 45s
+  d4e5f6       Feb 28 10:15  68/100     $12.30      52m 18s
+
+This lets you see at a glance whether a config change improved or regressed
+quality, and at what cost.
+
+Typical Workflow for Prompt Iteration
+--------------------------------------
+
+1. Define eval cases in .orc/evals/ for representative scenarios
+2. Run baseline:    orc eval
+3. Edit a prompt or config
+4. Run again:       orc eval
+5. Compare:         orc eval --report
 `
 
 // SchemaReference returns the combined config schema, phase types, and
