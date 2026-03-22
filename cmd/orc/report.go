@@ -61,19 +61,20 @@ func reportCmd() *cli.Command {
 			artifactsDir := state.ArtifactsDirForWorkflow(projectRoot, workflowName, ticket)
 			auditDir := state.AuditDirForWorkflow(projectRoot, workflowName, ticket)
 
-			// 7. Check state exists before loading
-			if !state.HasState(artifactsDir) {
+			// 7. Resolve state directory: live artifacts or latest history entry
+			stateDir, err := resolveStateDir(artifactsDir)
+			if err != nil {
 				return fmt.Errorf("no run found for ticket %s", ticket)
 			}
 
 			// 8. Load state
-			st, err := state.Load(artifactsDir)
+			st, err := state.Load(stateDir)
 			if err != nil {
 				return fmt.Errorf("loading state: %w", err)
 			}
 
 			// 9. Build report
-			data, err := report.Build(artifactsDir, auditDir, st, cfg.Phases)
+			data, err := report.Build(stateDir, auditDir, st, cfg.Phases)
 			if err != nil {
 				return fmt.Errorf("building report: %w", err)
 			}
@@ -86,4 +87,21 @@ func reportCmd() *cli.Command {
 			return nil
 		},
 	}
+}
+
+// resolveStateDir finds the directory containing state.json for a ticket.
+// It checks the live artifacts directory first, then falls back to the
+// latest history entry. Returns an error if no state is found anywhere.
+func resolveStateDir(artifactsDir string) (string, error) {
+	if state.HasState(artifactsDir) {
+		return artifactsDir, nil
+	}
+	histDir, err := state.LatestHistoryDir(artifactsDir)
+	if err != nil {
+		return "", fmt.Errorf("checking history: %w", err)
+	}
+	if histDir == "" || !state.HasState(histDir) {
+		return "", fmt.Errorf("no state found")
+	}
+	return histDir, nil
 }
