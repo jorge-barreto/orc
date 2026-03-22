@@ -326,6 +326,51 @@ func TestRun_AgentPhase(t *testing.T) {
 	}
 }
 
+func TestRun_ArchivedRun(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(dir, "prompt.md"), []byte("Build the feature.\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	configPath := filepath.Join(dir, "config.yaml")
+	configYAML := "name: test\nphases:\n  - name: plan\n    type: agent\n    prompt: prompt.md\n"
+	if err := os.WriteFile(configPath, []byte(configYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.Load(configPath, dir)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+
+	// Create artifacts in history subdir; live dir is empty (no state.json)
+	artifactsDir := filepath.Join(dir, ".orc", "artifacts", "TEST-1")
+	histDir := filepath.Join(artifactsDir, "history", "2026-01-01T00-00-00.000")
+	logsDir := filepath.Join(histDir, "logs")
+	promptsDir := filepath.Join(histDir, "prompts")
+	if err := os.MkdirAll(logsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(promptsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	logContent := "⚡ Read file.go\nsome output\n"
+	os.WriteFile(filepath.Join(logsDir, "phase-1.log"), []byte(logContent), 0644)
+	os.WriteFile(filepath.Join(promptsDir, "phase-1.md"), []byte("rendered prompt\n"), 0644)
+	os.WriteFile(filepath.Join(histDir, "state.json"),
+		[]byte(`{"phase_index":1,"ticket":"TEST-1","status":"completed"}`), 0644)
+	os.WriteFile(filepath.Join(histDir, "timing.json"),
+		[]byte(`{"entries":[{"phase":"plan","start":"2026-01-01T00:00:00Z","end":"2026-01-01T00:01:00Z","duration":"1m 00s"}]}`), 0644)
+	os.WriteFile(filepath.Join(histDir, "costs.json"),
+		[]byte(`{"phases":[{"name":"plan","phase_index":0,"cost_usd":0.05,"input_tokens":1000,"output_tokens":500}],"total_cost_usd":0.05}`), 0644)
+
+	if err := Run(dir, cfg, 0, "TEST-1", ""); err != nil {
+		t.Errorf("Run returned error for archived run: %v", err)
+	}
+}
+
 func TestRun_ScriptPhase(t *testing.T) {
 	dir := t.TempDir()
 

@@ -232,9 +232,18 @@ func determineExitStatus(logPath, artifactsDir string, phaseIdx int, phaseName s
 func Run(projectRoot string, cfg *config.Config, phaseIdx int, ticket, workflow string) error {
 	artifactsDir := state.ArtifactsDirForWorkflow(projectRoot, workflow, ticket)
 	auditDir := state.AuditDirForWorkflow(projectRoot, workflow, ticket)
+
+	// Resolve state directory: live artifacts or latest history entry
+	stateDir := artifactsDir
+	if !state.HasState(artifactsDir) {
+		if histDir, err := state.LatestHistoryDir(artifactsDir); err == nil && histDir != "" {
+			stateDir = histDir
+		}
+	}
+
 	phase := cfg.Phases[phaseIdx]
 
-	logPath := state.LogPath(artifactsDir, phaseIdx)
+	logPath := state.LogPath(stateDir, phaseIdx)
 	if _, err := os.Stat(logPath); err != nil {
 		return fmt.Errorf("no log file found for phase %d (%s) — has this phase been executed for ticket %s?",
 			phaseIdx+1, phase.Name, ticket)
@@ -244,7 +253,7 @@ func Run(projectRoot string, cfg *config.Config, phaseIdx int, ticket, workflow 
 	var timingEntry *state.TimingEntry
 	timing, err := state.LoadTiming(auditDir)
 	if err != nil || len(timing.Entries) == 0 {
-		timing, _ = state.LoadTiming(artifactsDir)
+		timing, _ = state.LoadTiming(stateDir)
 	}
 	if timing != nil {
 		for i := len(timing.Entries) - 1; i >= 0; i-- {
@@ -260,7 +269,7 @@ func Run(projectRoot string, cfg *config.Config, phaseIdx int, ticket, workflow 
 	var costEntry *state.CostEntry
 	costs, err := state.LoadCosts(auditDir)
 	if err != nil || len(costs.Phases) == 0 {
-		costs, _ = state.LoadCosts(artifactsDir)
+		costs, _ = state.LoadCosts(stateDir)
 	}
 	if costs != nil {
 		for i := len(costs.Phases) - 1; i >= 0; i-- {
@@ -280,7 +289,7 @@ func Run(projectRoot string, cfg *config.Config, phaseIdx int, ticket, workflow 
 	var promptPath string
 	var promptSize int64
 	if phase.Type == "agent" {
-		pp := state.PromptPath(artifactsDir, phaseIdx)
+		pp := state.PromptPath(stateDir, phaseIdx)
 		if info, err := os.Stat(pp); err == nil {
 			promptPath = pp
 			promptSize = info.Size()
@@ -311,7 +320,7 @@ func Run(projectRoot string, cfg *config.Config, phaseIdx int, ticket, workflow 
 	var outputs []OutputFile
 	for _, name := range phase.Outputs {
 		of := OutputFile{Name: name}
-		if info, err := os.Stat(filepath.Join(artifactsDir, name)); err == nil {
+		if info, err := os.Stat(filepath.Join(stateDir, name)); err == nil {
 			of.Exists = true
 			of.Size = info.Size()
 		}
@@ -319,10 +328,10 @@ func Run(projectRoot string, cfg *config.Config, phaseIdx int, ticket, workflow 
 	}
 
 	// Feedback files
-	feedbackFiles := readFeedbackFiles(artifactsDir)
+	feedbackFiles := readFeedbackFiles(stateDir)
 
 	// Exit status
-	exitStatus := determineExitStatus(logPath, artifactsDir, phaseIdx, phase.Name)
+	exitStatus := determineExitStatus(logPath, stateDir, phaseIdx, phase.Name)
 
 	// Duration from timing
 	var duration time.Duration
