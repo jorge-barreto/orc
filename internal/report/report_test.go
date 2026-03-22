@@ -725,3 +725,128 @@ func TestBuild_ParallelCostOrder(t *testing.T) {
 		t.Errorf("implement cost_usd = %f, want 0.80", data.Phases[1].CostUSD)
 	}
 }
+
+func TestBuild_WithMetadata(t *testing.T) {
+	dir := t.TempDir()
+	logsDir := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+
+	writeJSON(t, dir, "state.json", map[string]any{
+		"phase_index": 2, "ticket": "KS-META", "status": "completed",
+	})
+	writeJSON(t, dir, "timing.json", map[string]any{
+		"entries": []map[string]any{
+			{"phase": "plan", "start": now, "end": now.Add(30 * time.Second), "duration": "30s"},
+			{"phase": "implement", "start": now, "end": now.Add(60 * time.Second), "duration": "1m 00s"},
+		},
+	})
+	writeJSON(t, dir, "costs.json", map[string]any{
+		"phases": []map[string]any{},
+	})
+
+	// Write .meta.json files using state.SaveMetadata
+	meta0 := &state.PhaseMetadata{
+		PhaseName:   "plan",
+		PhaseType:   "agent",
+		PhaseIndex:  0,
+		Model:       "sonnet",
+		SessionID:   "sess-abc",
+		ToolsUsed:   []string{"Read", "Edit"},
+		ToolsDenied: []string{},
+	}
+	if err := state.SaveMetadata(state.MetaPath(dir, 0), meta0); err != nil {
+		t.Fatal(err)
+	}
+	meta1 := &state.PhaseMetadata{
+		PhaseName:   "implement",
+		PhaseType:   "agent",
+		PhaseIndex:  1,
+		Model:       "opus",
+		SessionID:   "sess-def",
+		ToolsUsed:   []string{"Bash", "Read"},
+		ToolsDenied: []string{"Write"},
+	}
+	if err := state.SaveMetadata(state.MetaPath(dir, 1), meta1); err != nil {
+		t.Fatal(err)
+	}
+
+	phases := []config.Phase{
+		{Name: "plan", Type: "agent"},
+		{Name: "implement", Type: "agent"},
+	}
+	st, _ := state.Load(dir)
+	data, err := Build(dir, dir, st, phases)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(data.Phases) != 2 {
+		t.Fatalf("phases = %d, want 2", len(data.Phases))
+	}
+
+	p0 := data.Phases[0]
+	if p0.Model != "sonnet" {
+		t.Errorf("phases[0].Model = %q, want sonnet", p0.Model)
+	}
+	if p0.SessionID != "sess-abc" {
+		t.Errorf("phases[0].SessionID = %q, want sess-abc", p0.SessionID)
+	}
+	if len(p0.ToolsUsed) != 2 || p0.ToolsUsed[0] != "Read" || p0.ToolsUsed[1] != "Edit" {
+		t.Errorf("phases[0].ToolsUsed = %v, want [Read Edit]", p0.ToolsUsed)
+	}
+
+	p1 := data.Phases[1]
+	if p1.Model != "opus" {
+		t.Errorf("phases[1].Model = %q, want opus", p1.Model)
+	}
+	if len(p1.ToolsDenied) != 1 || p1.ToolsDenied[0] != "Write" {
+		t.Errorf("phases[1].ToolsDenied = %v, want [Write]", p1.ToolsDenied)
+	}
+}
+
+func TestBuild_MissingMetadata(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+
+	writeJSON(t, dir, "state.json", map[string]any{
+		"phase_index": 1, "ticket": "KS-NOMETA", "status": "completed",
+	})
+	writeJSON(t, dir, "timing.json", map[string]any{
+		"entries": []map[string]any{
+			{"phase": "plan", "start": now, "end": now.Add(30 * time.Second), "duration": "30s"},
+		},
+	})
+	writeJSON(t, dir, "costs.json", map[string]any{
+		"phases": []map[string]any{},
+	})
+	// No .meta.json files written
+
+	phases := []config.Phase{
+		{Name: "plan", Type: "agent"},
+	}
+	st, _ := state.Load(dir)
+	data, err := Build(dir, dir, st, phases)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(data.Phases) != 1 {
+		t.Fatalf("phases = %d, want 1", len(data.Phases))
+	}
+	p := data.Phases[0]
+	if p.Model != "" {
+		t.Errorf("Model = %q, want empty (no metadata)", p.Model)
+	}
+	if p.SessionID != "" {
+		t.Errorf("SessionID = %q, want empty (no metadata)", p.SessionID)
+	}
+	if p.ToolsUsed != nil {
+		t.Errorf("ToolsUsed = %v, want nil (no metadata)", p.ToolsUsed)
+	}
+	if p.ToolsDenied != nil {
+		t.Errorf("ToolsDenied = %v, want nil (no metadata)", p.ToolsDenied)
+	}
+}

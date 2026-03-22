@@ -13,14 +13,18 @@ import (
 
 // PhaseResult holds per-phase data for the report.
 type PhaseResult struct {
-	Number   int     `json:"number"`
-	Name     string  `json:"name"`
-	Type     string  `json:"type"`
-	Duration string  `json:"duration"`
-	Cost     string  `json:"cost"`
-	CostUSD  float64 `json:"cost_usd"`
-	Tokens   int     `json:"tokens"`
-	Result   string  `json:"result"`
+	Number      int      `json:"number"`
+	Name        string   `json:"name"`
+	Type        string   `json:"type"`
+	Duration    string   `json:"duration"`
+	Cost        string   `json:"cost"`
+	CostUSD     float64  `json:"cost_usd"`
+	Tokens      int      `json:"tokens"`
+	Result      string   `json:"result"`
+	Model       string   `json:"model,omitempty"`
+	SessionID   string   `json:"session_id,omitempty"`
+	ToolsUsed   []string `json:"tools_used,omitempty"`
+	ToolsDenied []string `json:"tools_denied,omitempty"`
 }
 
 // LoopActivity records how many iterations a looping phase ran.
@@ -83,6 +87,22 @@ func Build(artifactsDir, auditDir string, st *state.State, phases []config.Phase
 
 	// Step 3: Load loop counts
 	loopCounts, _ := state.LoadLoopCounts(artifactsDir)
+
+	// Step 3.5: Load phase metadata (keyed by phase name for retry matching)
+	metaByName := map[string][]*state.PhaseMetadata{}
+	for i := range phases {
+		var meta *state.PhaseMetadata
+		if auditDir != "" {
+			meta, _ = state.LoadMetadata(state.MetaPath(auditDir, i))
+		}
+		if meta == nil {
+			meta, _ = state.LoadMetadata(state.MetaPath(artifactsDir, i))
+		}
+		if meta != nil {
+			metaByName[meta.PhaseName] = append(metaByName[meta.PhaseName], meta)
+		}
+	}
+	metaConsumed := map[string]int{}
 
 	// Step 4: Build PhaseResult entries from timing entries
 	phaseResults := []PhaseResult{}
@@ -148,7 +168,7 @@ func Build(artifactsDir, auditDir string, st *state.State, phases []config.Phase
 			result = "Approved"
 		}
 
-		phaseResults = append(phaseResults, PhaseResult{
+		pr := PhaseResult{
 			Number:   i + 1,
 			Name:     te.Phase,
 			Type:     phaseType,
@@ -157,7 +177,19 @@ func Build(artifactsDir, auditDir string, st *state.State, phases []config.Phase
 			CostUSD:  costUSD,
 			Tokens:   tokens,
 			Result:   result,
-		})
+		}
+		if metas, ok := metaByName[te.Phase]; ok {
+			mi := metaConsumed[te.Phase]
+			if mi < len(metas) {
+				m := metas[mi]
+				metaConsumed[te.Phase] = mi + 1
+				pr.Model = m.Model
+				pr.SessionID = m.SessionID
+				pr.ToolsUsed = m.ToolsUsed
+				pr.ToolsDenied = m.ToolsDenied
+			}
+		}
+		phaseResults = append(phaseResults, pr)
 	}
 
 	// Fallback: if timing.Entries is empty and phase_index > 0, produce minimal entries
