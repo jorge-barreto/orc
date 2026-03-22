@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"github.com/jorge-barreto/orc/internal/config"
 	"github.com/jorge-barreto/orc/internal/eval"
@@ -32,6 +34,10 @@ func evalCmd() *cli.Command {
 				return err
 			}
 
+			if cmd.Bool("list") && cmd.Bool("report") {
+				return fmt.Errorf("--list and --report are mutually exclusive")
+			}
+
 			// --list and --report early-return BEFORE resolveWorkflow() —
 			// they are workflow-agnostic and must work in multi-workflow projects
 			// without -w flag.
@@ -52,6 +58,9 @@ func evalCmd() *cli.Command {
 				eval.RenderHistoryReport(os.Stdout, h)
 				return nil
 			}
+
+			ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+			defer stop()
 
 			flagWorkflow := cmd.Root().String("workflow")
 			workflowName, configPath, err := resolveWorkflow(projectRoot, flagWorkflow)
