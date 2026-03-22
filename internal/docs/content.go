@@ -1260,6 +1260,22 @@ when the next fresh orc run starts. Use orc cancel to archive manually.
 Configure the maximum number of archived runs with the history-limit
 config field (default 10).
 
+orc stats — Aggregate Metrics
+-------------------------------
+
+Cross-run aggregate metrics for pattern identification. Computes
+success rate, cost/duration distributions, per-phase breakdown,
+failure category distribution, and weekly cost trends.
+
+  orc stats                    Aggregate across all tickets
+  orc stats KS-42              Aggregate for a single ticket
+  orc stats --last 20          Limit to last 20 runs
+  orc stats --json             Machine-readable JSON output
+  orc stats -w bugfix          Scope to a named workflow
+
+Reads from .orc/audit/ directories, including rotated audit dirs
+from cancelled runs.
+
 JSON Schema (schema_version: 1)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The --json output is a stable integration contract for CI pipelines and

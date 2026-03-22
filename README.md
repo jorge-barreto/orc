@@ -48,6 +48,7 @@ You define your workflow as a series of **phases** in a YAML config file. Each p
 ### Observability
 - **Full audit trail**: Rendered prompts, agent logs, cost/token data, timing, and state all saved to `.orc/artifacts/`
 - **`orc report`**: Generate a run summary with timing, costs, phase outcomes, loop activity, and artifact listing — markdown or JSON
+- **`orc stats`**: Aggregate metrics across runs — success rate, cost/duration distributions, per-phase breakdown, failure categories, and weekly trends
 - **Structured exit codes**: 0 (success), 1 (retryable), 2 (human needed), 3 (config error), 130 (interrupted)
 
 ## Prerequisites
@@ -244,6 +245,17 @@ Lists past runs for a ticket with status, date, duration, and cost. Completed ru
 orc history                     # most recent ticket
 orc history PROJ-123            # specific ticket
 orc history --prune             # remove entries beyond the history limit
+```
+
+### `orc stats [ticket]`
+
+Cross-run aggregate metrics — success rate, cost/duration distributions, per-phase breakdown, failure categories, and weekly cost trends.
+
+```bash
+orc stats                    # aggregate across all tickets
+orc stats KS-42              # aggregate for a single ticket
+orc stats --last 20          # limit to last N runs
+orc stats --json             # structured JSON output
 ```
 
 ### `orc doctor <ticket>`
