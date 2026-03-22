@@ -95,6 +95,10 @@ func Validate(cfg *Config, projectRoot string) error {
 		}
 		seen[p.Name] = true
 
+		if p.Name != filepath.Base(p.Name) || p.Name == ".." || p.Name == "." {
+			return fmt.Errorf("config: phase %d: name %q must not contain path separators", i+1, p.Name)
+		}
+
 		switch p.Type {
 		case "agent":
 			if p.Prompt == "" {

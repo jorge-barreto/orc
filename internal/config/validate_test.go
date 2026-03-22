@@ -52,6 +52,27 @@ func TestValidate_DuplicatePhaseNames(t *testing.T) {
 	}
 }
 
+func TestValidate_PhaseNameTraversalRejected(t *testing.T) {
+	cases := []struct {
+		name      string
+		phaseName string
+	}{
+		{"dot-dot", ".."},
+		{"dot", "."},
+		{"slash-path", "sub/phase"},
+		{"dot-dot-slash", "../evil"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := minimalConfig(Phase{Name: tc.phaseName, Type: "script", Run: "echo"})
+			err := Validate(cfg, t.TempDir())
+			if err == nil || !strings.Contains(err.Error(), "path separators") {
+				t.Fatalf("phase name %q: expected path separators error, got %v", tc.phaseName, err)
+			}
+		})
+	}
+}
+
 func TestValidate_UnknownPhaseType(t *testing.T) {
 	cfg := minimalConfig(Phase{Name: "a", Type: "unknown"})
 	if err := Validate(cfg, t.TempDir()); err == nil || !strings.Contains(err.Error(), "unknown type") {
