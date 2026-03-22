@@ -26,7 +26,7 @@ const initPromptMiddle = `
 
 ### Example 1: Go backend service
 
-` + "````" + `yaml file=.orc/config.yaml
+` + "````" + `yaml
 name: my-go-service
 ticket-pattern: '[A-Z]+-\d+'
 
@@ -73,7 +73,7 @@ phases:
 
 ### Example 2: Node.js / TypeScript project
 
-` + "````" + `yaml file=.orc/config.yaml
+` + "````" + `yaml
 name: my-ts-app
 ticket-pattern: '[A-Z]+-\d+'
 
@@ -117,7 +117,7 @@ phases:
 
 ### Example 3: Python project
 
-` + "````" + `yaml file=.orc/config.yaml
+` + "````" + `yaml
 name: my-python-project
 ticket-pattern: '[A-Z]+-\d+'
 
@@ -183,22 +183,11 @@ Based on the project context above, generate a complete orc workflow. Produce:
 
 ## Output Format
 
-Produce ONLY fenced code blocks with ` + "`file=`" + ` annotations. No explanation or text outside the code blocks.
-Each block specifies its path relative to the project root:
-
-` + "````" + `yaml file=.orc/config.yaml
-<config content>
-` + "````" + `
-
-` + "````" + `markdown file=.orc/phases/plan.md
-<prompt content>
-` + "````" + `
-
-All file paths MUST start with ` + "`.orc/`" + `.
+Your output will be captured as structured JSON. For each file you generate, provide its path (relative to the project root, starting with ` + "`.orc/`" + `) and its full content. You MUST include ` + "`.orc/config.yaml`" + `. All prompt files referenced in the config must also be included.
 `
 
 const retryFeedback = `
 
 IMPORTANT: Your previous attempt failed with this error: %v
 
-Try again. Output ONLY fenced code blocks with file= annotations. One of them MUST be .orc/config.yaml. Ensure all agent phases reference prompt files that you also generate as file blocks.`
+Try again. You MUST include a file with path ".orc/config.yaml". Ensure all agent phases reference prompt files that you also include.`
