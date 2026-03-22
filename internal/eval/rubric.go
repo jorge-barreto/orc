@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 )
 
 // CriterionResult holds the outcome of evaluating one rubric criterion.
@@ -36,6 +38,22 @@ type CaseResult struct {
 
 var scoreRegex = regexp.MustCompile(`SCORE:\s*(\d+)`)
 
+func filteredEnv(extras ...string) []string {
+	var env []string
+	for _, e := range os.Environ() {
+		idx := strings.IndexByte(e, '=')
+		if idx < 0 {
+			continue
+		}
+		key := e[:idx]
+		if strings.HasPrefix(key, "CLAUDECODE") || strings.HasPrefix(key, "ORC_") {
+			continue
+		}
+		env = append(env, e)
+	}
+	return append(env, extras...)
+}
+
 // EvaluateRubric runs all criteria in the rubric and returns results.
 func EvaluateRubric(ctx context.Context, rubric *Rubric, artifactsDir, worktreePath, projectRoot string) ([]CriterionResult, error) {
 	var results []CriterionResult
@@ -47,7 +65,10 @@ func EvaluateRubric(ctx context.Context, rubric *Rubric, artifactsDir, worktreeP
 		if c.Check != "" {
 			cmd := exec.CommandContext(ctx, "bash", "-c", c.Check)
 			cmd.Dir = worktreePath
-			cmd.Env = append(os.Environ(), "ARTIFACTS_DIR="+artifactsDir, "WORK_DIR="+worktreePath)
+			cmd.Env = filteredEnv("ARTIFACTS_DIR="+artifactsDir, "WORK_DIR="+worktreePath)
+			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+			cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) }
+			cmd.WaitDelay = 5 * time.Second
 			err := cmd.Run()
 			exitCode := 0
 			if err != nil {
@@ -80,6 +101,11 @@ func EvaluateRubric(ctx context.Context, rubric *Rubric, artifactsDir, worktreeP
 				continue
 			}
 			cmd := exec.CommandContext(ctx, "claude", "-p", "--model", "sonnet", "--output-format", "text")
+			cmd.Dir = worktreePath
+			cmd.Env = filteredEnv("ARTIFACTS_DIR="+artifactsDir, "WORK_DIR="+worktreePath)
+			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+			cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) }
+			cmd.WaitDelay = 5 * time.Second
 			cmd.Stdin = bytes.NewReader(promptData)
 			out, err := cmd.Output()
 			if err != nil {
@@ -100,7 +126,7 @@ func EvaluateRubric(ctx context.Context, rubric *Rubric, artifactsDir, worktreeP
 			last := matches[len(matches)-1]
 			n, _ := strconv.Atoi(last[1])
 			judgeScore := float64(n)
-			normalizedScore := judgeScore / 10.0
+			normalizedScore := math.Min(math.Max(judgeScore/10.0, 0.0), 1.0)
 			pass := parseExpect(c.Expect, 0, judgeScore, true)
 			results = append(results, CriterionResult{
 				Name:   c.Name,
@@ -171,4 +197,30 @@ func parseExpect(expect string, exitCode int, judgeScore float64, isJudge bool) 
 	default:
 		return judgeScore >= 7
 	}
+}
+
+// isValidJudgeExpect reports whether expect is a valid judge criterion expect string.
+// Valid form: "<op> <float>" where op is one of >=, >, <=, <, ==.
+func isValidJudgeExpect(expect string) bool {
+	parts := strings.SplitN(strings.TrimSpace(expect), " ", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	switch parts[0] {
+	case ">=", ">", "<=", "<", "==":
+	default:
+		return false
+	}
+	_, err := strconv.ParseFloat(parts[1], 64)
+	return err == nil
+}
+
+// isValidScriptExpect reports whether expect is a valid script criterion expect string.
+// Valid form: "exit <int>".
+func isValidScriptExpect(expect string) bool {
+	if !strings.HasPrefix(expect, "exit ") {
+		return false
+	}
+	_, err := strconv.Atoi(strings.TrimPrefix(expect, "exit "))
+	return err == nil
 }
