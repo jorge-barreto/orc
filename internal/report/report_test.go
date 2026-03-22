@@ -46,8 +46,12 @@ func TestBuild_CompletedRun(t *testing.T) {
 		"total_cost_usd": 0.75, "total_input_tokens": 30000, "total_output_tokens": 15000,
 	})
 	writeJSON(t, dir, "loop-counts.json", map[string]int{})
-	os.WriteFile(filepath.Join(dir, "plan.md"), []byte("plan content"), 0644)
-	os.WriteFile(filepath.Join(dir, "ticket.txt"), []byte("ticket"), 0644)
+	if err := os.WriteFile(filepath.Join(dir, "plan.md"), []byte("plan content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ticket.txt"), []byte("ticket"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	phases := []config.Phase{
 		{Name: "plan", Type: "agent"},
@@ -461,6 +465,8 @@ func TestRenderJSON_MissingData(t *testing.T) {
 		Duration:      "—",
 		Cost:          "—",
 		Phases:        []PhaseResult{},
+		Loops:         []LoopActivity{},
+		Artifacts:     []ArtifactFile{},
 	}
 
 	var buf bytes.Buffer
@@ -492,5 +498,150 @@ func TestRenderJSON_MissingData(t *testing.T) {
 	}
 	if v, _ := got["total_tokens"].(float64); v != 0 {
 		t.Errorf("total_tokens = %f, want 0", v)
+	}
+	// loops and artifacts must serialize as [] not null
+	if strings.Contains(out, `"loops": null`) {
+		t.Error("loops must be [] not null in JSON output")
+	}
+	if strings.Contains(out, `"artifacts": null`) {
+		t.Error("artifacts must be [] not null in JSON output")
+	}
+	loopsRaw, ok := got["loops"]
+	if !ok {
+		t.Fatal("missing loops field")
+	}
+	if _, ok := loopsRaw.([]any); !ok {
+		t.Fatalf("loops is not array, got %T", loopsRaw)
+	}
+	artifactsRaw, ok := got["artifacts"]
+	if !ok {
+		t.Fatal("missing artifacts field")
+	}
+	if _, ok := artifactsRaw.([]any); !ok {
+		t.Fatalf("artifacts is not array, got %T", artifactsRaw)
+	}
+}
+
+func TestBuild_PhaseIndexOutOfBounds(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+
+	writeJSON(t, dir, "state.json", map[string]any{
+		"phase_index": 5, "ticket": "KS-OOB", "status": "failed",
+	})
+	writeJSON(t, dir, "timing.json", map[string]any{
+		"entries": []map[string]any{
+			{"phase": "plan", "start": now, "end": now.Add(30 * time.Second), "duration": "30s"},
+			{"phase": "implement", "start": now, "end": now.Add(60 * time.Second), "duration": "1m 00s"},
+		},
+	})
+	writeJSON(t, dir, "costs.json", map[string]any{
+		"phases": []map[string]any{},
+	})
+
+	phases := []config.Phase{
+		{Name: "plan", Type: "agent"},
+		{Name: "implement", Type: "agent"},
+	}
+	st, _ := state.Load(dir)
+	data, err := Build(dir, dir, st, phases)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if data.Status != "Failed" {
+		t.Errorf("status = %q, want Failed", data.Status)
+	}
+	// No phase should have "Fail" result — phase_index is out of bounds
+	for i, p := range data.Phases {
+		if p.Result == "Fail" {
+			t.Errorf("phase[%d] %s has result Fail, but phase_index is out of bounds", i, p.Name)
+		}
+	}
+}
+
+func TestBuild_ZeroCostWithTokens(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+
+	writeJSON(t, dir, "state.json", map[string]any{
+		"phase_index": 1, "ticket": "KS-SUB", "status": "completed",
+	})
+	writeJSON(t, dir, "timing.json", map[string]any{
+		"entries": []map[string]any{
+			{"phase": "plan", "start": now, "end": now.Add(30 * time.Second), "duration": "30s"},
+		},
+	})
+	writeJSON(t, dir, "costs.json", map[string]any{
+		"phases": []map[string]any{
+			{"name": "plan", "cost_usd": 0, "input_tokens": 15000, "output_tokens": 8000},
+		},
+		"total_cost_usd": 0, "total_input_tokens": 15000, "total_output_tokens": 8000,
+	})
+
+	phases := []config.Phase{
+		{Name: "plan", Type: "agent"},
+	}
+	st, _ := state.Load(dir)
+	data, err := Build(dir, dir, st, phases)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Per-phase: cost should show token count, not "—"
+	if data.Phases[0].Cost == "—" {
+		t.Errorf("phase cost = %q, want token count string", data.Phases[0].Cost)
+	}
+	if data.Phases[0].Tokens != 23000 {
+		t.Errorf("phase tokens = %d, want 23000", data.Phases[0].Tokens)
+	}
+	// Total: cost should show token count, not "—"
+	if data.Cost == "—" {
+		t.Errorf("total cost = %q, want token count string", data.Cost)
+	}
+}
+
+func TestBuild_ParallelCostOrder(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+
+	writeJSON(t, dir, "state.json", map[string]any{
+		"phase_index": 2, "ticket": "KS-PAR", "status": "completed",
+	})
+	// Timing in config order: plan, implement
+	writeJSON(t, dir, "timing.json", map[string]any{
+		"entries": []map[string]any{
+			{"phase": "plan", "start": now, "end": now.Add(30 * time.Second), "duration": "30s"},
+			{"phase": "implement", "start": now, "end": now.Add(60 * time.Second), "duration": "1m 00s"},
+		},
+	})
+	// Costs in reverse order (implement finished first in goroutine)
+	writeJSON(t, dir, "costs.json", map[string]any{
+		"phases": []map[string]any{
+			{"name": "implement", "cost_usd": 0.80, "input_tokens": 20000, "output_tokens": 10000},
+			{"name": "plan", "cost_usd": 0.25, "input_tokens": 10000, "output_tokens": 5000},
+		},
+		"total_cost_usd": 1.05, "total_input_tokens": 30000, "total_output_tokens": 15000,
+	})
+
+	phases := []config.Phase{
+		{Name: "plan", Type: "agent"},
+		{Name: "implement", Type: "agent"},
+	}
+	st, _ := state.Load(dir)
+	data, err := Build(dir, dir, st, phases)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(data.Phases) != 2 {
+		t.Fatalf("phases = %d, want 2", len(data.Phases))
+	}
+	// plan should get plan's cost (0.25), not implement's (0.80)
+	if data.Phases[0].CostUSD != 0.25 {
+		t.Errorf("plan cost_usd = %f, want 0.25", data.Phases[0].CostUSD)
+	}
+	if data.Phases[1].CostUSD != 0.80 {
+		t.Errorf("implement cost_usd = %f, want 0.80", data.Phases[1].CostUSD)
 	}
 }
