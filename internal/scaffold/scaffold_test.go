@@ -17,17 +17,11 @@ func stubClaude(t *testing.T) {
 	t.Helper()
 	orig := runClaude
 	t.Cleanup(func() { runClaude = orig })
-	runClaude = func(_ context.Context, _ string) (string, error) {
-		return "```yaml file=.orc/config.yaml\n" +
-			"name: test-project\n" +
-			"phases:\n" +
-			"  - name: plan\n" +
-			"    type: agent\n" +
-			"    prompt: .orc/phases/plan.md\n" +
-			"```\n\n" +
-			"```markdown file=.orc/phases/plan.md\n" +
-			"You are a planning assistant.\n" +
-			"```\n", nil
+	runClaude = func(_ context.Context, _ string) ([]fileblocks.FileBlock, error) {
+		return []fileblocks.FileBlock{
+			{Path: ".orc/config.yaml", Content: "name: test-project\nphases:\n  - name: plan\n    type: agent\n    prompt: .orc/phases/plan.md\n"},
+			{Path: ".orc/phases/plan.md", Content: "You are a planning assistant.\n"},
+		}, nil
 	}
 }
 
@@ -36,18 +30,12 @@ func stubClaudeCapture(t *testing.T) *string {
 	var captured string
 	orig := runClaude
 	t.Cleanup(func() { runClaude = orig })
-	runClaude = func(_ context.Context, prompt string) (string, error) {
+	runClaude = func(_ context.Context, prompt string) ([]fileblocks.FileBlock, error) {
 		captured = prompt
-		return "```yaml file=.orc/config.yaml\n" +
-			"name: test-project\n" +
-			"phases:\n" +
-			"  - name: plan\n" +
-			"    type: agent\n" +
-			"    prompt: .orc/phases/plan.md\n" +
-			"```\n\n" +
-			"```markdown file=.orc/phases/plan.md\n" +
-			"You are a planning assistant.\n" +
-			"```\n", nil
+		return []fileblocks.FileBlock{
+			{Path: ".orc/config.yaml", Content: "name: test-project\nphases:\n  - name: plan\n    type: agent\n    prompt: .orc/phases/plan.md\n"},
+			{Path: ".orc/phases/plan.md", Content: "You are a planning assistant.\n"},
+		}, nil
 	}
 	return &captured
 }

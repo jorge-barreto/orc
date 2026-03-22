@@ -3,6 +3,7 @@ package scaffold
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -239,14 +240,9 @@ func initWithAI(ctx context.Context, targetDir, userPrompt string) error {
 // generateConfig calls claude, parses the output, and validates the generated config
 // in a temp directory. Returns the validated file blocks or an error.
 func generateConfig(ctx context.Context, prompt string) ([]fileblocks.FileBlock, error) {
-	output, err := runClaude(ctx, prompt)
+	blocks, err := runClaude(ctx, prompt)
 	if err != nil {
 		return nil, err
-	}
-
-	blocks := fileblocks.Parse(output)
-	if len(blocks) == 0 {
-		return nil, fmt.Errorf("no file blocks in output")
 	}
 
 	hasConfig := false
@@ -323,31 +319,46 @@ var runClaude = runClaudeCaptureDefault
 // runClaudeCaptureDefault writes the prompt to a temp file and invokes claude -p
 // with a short instruction to read it. This avoids ARG_MAX limits when the prompt
 // (schema + examples + project context) exceeds the OS command-line size limit.
-func runClaudeCaptureDefault(ctx context.Context, prompt string) (string, error) {
+func runClaudeCaptureDefault(ctx context.Context, prompt string) ([]fileblocks.FileBlock, error) {
 	f, err := os.CreateTemp("", "orc-init-prompt-*.md")
 	if err != nil {
-		return "", fmt.Errorf("creating prompt file: %w", err)
+		return nil, fmt.Errorf("creating prompt file: %w", err)
 	}
 	promptFile := f.Name()
 	defer os.Remove(promptFile)
 
 	if _, err := f.WriteString(prompt); err != nil {
 		f.Close()
-		return "", fmt.Errorf("writing prompt file: %w", err)
+		return nil, fmt.Errorf("writing prompt file: %w", err)
 	}
 	f.Close()
 
+	schema := `{"type":"object","properties":{"files":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}}},"required":["files"]}`
+
 	cmd := exec.CommandContext(ctx, "claude", "-p",
 		"Read the file at "+promptFile+" and follow its instructions exactly.",
-		"--model", "opus", "--effort", "high")
+		"--model", "opus", "--effort", "high",
+		"--output-format", "json", "--json-schema", schema)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = dispatch.FilteredEnv()
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("claude: %w", err)
+		return nil, fmt.Errorf("claude: %w", err)
 	}
-	return stdout.String(), nil
+
+	var resp struct {
+		StructuredOutput struct {
+			Files []fileblocks.FileBlock `json:"files"`
+		} `json:"structured_output"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &resp); err != nil {
+		return nil, fmt.Errorf("parsing claude output: %w", err)
+	}
+	if len(resp.StructuredOutput.Files) == 0 {
+		return nil, fmt.Errorf("no files in structured output")
+	}
+	return resp.StructuredOutput.Files, nil
 }
 
 // renderWorkflowSummary builds a human-readable workflow line.
