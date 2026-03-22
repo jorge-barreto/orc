@@ -259,6 +259,12 @@ func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 		res.OutputTokens = tr.Stream.OutputTokens
 		res.CacheCreationInputTokens = tr.Stream.CacheCreationInputTokens
 		res.CacheReadInputTokens = tr.Stream.CacheReadInputTokens
+		res.ToolsUsed = tr.Stream.ToolsUsed
+		var denied []string
+		for _, d := range tr.Stream.PermissionDenials {
+			denied = append(denied, d.Tool)
+		}
+		res.ToolsDenied = denied
 	}
 	return res, nil
 }
@@ -307,6 +313,12 @@ func RunAgentWithPrompt(ctx context.Context, phase config.Phase, env *Environmen
 		res.OutputTokens = tr.Stream.OutputTokens
 		res.CacheCreationInputTokens = tr.Stream.CacheCreationInputTokens
 		res.CacheReadInputTokens = tr.Stream.CacheReadInputTokens
+		res.ToolsUsed = tr.Stream.ToolsUsed
+		var denied []string
+		for _, d := range tr.Stream.PermissionDenials {
+			denied = append(denied, d.Tool)
+		}
+		res.ToolsDenied = denied
 	}
 	return res, nil
 }
@@ -372,6 +384,10 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 	var totalCost float64
 	var totalInput, totalOutput int
 	var totalCacheCreation, totalCacheRead int
+	allToolsSeen := make(map[string]bool)
+	var allToolsUsed []string
+	var allToolsDenied []string
+	deniedSeen := make(map[string]bool)
 	turns := 0
 	tr := firstTR
 
@@ -392,6 +408,18 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 			totalOutput += tr.Stream.OutputTokens
 			totalCacheCreation += tr.Stream.CacheCreationInputTokens
 			totalCacheRead += tr.Stream.CacheReadInputTokens
+			for _, t := range tr.Stream.ToolsUsed {
+				if !allToolsSeen[t] {
+					allToolsSeen[t] = true
+					allToolsUsed = append(allToolsUsed, t)
+				}
+			}
+			for _, d := range tr.Stream.PermissionDenials {
+				if !deniedSeen[d.Tool] {
+					deniedSeen[d.Tool] = true
+					allToolsDenied = append(allToolsDenied, d.Tool)
+				}
+			}
 		}
 
 		// Handle permission denials
@@ -457,6 +485,8 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 		CacheReadInputTokens:     totalCacheRead,
 		Turns:                    turns,
 		SessionID:                sessionID,
+		ToolsUsed:                allToolsUsed,
+		ToolsDenied:              allToolsDenied,
 	}, nil
 }
 
