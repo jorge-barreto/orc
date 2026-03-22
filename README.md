@@ -238,7 +238,7 @@ orc cancel PROJ-123 --purge    # remove all artifacts including history
 
 ### `orc history [ticket]`
 
-Lists past runs for a ticket with status, date, duration, and cost. Runs are archived automatically on completion, failure, or interruption.
+Lists past runs for a ticket with status, date, duration, and cost. Runs are archived automatically on successful completion. Failed or interrupted runs stay in place for --resume; use orc cancel to archive them.
 
 ```bash
 orc history                     # most recent ticket

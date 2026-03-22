@@ -816,7 +816,7 @@ cost and timing data.
 History Directory
 -----------------
 
-When a run completes, fails, or is interrupted, orc archives the artifacts
+When a run completes successfully, orc archives the artifacts
 to .orc/artifacts/<ticket>/history/<run-id>/. The run-id is a filesystem-safe
 timestamp (e.g., 2026-03-22T14-30-05.123).
 
@@ -835,8 +835,9 @@ The history directory is preserved across cancellations. Use orc history
 to list past runs. Old entries are pruned automatically based on the
 history-limit config field (default 10).
 
-If a previous run wasn't properly archived (e.g., after SIGKILL), the
-next orc run auto-archives the stale artifacts before starting.
+If a previous run left stale artifacts (e.g., after SIGKILL), the
+next orc run auto-archives them before starting. Failed or interrupted
+runs are not considered stale — use --resume or orc cancel.
 
 Declared Outputs
 ----------------
@@ -1247,7 +1248,8 @@ and cost for each archived run.
   orc history --prune             Remove entries beyond the history limit
 
 When no ticket is specified, uses the most recently executed ticket.
-Runs are archived automatically on completion, failure, or interruption.
+Runs are archived automatically on successful completion. Failed or
+interrupted runs stay in place for --resume; use orc cancel to archive them.
 Configure the maximum number of archived runs with the history-limit
 config field (default 10).
 
