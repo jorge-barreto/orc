@@ -87,6 +87,9 @@ func TestLoadFixture_MissingRef(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing ref")
 	}
+	if !strings.Contains(err.Error(), "ref is required") {
+		t.Errorf("error = %v, want message containing 'ref is required'", err)
+	}
 }
 
 func TestLoadFixture_MissingTicket(t *testing.T) {
@@ -96,6 +99,9 @@ func TestLoadFixture_MissingTicket(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing ticket")
 	}
+	if !strings.Contains(err.Error(), "ticket is required") {
+		t.Errorf("error = %v, want message containing 'ticket is required'", err)
+	}
 }
 
 func TestLoadFixture_InvalidRef(t *testing.T) {
@@ -104,6 +110,45 @@ func TestLoadFixture_InvalidRef(t *testing.T) {
 	_, err := LoadFixture(dir)
 	if err == nil {
 		t.Fatal("expected error for invalid ref")
+	}
+	if !strings.Contains(err.Error(), "invalid characters") {
+		t.Errorf("error = %v, want message containing 'invalid characters'", err)
+	}
+}
+
+func TestLoadFixture_DotDotTicket(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "fixture.yaml"), "ref: abc123\nticket: \"..\"\n")
+	_, err := LoadFixture(dir)
+	if err == nil {
+		t.Fatal("expected error for ticket '..'")
+	}
+	if !strings.Contains(err.Error(), "is not allowed") {
+		t.Errorf("error = %v, want message containing 'is not allowed'", err)
+	}
+}
+
+func TestLoadFixture_DotTicket(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "fixture.yaml"), "ref: abc123\nticket: \".\"\n")
+	_, err := LoadFixture(dir)
+	if err == nil {
+		t.Fatal("expected error for ticket '.'")
+	}
+	if !strings.Contains(err.Error(), "is not allowed") {
+		t.Errorf("error = %v, want message containing 'is not allowed'", err)
+	}
+}
+
+func TestLoadFixture_PathSeparatorTicket(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "fixture.yaml"), "ref: abc123\nticket: \"foo/bar\"\n")
+	_, err := LoadFixture(dir)
+	if err == nil {
+		t.Fatal("expected error for ticket with path separator")
+	}
+	if !strings.Contains(err.Error(), "must not contain path separators") {
+		t.Errorf("error = %v, want message containing 'must not contain path separators'", err)
 	}
 }
 
@@ -152,6 +197,9 @@ criteria:
 	if err == nil {
 		t.Fatal("expected error for criterion missing check and judge")
 	}
+	if !strings.Contains(err.Error(), "must have check or judge") {
+		t.Errorf("error = %v, want message containing 'must have check or judge'", err)
+	}
 }
 
 func TestLoadRubric_BothCheckAndJudge(t *testing.T) {
@@ -170,6 +218,9 @@ criteria:
 	if err == nil {
 		t.Fatal("expected error for criterion with both check and judge")
 	}
+	if !strings.Contains(err.Error(), "cannot have both") {
+		t.Errorf("error = %v, want message containing 'cannot have both'", err)
+	}
 }
 
 func TestLoadRubric_JudgePromptTraversal(t *testing.T) {
@@ -185,6 +236,9 @@ criteria:
 	_, err := LoadRubric(dir, projectRoot)
 	if err == nil {
 		t.Fatal("expected error for traversal prompt path")
+	}
+	if !strings.Contains(err.Error(), "escapes project root") {
+		t.Errorf("error = %v, want message containing 'escapes project root'", err)
 	}
 }
 
@@ -289,6 +343,15 @@ func TestComputeScore_AllFail(t *testing.T) {
 }
 
 // --- parseExpect ---
+
+func TestComputeScore_ZeroWeight(t *testing.T) {
+	rubric := &Rubric{Criteria: []Criterion{}}
+	results := []CriterionResult{}
+	got := ComputeScore(results, rubric)
+	if got != 0 {
+		t.Errorf("ComputeScore with zero weight = %d, want 0", got)
+	}
+}
 
 func TestParseExpect_ExitZero(t *testing.T) {
 	if !parseExpect("exit 0", 0, 0, false) {
@@ -542,6 +605,9 @@ func TestLoadFixture_StrictYAML(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unknown YAML field")
 	}
+	if !strings.Contains(err.Error(), "parsing fixture.yaml") {
+		t.Errorf("error = %v, want message containing 'parsing fixture.yaml'", err)
+	}
 }
 
 func TestLoadRubric_StrictYAML(t *testing.T) {
@@ -558,6 +624,9 @@ criteria:
 	if err == nil {
 		t.Fatal("expected error for unknown YAML field (weigth typo)")
 	}
+	if !strings.Contains(err.Error(), "parsing rubric.yaml") {
+		t.Errorf("error = %v, want message containing 'parsing rubric.yaml'", err)
+	}
 }
 
 func TestComputeScore_ClampsAbove100(t *testing.T) {
@@ -565,11 +634,11 @@ func TestComputeScore_ClampsAbove100(t *testing.T) {
 		{Name: "a", Weight: 1},
 	}}
 	results := []CriterionResult{
-		{Name: "a", Score: 1.0},
+		{Name: "a", Score: 1.5}, // >1.0 should be clamped to 100
 	}
 	got := ComputeScore(results, rubric)
 	if got != 100 {
-		t.Errorf("ComputeScore = %d, want 100", got)
+		t.Errorf("ComputeScore = %d, want 100 (clamped)", got)
 	}
 }
 
@@ -672,6 +741,12 @@ func TestRenderJSON(t *testing.T) {
 			t.Errorf("output missing %q", want)
 		}
 	}
+	// Verify snake_case JSON keys (not PascalCase)
+	for _, want := range []string{`"name"`, `"score"`, `"cost_usd"`, `"duration_seconds"`, `"pass_count"`, `"total_count"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("JSON output missing snake_case key %s", want)
+		}
+	}
 }
 
 func TestLoadRubric_DuplicateCriterionName(t *testing.T) {
@@ -690,6 +765,9 @@ criteria:
 	if err == nil {
 		t.Fatal("expected error for duplicate criterion name")
 	}
+	if !strings.Contains(err.Error(), "duplicate criterion") {
+		t.Errorf("error = %v, want message containing 'duplicate criterion'", err)
+	}
 }
 
 func TestLoadRubric_InvalidExpect(t *testing.T) {
@@ -707,5 +785,8 @@ criteria:
 	_, err := LoadRubric(dir, projectRoot)
 	if err == nil {
 		t.Fatal("expected error for invalid expect operator")
+	}
+	if !strings.Contains(err.Error(), "invalid expect") {
+		t.Errorf("error = %v, want message containing 'invalid expect'", err)
 	}
 }
