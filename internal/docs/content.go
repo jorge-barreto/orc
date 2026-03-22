@@ -755,8 +755,10 @@ Directory Structure
   │   ├── phase-2.md          Rendered prompt for phase 2
   │   └── ...
   ├── logs/
-  │   ├── phase-1.log         Agent output for phase 1
-  │   ├── phase-2.log         Agent output for phase 2
+  │   ├── phase-1.log           Agent output for phase 1
+  │   ├── phase-1.meta.json     Structured metadata for phase 1
+  │   ├── phase-2.log           Agent output for phase 2
+  │   ├── phase-2.meta.json     Structured metadata for phase 2
   │   └── ...
   ├── feedback/
   │   └── from-<phase>.md     Output from failed or looped phase
@@ -799,6 +801,32 @@ logs/
 
 Raw output from agent phases, saved as phase-N.log. Contains the full
 agent response.
+
+logs/*.meta.json
+----------------
+
+Structured metadata for each phase, written as phase-N.meta.json alongside
+the corresponding log file. Contains timing, cost, tokens, tools used, exit
+code, model, and session ID. Useful for programmatic analysis — consumed by
+orc report for richer output.
+
+Fields:
+  phase_name         string     Phase name from config
+  phase_type         string     "agent", "script", or "gate"
+  phase_index        int        0-indexed phase number
+  model              string     Model used (agent phases only)
+  effort             string     Effort level (agent phases only)
+  session_id         string     Claude session ID (agent phases only)
+  start_time         string     ISO 8601 timestamp
+  end_time           string     ISO 8601 timestamp
+  duration_seconds   float      Wall-clock seconds
+  cost_usd           float      Cost in USD (agent phases only)
+  input_tokens       int        Input token count (agent phases only)
+  output_tokens      int        Output token count (agent phases only)
+  exit_code          int        Process exit code
+  tools_used         []string   Unique tool names invoked (agent phases only)
+  tools_denied       []string   Tools denied by permissions (agent phases only)
+  timed_out          bool       Whether the phase was killed by timeout
 
 feedback/
 ---------
@@ -1302,14 +1330,18 @@ Top-level fields:
   artifacts       array    Artifact file names and sizes
 
 Each phases[] entry:
-  number      int      1-indexed phase number
-  name        string   Phase name
-  type        string   "agent", "script", or "gate"
-  duration    string   Formatted duration or "—"
-  cost        string   Formatted cost or "—"
-  cost_usd    float    Raw cost in USD
-  tokens      int      Total tokens (input + output)
-  result      string   "Pass", "Fail", "Approved", or "Interrupted"
+  number        int      1-indexed phase number
+  name          string   Phase name
+  type          string   "agent", "script", or "gate"
+  duration      string   Formatted duration or "—"
+  cost          string   Formatted cost or "—"
+  cost_usd      float    Raw cost in USD
+  tokens        int      Total tokens (input + output)
+  result        string   "Pass", "Fail", "Approved", or "Interrupted"
+  model         string   Model used (omitted for non-agent phases)
+  session_id    string   Claude session ID (omitted for non-agent phases)
+  tools_used    array    Tool names invoked (omitted if empty)
+  tools_denied  array    Tool names denied (omitted if empty)
 
 Each loops[] entry:
   phase       string   Phase name
@@ -1330,7 +1362,8 @@ Example (abbreviated):
     "total_tokens": 90000,
     "phases": [
       {"number": 1, "name": "plan", "type": "agent", "duration": "4m 30s",
-       "cost": "$0.42", "cost_usd": 0.42, "tokens": 30000, "result": "Pass"}
+       "cost": "$0.42", "cost_usd": 0.42, "tokens": 30000, "result": "Pass",
+       "model": "opus", "tools_used": ["Read", "Edit", "Bash"]}
     ],
     "loops": [],
     "artifacts": [{"name": "plan.md", "size": "4.2 KB"}]
