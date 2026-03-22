@@ -370,12 +370,22 @@ func RunWorkflow(ctx context.Context, worktreePath, ticket, workflowName string,
 	runErr := cmd.Run()
 
 	artifactsDir := state.ArtifactsDirForWorkflow(worktreePath, workflowName, ticket)
-	costs, _ := state.LoadCosts(artifactsDir)
-	timing, _ := state.LoadTiming(artifactsDir)
+
+	// After a successful run, the runner archives artifacts to history/<run-id>/
+	// and removes the originals. Detect this and load from the archive instead.
+	loadDir := artifactsDir
+	if runErr == nil && !state.HasState(artifactsDir) {
+		if histDir, err := state.LatestHistoryDir(artifactsDir); err == nil && histDir != "" {
+			loadDir = histDir
+		}
+	}
+
+	costs, _ := state.LoadCosts(loadDir)
+	timing, _ := state.LoadTiming(loadDir)
 
 	status := "failed"
 	if runErr == nil {
-		if st, err := state.Load(artifactsDir); err == nil {
+		if st, err := state.Load(loadDir); err == nil {
 			status = st.GetStatus()
 		} else {
 			status = "completed"
@@ -383,7 +393,7 @@ func RunWorkflow(ctx context.Context, worktreePath, ticket, workflowName string,
 	}
 
 	result := &RunResult{
-		ArtifactsDir: artifactsDir,
+		ArtifactsDir: loadDir,
 		Status:       status,
 		Err:          runErr,
 	}

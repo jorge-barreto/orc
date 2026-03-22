@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/jorge-barreto/orc/internal/config"
+	"github.com/jorge-barreto/orc/internal/state"
 )
 
 // writeFile creates a file with the given content, creating parent dirs as needed.
@@ -943,5 +944,63 @@ criteria:
 	}
 	if !strings.Contains(err.Error(), "invalid expect") {
 		t.Errorf("error = %v, want message containing 'invalid expect'", err)
+	}
+}
+
+func TestRunWorkflow_FallbackToHistory(t *testing.T) {
+	dir := t.TempDir()
+	artifactsDir := filepath.Join(dir, "artifacts")
+	runID := "2026-01-03T12-00-00.000"
+	histDir := filepath.Join(artifactsDir, "history", runID)
+	if err := os.MkdirAll(histDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write costs.json into history entry
+	writeFile(t, filepath.Join(histDir, "costs.json"),
+		`{"phases":[],"total_cost_usd":1.23}`)
+	// Write timing.json into history entry
+	writeFile(t, filepath.Join(histDir, "timing.json"),
+		`{"entries":[{"phase":"p1","start":"2026-01-03T12:00:00Z","end":"2026-01-03T12:01:00Z"}]}`)
+	// Write state.json into history entry
+	writeFile(t, filepath.Join(histDir, "state.json"),
+		`{"ticket":"T-001","status":"completed","phases":{}}`)
+
+	// Artifacts dir itself has no state.json — simulates post-archival
+	if state.HasState(artifactsDir) {
+		t.Fatal("expected HasState to return false for empty artifacts dir")
+	}
+
+	// LatestHistoryDir should find the history entry
+	got, err := state.LatestHistoryDir(artifactsDir)
+	if err != nil {
+		t.Fatalf("LatestHistoryDir error: %v", err)
+	}
+	if got != histDir {
+		t.Fatalf("LatestHistoryDir = %q, want %q", got, histDir)
+	}
+
+	// Costs load correctly from history
+	costs, err := state.LoadCosts(got)
+	if err != nil {
+		t.Fatalf("LoadCosts error: %v", err)
+	}
+	if costs == nil {
+		t.Fatal("LoadCosts returned nil")
+	}
+	if costs.TotalCostUSD != 1.23 {
+		t.Errorf("TotalCostUSD = %f, want 1.23", costs.TotalCostUSD)
+	}
+
+	// Timing loads correctly from history
+	timing, err := state.LoadTiming(got)
+	if err != nil {
+		t.Fatalf("LoadTiming error: %v", err)
+	}
+	if timing == nil {
+		t.Fatal("LoadTiming returned nil")
+	}
+	if timing.TotalElapsed().Seconds() <= 0 {
+		t.Errorf("TotalElapsed = %v, want > 0", timing.TotalElapsed())
 	}
 }
