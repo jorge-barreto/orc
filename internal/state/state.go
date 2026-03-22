@@ -72,7 +72,7 @@ func (s *State) Save(artifactsDir string) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(statePath(artifactsDir), data, 0644)
+	return WriteFileAtomic(statePath(artifactsDir), data, 0644)
 }
 
 // Advance increments the phase index.

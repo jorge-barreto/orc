@@ -49,7 +49,7 @@ func (t *Timing) save(artifactsDir string) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(timingPath(artifactsDir), data, 0644)
+	return WriteFileAtomic(timingPath(artifactsDir), data, 0644)
 }
 
 // AddStart appends a new timing entry for the given phase.

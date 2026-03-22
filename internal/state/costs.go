@@ -104,5 +104,5 @@ func (c *CostData) Flush(artifactsDir string) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(costsPath(artifactsDir), data, 0644)
+	return WriteFileAtomic(costsPath(artifactsDir), data, 0644)
 }

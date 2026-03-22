@@ -50,7 +50,7 @@ func SaveLoopCounts(artifactsDir string, counts map[string]int) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(filepath.Join(artifactsDir, "loop-counts.json"), data, 0644)
+	return WriteFileAtomic(filepath.Join(artifactsDir, "loop-counts.json"), data, 0644)
 }
 
 // LoadAttemptCounts reads the attempt count map from the audit directory.
@@ -89,7 +89,7 @@ func SaveAttemptCounts(auditDir string, counts map[int]int) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(filepath.Join(auditDir, "dispatch-counts.json"), data, 0644)
+	return WriteFileAtomic(filepath.Join(auditDir, "dispatch-counts.json"), data, 0644)
 }
 
 // WriteFeedback writes error output from a failing phase to the feedback directory.
@@ -99,7 +99,7 @@ func WriteFeedback(artifactsDir, fromPhase, content string) error {
 		return fmt.Errorf("creating feedback dir: %w", err)
 	}
 	path := filepath.Join(feedbackDir, fmt.Sprintf("from-%s.md", fromPhase))
-	return writeFileAtomic(path, []byte(content), 0644)
+	return WriteFileAtomic(path, []byte(content), 0644)
 }
 
 // ReadAllFeedback reads all feedback files and returns them as a formatted string.

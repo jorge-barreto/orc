@@ -11,7 +11,7 @@ func TestWriteFileAtomic_Basic(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.json")
 
-	if err := writeFileAtomic(path, []byte(`{"ok":true}`), 0644); err != nil {
+	if err := WriteFileAtomic(path, []byte(`{"ok":true}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -43,7 +43,7 @@ func TestWriteFileAtomic_OverwriteExisting(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := writeFileAtomic(path, []byte("new"), 0644); err != nil {
+	if err := WriteFileAtomic(path, []byte("new"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -65,7 +65,7 @@ func TestWriteFileAtomic_Concurrent(t *testing.T) {
 	for i := range n {
 		go func(i int) {
 			data := fmt.Sprintf(`{"writer":%d}`, i)
-			errs <- writeFileAtomic(path, []byte(data), 0644)
+			errs <- WriteFileAtomic(path, []byte(data), 0644)
 		}(i)
 	}
 	for range n {

@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 )
 
-// writeFileAtomic writes data to a file atomically by writing to a temporary
+// WriteFileAtomic writes data to a file atomically by writing to a temporary
 // file first, fsyncing, and then renaming it to the target path. This prevents
 // corruption from crashes mid-write.
-func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
 	f, err := os.CreateTemp(dir, filepath.Base(path)+".tmp.*")
 	if err != nil {
