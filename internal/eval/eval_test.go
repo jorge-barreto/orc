@@ -533,3 +533,179 @@ func TestCopyOrcDir_MissingPromptFile(t *testing.T) {
 		t.Fatal("expected error for missing prompt file")
 	}
 }
+
+func TestLoadFixture_StrictYAML(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "fixture.yaml"),
+		"ref: abc123\nticket: T-001\nunknown_field: oops\n")
+	_, err := LoadFixture(dir)
+	if err == nil {
+		t.Fatal("expected error for unknown YAML field")
+	}
+}
+
+func TestLoadRubric_StrictYAML(t *testing.T) {
+	dir := t.TempDir()
+	projectRoot := t.TempDir()
+	writeFile(t, filepath.Join(dir, "rubric.yaml"), `
+criteria:
+  - name: test
+    check: "exit 0"
+    weight: 1
+    weigth: 2
+`)
+	_, err := LoadRubric(dir, projectRoot)
+	if err == nil {
+		t.Fatal("expected error for unknown YAML field (weigth typo)")
+	}
+}
+
+func TestComputeScore_ClampsAbove100(t *testing.T) {
+	rubric := &Rubric{Criteria: []Criterion{
+		{Name: "a", Weight: 1},
+	}}
+	results := []CriterionResult{
+		{Name: "a", Score: 1.0},
+	}
+	got := ComputeScore(results, rubric)
+	if got != 100 {
+		t.Errorf("ComputeScore = %d, want 100", got)
+	}
+}
+
+func TestParseExpect_Defaults(t *testing.T) {
+	if !parseExpect("", 0, 0, false) {
+		t.Error("empty expect, exitCode=0 should pass (default)")
+	}
+	if parseExpect("", 1, 0, false) {
+		t.Error("empty expect, exitCode=1 should fail (default)")
+	}
+	if !parseExpect("", 0, 7, true) {
+		t.Error("empty expect, judgeScore=7 should pass (default >= 7)")
+	}
+	if parseExpect("", 0, 6, true) {
+		t.Error("empty expect, judgeScore=6 should fail (default >= 7)")
+	}
+	if !parseExpect("garbage", 0, 0, false) {
+		t.Error("garbage expect, exitCode=0 should pass (default)")
+	}
+	if !parseExpect("garbage", 0, 8, true) {
+		t.Error("garbage expect, judgeScore=8 should pass (default >= 7)")
+	}
+}
+
+func TestAppendResult(t *testing.T) {
+	h := &History{}
+	cases := []CaseResult{
+		{
+			Name:            "bug-fix",
+			Score:           85,
+			CostUSD:         1.20,
+			DurationSeconds: 492,
+			Details:         map[string]float64{"quality": 0.9},
+		},
+	}
+	h.AppendResult("abc123", cases)
+	if len(h.Runs) != 1 {
+		t.Fatalf("expected 1 run, got %d", len(h.Runs))
+	}
+	run := h.Runs[0]
+	if run.ConfigFingerprint != "abc123" {
+		t.Errorf("fingerprint = %q, want abc123", run.ConfigFingerprint)
+	}
+	c, ok := run.Cases["bug-fix"]
+	if !ok {
+		t.Fatal("missing bug-fix case")
+	}
+	if c.Score != 85 {
+		t.Errorf("score = %d, want 85", c.Score)
+	}
+	if c.CostUSD != 1.20 {
+		t.Errorf("cost = %f, want 1.20", c.CostUSD)
+	}
+	if c.DurationSeconds != 492 {
+		t.Errorf("duration = %f, want 492", c.DurationSeconds)
+	}
+	if c.Details["quality"] != 0.9 {
+		t.Errorf("quality detail = %f, want 0.9", c.Details["quality"])
+	}
+}
+
+func TestRenderHistoryReport(t *testing.T) {
+	h := &History{Runs: []HistoryEntry{
+		{
+			Timestamp:         "2026-01-15T10:30:00Z",
+			ConfigFingerprint: "abc123",
+			Cases: map[string]CaseHistoryEntry{
+				"test-case": {Score: 85, CostUSD: 1.20, DurationSeconds: 492},
+			},
+		},
+	}}
+	var buf bytes.Buffer
+	RenderHistoryReport(&buf, h)
+	out := buf.String()
+	for _, want := range []string{"abc123", "85/100", "Jan 15"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q", want)
+		}
+	}
+}
+
+func TestRenderHistoryReport_Empty(t *testing.T) {
+	h := &History{}
+	var buf bytes.Buffer
+	RenderHistoryReport(&buf, h)
+	// Should not panic on empty history
+}
+
+func TestRenderJSON(t *testing.T) {
+	cases := []CaseResult{
+		{Name: "bug-fix", Score: 85, CostUSD: 1.20, DurationSeconds: 492, PassCount: 3, TotalCount: 3},
+	}
+	var buf bytes.Buffer
+	if err := RenderJSON(&buf, "abc123", cases); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{"abc123", "bug-fix", "85"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q", want)
+		}
+	}
+}
+
+func TestLoadRubric_DuplicateCriterionName(t *testing.T) {
+	dir := t.TempDir()
+	projectRoot := t.TempDir()
+	writeFile(t, filepath.Join(dir, "rubric.yaml"), `
+criteria:
+  - name: tests-pass
+    check: "exit 0"
+    weight: 1
+  - name: tests-pass
+    check: "exit 0"
+    weight: 2
+`)
+	_, err := LoadRubric(dir, projectRoot)
+	if err == nil {
+		t.Fatal("expected error for duplicate criterion name")
+	}
+}
+
+func TestLoadRubric_InvalidExpect(t *testing.T) {
+	dir := t.TempDir()
+	projectRoot := t.TempDir()
+	writeFile(t, filepath.Join(projectRoot, ".orc", "prompts", "p.md"), "prompt")
+	writeFile(t, filepath.Join(dir, "rubric.yaml"), `
+criteria:
+  - name: quality
+    judge: true
+    prompt: ".orc/prompts/p.md"
+    weight: 1
+    expect: "=> 7"
+`)
+	_, err := LoadRubric(dir, projectRoot)
+	if err == nil {
+		t.Fatal("expected error for invalid expect operator")
+	}
+}
