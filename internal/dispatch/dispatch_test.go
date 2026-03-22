@@ -553,3 +553,54 @@ func TestBuildEnv_ConcurrentSafe(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestDryRunVars_IncludesORCPrefixedCustomVars(t *testing.T) {
+	env := &Environment{
+		ProjectRoot:  "/proj",
+		WorkDir:      "/work",
+		ArtifactsDir: "/art",
+		Ticket:       "T-1",
+		Workflow:     "bugfix",
+		CustomVars:   map[string]string{"MY_DIR": "/proj/sub"},
+	}
+	vars := env.DryRunVars()
+
+	// Unprefixed custom var (from Vars())
+	if vars["MY_DIR"] != "/proj/sub" {
+		t.Errorf("MY_DIR = %q, want /proj/sub", vars["MY_DIR"])
+	}
+	// ORC_-prefixed custom var (new behavior)
+	if vars["ORC_MY_DIR"] != "/proj/sub" {
+		t.Errorf("ORC_MY_DIR = %q, want /proj/sub", vars["ORC_MY_DIR"])
+	}
+	// Built-in ORC_ keys must still be correct
+	if vars["ORC_TICKET"] != "T-1" {
+		t.Errorf("ORC_TICKET = %q, want T-1", vars["ORC_TICKET"])
+	}
+	// MY_DIR should appear exactly once (not duplicated by DryRunVars)
+	count := 0
+	for k := range vars {
+		if k == "MY_DIR" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("MY_DIR appears %d times in DryRunVars, want 1", count)
+	}
+}
+
+func TestDryRunVars_BuiltinORCKeysOverrideCustomVars(t *testing.T) {
+	env := &Environment{
+		ProjectRoot:  "/proj",
+		WorkDir:      "/work",
+		ArtifactsDir: "/art",
+		Ticket:       "REAL-1",
+		Workflow:     "bugfix",
+		CustomVars:   map[string]string{"TICKET": "custom-val"},
+	}
+	vars := env.DryRunVars()
+	// ORC_TICKET must be the built-in value, not the custom var
+	if vars["ORC_TICKET"] != "REAL-1" {
+		t.Errorf("ORC_TICKET = %q, want REAL-1", vars["ORC_TICKET"])
+	}
+}

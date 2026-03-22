@@ -62,6 +62,9 @@ func (e *Environment) Vars() map[string]string {
 // ORC_PHASE_INDEX and ORC_PHASE_COUNT are omitted — not meaningful in dry-run context.
 func (e *Environment) DryRunVars() map[string]string {
 	m := e.Vars()
+	for k, v := range e.CustomVars {
+		m["ORC_"+k] = v
+	}
 	m["ORC_TICKET"] = e.Ticket
 	m["ORC_WORKFLOW"] = e.Workflow
 	m["ORC_ARTIFACTS_DIR"] = e.ArtifactsDir
