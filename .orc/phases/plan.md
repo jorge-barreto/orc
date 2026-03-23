@@ -105,6 +105,21 @@ What tests to add or modify. Reference existing test files and patterns.
 Copy the acceptance criteria from the work item (bead description and/or roadmap) verbatim — these are the definition of done.
 ```
 
+## Step 6: Self-Check Before Writing
+
+**This step is mandatory.** Before finalizing `$ARTIFACTS_DIR/plan.md`, verify every item below. These are the criteria the plan reviewer will block on — failing any one sends the plan back for revision.
+
+- [ ] **Documentation section** addresses all 4 surfaces (`cmd/orc/main.go`, `internal/docs/content.go`, `README.md`, `internal/scaffold/`). Each surface has either a specific update description or "No change — <reason>".
+- [ ] **Doc surfaces in Files to Modify**: every surface that describes behavior affected by this change appears in the "Files to Modify" table with a concrete update description.
+- [ ] **Input Validation & Security section** is present — even if the answer is "No external input surfaces."
+- [ ] **Files to Modify table** includes every file mentioned in implementation steps. No file is referenced in a step but missing from the table.
+- [ ] **Test strategy** names specific test functions and files (e.g., "Add TestFoo in internal/config/validate_test.go following TestBar pattern") — not "add appropriate tests."
+- [ ] **Every file reference verified**: you have read every file listed in the plan and confirmed the functions, structs, and line numbers are accurate.
+- [ ] **Acceptance criteria** copied verbatim from the bead description and/or roadmap.
+- [ ] **No hidden dependencies**: every implementation step that depends on a prior step says so explicitly.
+
+If any item fails, fix the plan before writing it. Do not rely on the reviewer to catch structural omissions.
+
 ## Rules
 
 - The plan must be **self-contained**. The implement agent cannot read ROADMAP.md — everything it needs must be in plan.md.

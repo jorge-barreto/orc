@@ -128,7 +128,7 @@ phases:
     type: agent
     description: Thorough review — correctness, edge cases, conventions
     prompt: .orc/phases/deep-review.md
-    timeout: 15
+    timeout: 20
     outputs:
       - review-findings.md
     allow-tools:
