@@ -446,6 +446,68 @@ func TestRunCmd_HeadlessAndStepMutuallyExclusive(t *testing.T) {
 	}
 }
 
+func TestRunCmd_OrcHeadlessEnvActivatesQuietMode(t *testing.T) {
+	dir := t.TempDir()
+	// Save and restore globals that EnableQuiet() mutates
+	origQuiet := ux.QuietMode
+	origReset := ux.Reset
+	origBold := ux.Bold
+	origDim := ux.Dim
+	origRed := ux.Red
+	origGreen := ux.Green
+	origYellow := ux.Yellow
+	origCyan := ux.Cyan
+	origMagenta := ux.Magenta
+	origBlue := ux.Blue
+	origBoldCyan := ux.BoldCyan
+	origBoldBlue := ux.BoldBlue
+	origBoldGreen := ux.BoldGreen
+	t.Cleanup(func() {
+		ux.QuietMode = origQuiet
+		ux.Reset = origReset
+		ux.Bold = origBold
+		ux.Dim = origDim
+		ux.Red = origRed
+		ux.Green = origGreen
+		ux.Yellow = origYellow
+		ux.Cyan = origCyan
+		ux.Magenta = origMagenta
+		ux.Blue = origBlue
+		ux.BoldCyan = origBoldCyan
+		ux.BoldBlue = origBoldBlue
+		ux.BoldGreen = origBoldGreen
+	})
+
+	orcDir := filepath.Join(dir, ".orc")
+	if err := os.MkdirAll(orcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(orcDir, "config.yaml"), []byte("name: test\nphases:\n  - name: a\n    type: script\n    run: echo ok\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(orig) //nolint:errcheck
+
+	t.Setenv("CLAUDECODE", "")
+	t.Setenv("ORC_HEADLESS", "1")
+
+	app := &cli.Command{
+		Name:     "orc",
+		Commands: []*cli.Command{runCmd()},
+	}
+	// The command may fail during dispatch — we don't care about the error,
+	// only that ORC_HEADLESS=1 activated quiet mode.
+	_ = app.Run(context.Background(), []string{"orc", "run", "TEST-1"})
+
+	if !ux.QuietMode {
+		t.Fatal("expected ux.QuietMode to be true when ORC_HEADLESS=1 is set")
+	}
+}
+
 func TestNoColorFlag_DisablesColor(t *testing.T) {
 	origReset := ux.Reset
 	origBold := ux.Bold
