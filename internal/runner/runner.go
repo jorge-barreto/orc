@@ -38,6 +38,7 @@ type Runner struct {
 	RePromptFn   func(ctx context.Context, phase config.Phase, env *dispatch.Environment, prompt, sessionID string) (*dispatch.Result, error)
 	skipped      map[string]bool
 	auditDir     string
+	baseCommit   string
 	attemptCount map[int]int // tracks phase attempts (includes pre-run hook failures where dispatch was skipped)
 }
 
@@ -116,6 +117,12 @@ func (r *Runner) failAndHint(status string, exitCode int, err error) error {
 		}
 	}
 	ux.ResumeHint(r.State.GetTicket(), r.State.GetSessionID() != "")
+	failedPhase := ""
+	idx := r.State.GetPhaseIndex()
+	if idx < len(r.Config.Phases) {
+		failedPhase = r.Config.Phases[idx].Name
+	}
+	r.writeRunResult(exitCode, failedPhase)
 	return &ExitError{Code: exitCode, Err: err}
 }
 
@@ -131,6 +138,54 @@ func (r *Runner) printRunSummary(failedPhase int) {
 		return
 	}
 	ux.RunSummary(r.Config.Phases, r.Timing, failedPhase, r.skipped)
+}
+
+// captureBaseCommit returns the current HEAD short hash, or empty string on failure.
+func captureBaseCommit(projectRoot string) string {
+	cmd := exec.Command("git", "rev-parse", "--short", "HEAD")
+	cmd.Dir = projectRoot
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// writeRunResult writes run-result.json to the artifacts directory.
+// Errors are logged as warnings — run result should not break the run.
+func (r *Runner) writeRunResult(exitCode int, failedPhase string) {
+	var failedPhasePtr *string
+	if failedPhase != "" {
+		failedPhasePtr = &failedPhase
+	}
+
+	totalDuration := 0.0
+	if r.Timing != nil {
+		totalDuration = r.Timing.TotalElapsed().Seconds()
+	}
+
+	totalCost := 0.0
+	if r.Costs != nil {
+		totalCost = r.Costs.TotalCost()
+	}
+
+	result := &state.RunResult{
+		Ticket:               r.Env.Ticket,
+		Workflow:             r.Env.Workflow,
+		Status:               r.State.GetStatus(),
+		ExitCode:             exitCode,
+		FailedPhase:          failedPhasePtr,
+		PhasesCompleted:      r.State.GetPhaseIndex(),
+		PhasesTotal:          len(r.Config.Phases),
+		TotalCostUSD:         totalCost,
+		TotalDurationSeconds: totalDuration,
+		Commits:              state.CollectCommits(r.Env.ProjectRoot, r.baseCommit),
+		ArtifactsDir:         r.Env.ArtifactsDir,
+	}
+
+	if err := state.WriteRunResult(r.Env.ArtifactsDir, result); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to write run-result.json: %v\n", err)
+	}
 }
 
 // Run executes the workflow from the current state.
@@ -172,6 +227,7 @@ func (r *Runner) Run(ctx context.Context) error {
 		return setupErr(fmt.Errorf("loading attempt counts: %w", err))
 	}
 	r.attemptCount = attemptCounts
+	r.baseCommit = captureBaseCommit(r.Env.ProjectRoot)
 
 	total := len(r.Config.Phases)
 
@@ -533,6 +589,7 @@ mainLoop:
 	if flushErr := r.Costs.Flush(r.Env.ArtifactsDir); flushErr != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to flush costs to artifacts: %v\n", flushErr)
 	}
+	r.writeRunResult(ExitSuccess, "")
 	r.printRunSummary(-1)
 	// Archive run to history
 	if runID, archiveErr := state.ArchiveRun(r.Env.ArtifactsDir); archiveErr != nil {
@@ -540,6 +597,8 @@ mainLoop:
 	} else {
 		fmt.Printf("  %sRun archived:%s %s\n", ux.Dim, ux.Reset, runID)
 	}
+	// Re-write run-result.json after archive so it remains accessible in the current artifacts dir.
+	r.writeRunResult(ExitSuccess, "")
 	if pruneErr := state.PruneHistory(r.Env.ArtifactsDir, r.HistoryLimit); pruneErr != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to prune history: %v\n", pruneErr)
 	}

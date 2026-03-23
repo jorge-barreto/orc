@@ -3456,3 +3456,115 @@ func TestRun_HeadlessEnvPassedToDispatcher(t *testing.T) {
 		}
 	}
 }
+
+func TestRun_RunResultOnSuccess(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(state.RunResultPath(r.Env.ArtifactsDir))
+	if err != nil {
+		t.Fatalf("run-result.json not written: %v", err)
+	}
+	var result state.RunResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if result.Status != state.StatusCompleted {
+		t.Fatalf("status = %q, want completed", result.Status)
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("exit_code = %d, want 0", result.ExitCode)
+	}
+	if result.PhasesCompleted != 2 {
+		t.Fatalf("phases_completed = %d, want 2", result.PhasesCompleted)
+	}
+	if result.PhasesTotal != 2 {
+		t.Fatalf("phases_total = %d, want 2", result.PhasesTotal)
+	}
+	if result.FailedPhase != nil {
+		t.Fatalf("failed_phase should be nil, got %q", *result.FailedPhase)
+	}
+}
+
+func TestRun_RunResultOnFailure(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	mock.results["b"] = &dispatch.Result{ExitCode: 1}
+	r := newTestRunner(t, cfg, mock)
+
+	if err := r.Run(context.Background()); err == nil {
+		t.Fatal("expected error")
+	}
+
+	data, err := os.ReadFile(state.RunResultPath(r.Env.ArtifactsDir))
+	if err != nil {
+		t.Fatalf("run-result.json not written: %v", err)
+	}
+	var result state.RunResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if result.Status != state.StatusFailed {
+		t.Fatalf("status = %q, want failed", result.Status)
+	}
+	if result.ExitCode != ExitRetryable {
+		t.Fatalf("exit_code = %d, want %d", result.ExitCode, ExitRetryable)
+	}
+	if result.FailedPhase == nil || *result.FailedPhase != "b" {
+		t.Fatalf("failed_phase = %v, want 'b'", result.FailedPhase)
+	}
+	if result.PhasesCompleted != 1 {
+		t.Fatalf("phases_completed = %d, want 1", result.PhasesCompleted)
+	}
+}
+
+func TestRun_RunResultOnInterrupt(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo"},
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		if phase.Name == "b" {
+			cancel()
+		}
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+	r := newTestRunner(t, cfg, mock)
+
+	if err := r.Run(ctx); err == nil {
+		t.Fatal("expected error")
+	}
+
+	data, err := os.ReadFile(state.RunResultPath(r.Env.ArtifactsDir))
+	if err != nil {
+		t.Fatalf("run-result.json not written: %v", err)
+	}
+	var result state.RunResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if result.Status != state.StatusInterrupted {
+		t.Fatalf("status = %q, want interrupted", result.Status)
+	}
+}
