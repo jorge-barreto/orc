@@ -227,9 +227,10 @@ func loadTicketSummary(st *State, artifactsDir, auditDir string) TicketSummary {
 // ListTickets reads all ticket subdirectories under baseArtifactsDir,
 // loads each ticket's state and costs, and returns them sorted by directory name.
 // Costs are loaded from baseAuditDir first, falling back to baseArtifactsDir.
-// Directories that lack a state.json are skipped. Supports both flat layout
-// (artifacts/<ticket>/state.json) and workflow-namespaced layout
-// (artifacts/<workflow>/<ticket>/state.json).
+// Directories that lack a state.json are skipped. Supports flat layout
+// (artifacts/<ticket>/state.json), history layout
+// (artifacts/<ticket>/history/<timestamp>/state.json), and workflow-namespaced
+// layout (artifacts/<workflow>/<ticket>/...).
 func ListTickets(baseArtifactsDir, baseAuditDir string) ([]TicketSummary, error) {
 	entries, err := os.ReadDir(baseArtifactsDir)
 	if err != nil {
@@ -246,9 +247,10 @@ func ListTickets(baseArtifactsDir, baseAuditDir string) ([]TicketSummary, error)
 		}
 		ad := filepath.Join(baseArtifactsDir, e.Name())
 
-		// Flat layout: artifacts/<ticket>/state.json
-		if _, err := os.Stat(statePath(ad)); err == nil {
-			st, err := Load(ad)
+		// Flat/history layout: artifacts/<ticket>/state.json or
+		// artifacts/<ticket>/history/<timestamp>/state.json
+		if stateDir, err := ResolveStateDir(ad); err == nil {
+			st, err := Load(stateDir)
 			if err != nil {
 				continue
 			}
@@ -256,11 +258,11 @@ func ListTickets(baseArtifactsDir, baseAuditDir string) ([]TicketSummary, error)
 				st.SetTicket(e.Name())
 			}
 			auditDir := filepath.Join(baseAuditDir, e.Name())
-			tickets = append(tickets, loadTicketSummary(st, ad, auditDir))
+			tickets = append(tickets, loadTicketSummary(st, stateDir, auditDir))
 			continue
 		}
 
-		// Workflow-namespaced layout: artifacts/<workflow>/<ticket>/state.json
+		// Workflow-namespaced layout: artifacts/<workflow>/<ticket>/...
 		subEntries, err := os.ReadDir(ad)
 		if err != nil {
 			continue
@@ -270,10 +272,11 @@ func ListTickets(baseArtifactsDir, baseAuditDir string) ([]TicketSummary, error)
 				continue
 			}
 			ticketDir := filepath.Join(ad, se.Name())
-			if _, err := os.Stat(statePath(ticketDir)); err != nil {
+			stateDir, err := ResolveStateDir(ticketDir)
+			if err != nil {
 				continue
 			}
-			st, err := Load(ticketDir)
+			st, err := Load(stateDir)
 			if err != nil {
 				continue
 			}
@@ -284,7 +287,7 @@ func ListTickets(baseArtifactsDir, baseAuditDir string) ([]TicketSummary, error)
 				st.SetWorkflow(e.Name())
 			}
 			auditDir := filepath.Join(baseAuditDir, e.Name(), se.Name())
-			tickets = append(tickets, loadTicketSummary(st, ticketDir, auditDir))
+			tickets = append(tickets, loadTicketSummary(st, stateDir, auditDir))
 		}
 	}
 	return tickets, nil

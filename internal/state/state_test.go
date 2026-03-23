@@ -362,6 +362,51 @@ func TestListTickets_Mixed(t *testing.T) {
 	}
 }
 
+func TestListTickets_HistoryLayout(t *testing.T) {
+	base := t.TempDir()
+
+	// Ticket with state only in history/ (no top-level state.json)
+	histDir := filepath.Join(base, "T-001", "history", "2026-03-22T10-00-00.000")
+	os.MkdirAll(histDir, 0755)
+	st := &State{PhaseIndex: 5, Ticket: "T-001", Status: StatusCompleted}
+	st.Save(histDir)
+
+	tickets, err := ListTickets(base, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tickets) != 1 {
+		t.Fatalf("expected 1 ticket, got %d", len(tickets))
+	}
+	if tickets[0].Ticket != "T-001" {
+		t.Fatalf("tickets[0].Ticket = %q, want T-001", tickets[0].Ticket)
+	}
+}
+
+func TestListTickets_WorkflowNamespaced_History(t *testing.T) {
+	base := t.TempDir()
+
+	// Workflow-namespaced ticket with state in history/
+	histDir := filepath.Join(base, "bugfix", "T-001", "history", "2026-03-22T10-00-00.000")
+	os.MkdirAll(histDir, 0755)
+	st := &State{PhaseIndex: 3, Ticket: "T-001", Workflow: "bugfix", Status: StatusCompleted}
+	st.Save(histDir)
+
+	tickets, err := ListTickets(base, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tickets) != 1 {
+		t.Fatalf("expected 1 ticket, got %d", len(tickets))
+	}
+	if tickets[0].Ticket != "T-001" {
+		t.Fatalf("tickets[0].Ticket = %q, want T-001", tickets[0].Ticket)
+	}
+	if tickets[0].State.Workflow != "bugfix" {
+		t.Fatalf("Workflow = %q, want bugfix", tickets[0].State.Workflow)
+	}
+}
+
 func TestArtifactsDirForWorkflow_Empty(t *testing.T) {
 	got := ArtifactsDirForWorkflow("/proj", "", "T-001")
 	want := "/proj/.orc/artifacts/T-001"
