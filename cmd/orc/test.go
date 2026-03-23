@@ -26,7 +26,6 @@ func testCmd() *cli.Command {
 			&cli.BoolFlag{Name: "verbose", Aliases: []string{"v"}, Usage: "Save raw stream-json output to .stream.jsonl files"},
 			&cli.BoolFlag{Name: "with-hooks", Usage: "Run pre-run and post-run hooks around the phase dispatch"},
 			&cli.BoolFlag{Name: "headless", Usage: "Non-interactive mode — implies --auto, disables color and stdin"},
-			&cli.BoolFlag{Name: "quiet", Usage: "Machine-friendly output — emit JSON lines instead of decorated text (implies --auto, --no-color)"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfgErr := func(err error) error {
@@ -38,13 +37,8 @@ func testCmd() *cli.Command {
 				return cfgErr(fmt.Errorf("orc cannot run inside Claude Code (CLAUDECODE env var is set). Run from a regular terminal"))
 			}
 
-			headless := cmd.Bool("headless")
+			headless := cmd.Bool("headless") || os.Getenv("ORC_HEADLESS") != ""
 			if headless {
-				ux.DisableColor()
-			}
-
-			quiet := cmd.Bool("quiet") || os.Getenv("ORC_QUIET") != ""
-			if quiet {
 				ux.EnableQuiet()
 			}
 
@@ -104,8 +98,7 @@ func testCmd() *cli.Command {
 				ArtifactsDir:      artifactsDir,
 				Ticket:            ticket,
 				Workflow:          workflowName,
-				AutoMode:          cmd.Bool("auto") || headless || quiet,
-				HeadlessMode:      headless,
+				AutoMode:          cmd.Bool("auto") || headless,
 				Verbose:           cmd.Bool("verbose"),
 				PhaseIndex:        phaseIdx,
 				PhaseCount:        len(cfg.Phases),

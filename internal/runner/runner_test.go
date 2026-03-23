@@ -3574,7 +3574,6 @@ func TestRun_HeadlessEnvPassedToDispatcher(t *testing.T) {
 	mock := newMock()
 	r := newTestRunner(t, cfg, mock)
 	r.Env.AutoMode = true
-	r.Env.HeadlessMode = true
 
 	err := r.Run(context.Background())
 	if err != nil {
@@ -3590,9 +3589,6 @@ func TestRun_HeadlessEnvPassedToDispatcher(t *testing.T) {
 	for i, env := range envs {
 		if !env.AutoMode {
 			t.Errorf("call %d (%s): AutoMode = false, want true", i, calls[i])
-		}
-		if !env.HeadlessMode {
-			t.Errorf("call %d (%s): HeadlessMode = false, want true", i, calls[i])
 		}
 	}
 }
