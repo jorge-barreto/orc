@@ -41,7 +41,7 @@ type DispatchFunc func(ctx context.Context, phase config.Phase, env *Environment
 func RunHookWithLog(ctx context.Context, hookCmd, label string, phase config.Phase, env *Environment) (int, error) {
 	logFile, err := os.OpenFile(state.LogPath(env.ArtifactsDir, env.PhaseIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("opening phase log for %s hook: %w", label, err)
 	}
 	defer logFile.Close()
 	fmt.Fprintf(logFile, "\n[orc] %s: %s\n", label, hookCmd)

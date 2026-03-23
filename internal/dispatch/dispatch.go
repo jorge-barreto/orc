@@ -189,6 +189,6 @@ func Dispatch(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 	case "gate":
 		return RunGate(ctx, phase, env)
 	default:
-		return nil, fmt.Errorf("unknown phase type: %s", phase.Type)
+		return nil, fmt.Errorf("unknown phase type %q for phase %q (must be agent, script, or gate)", phase.Type, phase.Name)
 	}
 }

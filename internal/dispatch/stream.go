@@ -122,7 +122,7 @@ func ProcessStream(ctx context.Context, stdout io.Reader, display io.Writer, log
 	}
 
 	if err := scanner.Err(); err != nil {
-		return &result, fmt.Errorf("reading stream: %w", err)
+		return &result, fmt.Errorf("reading agent output stream: %w", err)
 	}
 
 	result.Text = textBuf.String()
