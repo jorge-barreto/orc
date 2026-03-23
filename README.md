@@ -51,7 +51,7 @@ You define your workflow as a series of **phases** in a YAML config file. Each p
 - **`orc report`**: Generate a run summary with timing, costs, phase outcomes, loop activity, and artifact listing — markdown or JSON
 - **`orc stats`**: Aggregate metrics across runs — success rate, cost/duration distributions, per-phase breakdown, failure categories, and weekly trends
 - **`orc eval`**: Measure workflow quality, cost, and time across eval cases pinned to known git refs — track score trends across config changes
-- **Structured exit codes**: 0 (success), 1 (retryable), 2 (human needed), 3 (config error), 130 (interrupted)
+- **Structured exit codes**: 0 (success), 1 (phase failure), 2 (timeout), 3 (config error), 4 (cost limit), 5 (interrupted), 6 (resume failure)
 
 ## Prerequisites
 
@@ -159,7 +159,7 @@ orc run -w bugfix PROJ-123      # named workflow (explicit flag)
 
 **Step-through mode**: `--step` pauses after each phase with an interactive prompt. You can continue, rewind to a specific phase, abort, or inspect artifact files. Incompatible with `--auto`.
 
-**Headless mode**: `--headless` goes further than `--auto` — it also disables ANSI color codes so output is clean and parseable. Designed for CI/CD pipelines, cron jobs, and wrapper scripts where exit codes (0 = success, 1 = retryable failure, 2 = human needed, 3 = config error, 130 = signal) are the primary status signal. Incompatible with `--step`.
+**Headless mode**: `--headless` goes further than `--auto` — it also disables ANSI color codes so output is clean and parseable. Designed for CI/CD pipelines, cron jobs, and wrapper scripts where exit codes (0 = success, 1 = phase failure, 2 = timeout, 3 = config error, 4 = cost limit, 5 = interrupted, 6 = resume failure) are the primary status signal. Incompatible with `--step`.
 
 **Color control**: orc disables color when any of these are true: `--no-color` flag is passed, `NO_COLOR` env var is set (standard [no-color.org](https://no-color.org/) convention), `ORC_NO_COLOR` env var is set, or stdout is not a TTY (e.g., piped output). `--headless` also disables color. The `--no-color` flag is global and works on any command.
 
@@ -631,10 +631,12 @@ Resume the workflow later — it picks up from the interrupted phase.
 | Code | Meaning |
 |------|---------|
 | 0 | Success — workflow completed, all phases passed |
-| 1 | Retryable failure — agent phase failed, loop exhausted, or timeout hit |
-| 2 | Human intervention needed — gate denied or cost limit exceeded |
+| 1 | Phase failure — agent or script phase failed, loop exhausted, gate denied, or outputs missing |
+| 2 | Timeout — a phase exceeded its configured timeout |
 | 3 | Configuration error — invalid config, missing prompt file, setup failure |
-| 130 | Signal interrupt — SIGINT, SIGTERM, or SIGHUP received |
+| 4 | Cost limit exceeded — per-phase or per-run cost budget hit |
+| 5 | Interrupted — SIGINT, SIGTERM, or SIGHUP received |
+| 6 | Resume failure — cannot resume interrupted session |
 
 ## Run Summary
 

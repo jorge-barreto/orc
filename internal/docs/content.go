@@ -182,7 +182,7 @@ Top-level fields
   effort              string    Default effort for all agent phases. "low", "medium",
                                 or "high". Per-phase effort overrides this.
   max-cost            float     Per-run cost budget in USD. Workflow stops with
-                                exit code 2 if cumulative cost exceeds this.
+                                exit code 4 if cumulative cost exceeds this.
   history-limit       int       Maximum archived runs per ticket. Default 10.
                                 Set to prevent unbounded disk usage.
   vars                map       Custom variables expanded at startup (declaration order).
@@ -201,7 +201,7 @@ Phase fields
   model            string    "opus" (default), "sonnet", or "haiku" (agent only).
   timeout          int       Minutes. Default: 30 (agent), 10 (script).
   max-cost         float     Per-phase cost budget in USD (agent only). Workflow
-                             stops with exit code 2 if phase cost exceeds this.
+                             stops with exit code 4 if phase cost exceeds this.
   outputs          list      Expected output filenames in artifacts dir.
   condition        string    Shell command; phase skipped if exit code non-zero.
   parallel-with    string    Name of another phase to run concurrently.
@@ -647,24 +647,30 @@ Exit Codes
 orc run returns structured exit codes for scripting and CI/CD:
 
   0    Success. Workflow completed, all phases passed.
-  1    Retryable failure. An agent phase failed, a loop exceeded
-       its max, or a timeout was hit. A fresh orc run might succeed.
-  2    Human intervention needed. A gate was denied, a cost limit was
-       exceeded, or a phase produced an unrecoverable error. Don't retry
-       automatically.
-  3    Configuration or setup error. Config invalid, prompt file missing,
-       required binary not found. Fix the config before retrying.
-  130  Signal interrupt. SIGINT (Ctrl+C), SIGTERM, or SIGHUP was received.
+  1    Phase failure. An agent or script phase failed, a loop
+       exhausted, a gate was denied, or outputs were missing.
+  2    Timeout. A phase exceeded its configured timeout.
+  3    Configuration or setup error. Config invalid, prompt file
+       missing, required binary not found. Fix the config before
+       retrying.
+  4    Cost limit exceeded. A per-phase or per-run cost budget
+       was hit.
+  5    Interrupted. SIGINT (Ctrl+C), SIGTERM, or SIGHUP was
+       received.
+  6    Resume failure. Cannot resume an interrupted session
+       (session ID missing or invalid).
 
-A wrapper script can check $? to decide whether to retry:
+A wrapper script can check $? to decide how to react:
 
   orc run TICKET-1
   case $? in
     0) echo "Success" ;;
-    1) echo "Retryable — running again..." ; orc run TICKET-1 ;;
-    2) echo "Needs human intervention" ;;
+    1) echo "Phase failure — retrying..." ; orc run TICKET-1 ;;
+    2) echo "Timeout — consider increasing timeout" ;;
     3) echo "Fix the config" ;;
-    130) echo "Interrupted" ;;
+    4) echo "Cost limit hit — review budget" ;;
+    5) echo "Interrupted" ;;
+    6) echo "Resume failed — use --retry instead" ;;
   esac
 
 Signal Handling
@@ -674,7 +680,7 @@ When you press Ctrl+C (SIGINT) or send SIGTERM/SIGHUP:
 
 - The current phase is cancelled via context cancellation.
 - State is saved with status "interrupted".
-- Exit code 130 is returned (conventional for SIGINT).
+- Exit code 5 is returned.
 - A resume hint is printed: orc run <ticket>
 
 Resume the workflow later — it picks up from the interrupted phase.
@@ -825,7 +831,7 @@ Fields:
   ticket                  string     Ticket identifier
   workflow                string     Workflow name (empty for flat layout)
   status                  string     "completed", "failed", or "interrupted"
-  exit_code               int        Process exit code (0=success, 1=retryable, 2=human-needed, 130=signal)
+  exit_code               int        Process exit code (0=success, 1=phase-failure, 2=timeout, 3=config-error, 4=cost-limit, 5=interrupted, 6=resume-failure)
   failed_phase            string?    Name of the failed phase (null on success)
   phases_completed        int        Number of phases that completed successfully
   phases_total            int        Total number of phases in workflow
