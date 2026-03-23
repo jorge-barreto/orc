@@ -18,6 +18,7 @@ type Environment struct {
 	Workflow          string
 	PhaseIndex        int
 	AutoMode          bool
+	HeadlessMode      bool
 	Verbose           bool
 	ResumeSessionID   string // session ID from interrupted phase for --resume
 	PhaseCount        int

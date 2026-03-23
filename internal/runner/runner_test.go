@@ -25,6 +25,7 @@ import (
 type mockDispatcher struct {
 	mu      sync.Mutex
 	calls   []string
+	envs    []*dispatch.Environment
 	results map[string]*dispatch.Result
 	errors  map[string]error
 	delays  map[string]time.Duration
@@ -41,6 +42,7 @@ func newMock() *mockDispatcher {
 func (m *mockDispatcher) Dispatch(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
 	m.mu.Lock()
 	m.calls = append(m.calls, phase.Name)
+	m.envs = append(m.envs, env)
 	m.mu.Unlock()
 
 	if d, ok := m.delays[phase.Name]; ok {
@@ -69,6 +71,14 @@ func (m *mockDispatcher) callCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.calls)
+}
+
+func (m *mockDispatcher) capturedEnvs() []*dispatch.Environment {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cp := make([]*dispatch.Environment, len(m.envs))
+	copy(cp, m.envs)
+	return cp
 }
 
 func newTestRunner(t *testing.T, cfg *config.Config, mock dispatch.Dispatcher) *Runner {
@@ -3410,5 +3420,39 @@ func TestRun_WritesPhaseMetadata(t *testing.T) {
 	}
 	if len(meta.ToolsDenied) != 1 || meta.ToolsDenied[0] != "Bash" {
 		t.Errorf("ToolsDenied = %v, want [Bash]", meta.ToolsDenied)
+	}
+}
+
+func TestRun_HeadlessEnvPassedToDispatcher(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "gate1", Type: "gate"},
+			{Name: "a", Type: "script", Run: "echo ok"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	r.Env.AutoMode = true
+	r.Env.HeadlessMode = true
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	calls := mock.callNames()
+	if len(calls) != 2 || calls[0] != "gate1" || calls[1] != "a" {
+		t.Fatalf("expected [gate1 a], got %v", calls)
+	}
+
+	envs := mock.capturedEnvs()
+	for i, env := range envs {
+		if !env.AutoMode {
+			t.Errorf("call %d (%s): AutoMode = false, want true", i, calls[i])
+		}
+		if !env.HeadlessMode {
+			t.Errorf("call %d (%s): HeadlessMode = false, want true", i, calls[i])
+		}
 	}
 }
