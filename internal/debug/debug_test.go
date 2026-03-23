@@ -371,6 +371,42 @@ func TestRun_ArchivedRun(t *testing.T) {
 	}
 }
 
+func TestRun_PartialArchive(t *testing.T) {
+	dir := t.TempDir()
+
+	configPath := filepath.Join(dir, "config.yaml")
+	configYAML := `name: test
+phases:
+  - name: build
+    type: script
+    run: make build
+`
+	if err := os.WriteFile(configPath, []byte(configYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.Load(configPath, dir)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+
+	// Create artifacts dir with a history entry that has NO state.json (partial archive)
+	artifactsDir := filepath.Join(dir, ".orc", "artifacts", "TEST-1")
+	histDir := filepath.Join(artifactsDir, "history", "2026-01-01T00-00-00.000")
+	if err := os.MkdirAll(histDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// history entry exists but has no state.json — simulates partial archive
+
+	err = Run(dir, cfg, 0, "TEST-1", "")
+	if err == nil {
+		t.Fatal("expected error for partial archive, got nil")
+	}
+	if !strings.Contains(err.Error(), "no log file found") {
+		t.Errorf("expected 'no log file found' error, got: %v", err)
+	}
+}
+
 func TestRun_ScriptPhase(t *testing.T) {
 	dir := t.TempDir()
 
