@@ -103,8 +103,7 @@ CLI Flags
   orc run <ticket> --from <phase>     Start from phase (number or name)
   orc run <ticket> --resume        Resume interrupted agent phase session
   orc run <ticket> --step          Step through phases interactively
-  orc run <ticket> --headless     Non-interactive mode for CI/CD (implies --auto)
-  orc run <ticket> --quiet       Machine-friendly JSON output (implies --auto, --no-color)
+  orc run <ticket> --headless     Non-interactive mode — JSONL output, implies --auto, --no-color
   orc flow                        Visualize workflow as a flow diagram
   orc run -w bugfix <ticket>    Run a named workflow (multi-workflow projects)
   orc flow -w bugfix            Flow diagram for a specific workflow
@@ -142,10 +141,20 @@ falls back to a fresh start automatically.
 rewind, abort, or inspect artifacts). Incompatible with --auto.
 
 --headless runs in fully non-interactive mode: implies --auto (gates
-auto-approved, no steering), disables ANSI color codes, and produces
-clean parseable output. Designed for CI/CD pipelines, cron jobs, and
-wrapper scripts. Exit codes are the primary status signal. Incompatible
-with --step.
+auto-approved, no steering), disables ANSI color codes, and emits
+machine-readable JSONL instead of decorated text. One JSON line per
+phase transition to stdout:
+
+  {"phase":"plan","status":"started"}
+  {"phase":"plan","status":"complete","duration_s":120.5}
+  {"phase":"implement","status":"started"}
+  {"phase":"implement","status":"failed","error":"exit code 1"}
+
+Errors still go to stderr as plain text. Designed for CI/CD pipelines,
+cron jobs, wrapper scripts, and log aggregation. Exit codes are the
+primary status signal. Incompatible with --step.
+
+Activate via flag (--headless) or env var (ORC_HEADLESS=1).
 
 Color Control
 -------------
@@ -157,29 +166,9 @@ orc respects the standard NO_COLOR convention (https://no-color.org/):
   ORC_NO_COLOR env var     ORC_NO_COLOR=1 orc run KS-42
   Non-TTY stdout           orc run KS-42 | tee log.txt   (auto-detected)
 
---headless also disables color (in addition to disabling stdin and
-implying --auto). The --no-color flag is a global flag — it works on
-any command (run, flow, status, etc.).
+--headless disables color and switches to JSONL output. The --no-color
+flag is a global flag — it works on any command (run, flow, status, etc.).
 
-Quiet Mode
-----------
-
---quiet (or ORC_QUIET=1 env var) switches to machine-readable output:
-- Suppresses phase banners, timing tables, resume hints, and all decorative text
-- Emits one JSON line per phase transition to stdout:
-
-  {"phase":"plan","status":"started"}
-  {"phase":"plan","status":"complete","duration_s":120.5}
-  {"phase":"implement","status":"started"}
-  {"phase":"implement","status":"failed","error":"exit code 1"}
-
-- Errors still go to stderr as plain text
-- Implies --auto (gates auto-approved, no interactive prompts)
-- Implies --no-color
-- Incompatible with --step
-
-Combines with --headless: --headless disables interactive prompts,
---quiet additionally switches output from human-readable to JSONL.
 `
 
 const topicConfig = `Configuration Reference
@@ -486,8 +475,7 @@ Prompts the operator for approval at the terminal. The operator can type
 "y" to continue, or any other text to request a revision — the text is
 captured as feedback in the phase log and the workflow stops.
 
-When --auto is passed, all gate phases are automatically approved and skipped.
-When --headless is used, gates are also auto-approved (headless implies --auto).
+When --auto or --headless is passed, gate phases are automatically approved and skipped.
 
 Gate phases do not support the cwd field.
 
@@ -1312,8 +1300,7 @@ Flags:
   --auto         Unattended mode (skip gates, no steering)
   --verbose      Save raw stream-json output
   --with-hooks   Run pre-run and post-run hooks around the phase dispatch
-  --headless     Non-interactive mode (implies --auto, disables color)
-  --quiet        Machine-friendly output (JSON lines, implies --auto, --no-color)
+  --headless     Non-interactive mode (JSONL output, implies --auto, --no-color)
 
 Notes:
 - Missing artifacts from prior phases produce a warning listing which
