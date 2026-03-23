@@ -67,7 +67,7 @@ func runCmd() *cli.Command {
 		Name:      "run",
 		Usage:     "Run the workflow for a ticket",
 		ArgsUsage: "<ticket>",
-		UsageText: "orc run PROJ-123\n   orc run PROJ-123 --auto --verbose\n   orc run PROJ-123 --retry implement\n   orc run PROJ-123 --resume\n   orc run PROJ-123 --step",
+		UsageText: "orc run PROJ-123\n   orc run PROJ-123 --auto --verbose\n   orc run PROJ-123 --retry implement\n   orc run PROJ-123 --resume\n   orc run PROJ-123 --step\n   orc run PROJ-123 --headless",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{Name: "auto", Usage: "Unattended mode — skip gates, no interactive steering"},
 			&cli.StringFlag{Name: "retry", Usage: "Retry from phase number or name"},
@@ -76,6 +76,7 @@ func runCmd() *cli.Command {
 			&cli.BoolFlag{Name: "verbose", Aliases: []string{"v"}, Usage: "Save raw stream-json output to .stream.jsonl files"},
 			&cli.BoolFlag{Name: "resume", Usage: "Resume an interrupted agent phase using saved session"},
 			&cli.BoolFlag{Name: "step", Usage: "Step-through mode — pause after each phase for inspection"},
+			&cli.BoolFlag{Name: "headless", Usage: "Non-interactive mode for CI/CD — implies --auto, disables color and stdin"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfgErr := func(err error) error {
@@ -85,6 +86,11 @@ func runCmd() *cli.Command {
 			// CLAUDECODE guard
 			if os.Getenv("CLAUDECODE") != "" {
 				return cfgErr(fmt.Errorf("orc cannot run inside Claude Code (CLAUDECODE env var is set). Run from a regular terminal"))
+			}
+
+			headless := cmd.Bool("headless")
+			if headless {
+				ux.DisableColor()
 			}
 
 			projectRoot, err := findProjectRoot()
@@ -141,7 +147,8 @@ func runCmd() *cli.Command {
 				ArtifactsDir:      artifactsDir,
 				Ticket:            ticket,
 				Workflow:          workflowName,
-				AutoMode:          cmd.Bool("auto"),
+				AutoMode:          cmd.Bool("auto") || headless,
+				HeadlessMode:      headless,
 				Verbose:           cmd.Bool("verbose"),
 				PhaseCount:        len(cfg.Phases),
 				DefaultAllowTools: cfg.DefaultAllowTools,
@@ -206,6 +213,9 @@ func runCmd() *cli.Command {
 			stepMode := cmd.Bool("step")
 			if stepMode && cmd.Bool("auto") {
 				return cfgErr(fmt.Errorf("--step and --auto are mutually exclusive (step-through requires interactive input)"))
+			}
+			if stepMode && headless {
+				return cfgErr(fmt.Errorf("--step and --headless are mutually exclusive (step-through requires interactive input)"))
 			}
 
 			if err := dispatch.Preflight(cfg.Phases); err != nil {

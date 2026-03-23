@@ -376,3 +376,42 @@ func TestDoctorCmd_MissingTicket_ExitConfigError(t *testing.T) {
 		t.Fatalf("expected exit code %d, got %d", runner.ExitConfigError, exitErr.Code)
 	}
 }
+
+func TestRunCmd_HeadlessAndStepMutuallyExclusive(t *testing.T) {
+	dir := t.TempDir()
+	orcDir := filepath.Join(dir, ".orc")
+	if err := os.MkdirAll(orcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(orcDir, "config.yaml"), []byte("name: test\nphases:\n  - name: a\n    type: script\n    run: echo ok\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(orig) //nolint:errcheck
+
+	// Clear CLAUDECODE so the guard doesn't fire before the mutual exclusivity check
+	t.Setenv("CLAUDECODE", "")
+
+	app := &cli.Command{
+		Name:     "orc",
+		Commands: []*cli.Command{runCmd()},
+	}
+	err := app.Run(context.Background(), []string{"orc", "run", "TEST-1", "--headless", "--step"})
+	if err == nil {
+		t.Fatal("expected error for --headless + --step")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("expected mutual exclusivity error, got: %v", err)
+	}
+	var exitErr *runner.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected *runner.ExitError, got %T: %v", err, err)
+	}
+	if exitErr.Code != runner.ExitConfigError {
+		t.Fatalf("expected exit code %d, got %d", runner.ExitConfigError, exitErr.Code)
+	}
+}
