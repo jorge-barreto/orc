@@ -1,9 +1,13 @@
 package ux
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jorge-barreto/orc/internal/config"
@@ -147,6 +151,47 @@ func TestQuietPhaseEvent_ValidJSON(t *testing.T) {
 	}
 	if event2["duration_s"] != 120.5 {
 		t.Errorf("duration_s = %v, want 120.5", event2["duration_s"])
+	}
+}
+
+func TestQuietPhaseEvent_ConcurrentWrites(t *testing.T) {
+	origQuiet := QuietMode
+	t.Cleanup(func() { QuietMode = origQuiet })
+	QuietMode = true
+
+	origStdout := os.Stdout
+	rp, wp, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = wp
+	defer wp.Close()
+	t.Cleanup(func() { os.Stdout = origStdout })
+
+	const n = 50
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			QuietPhaseEvent(fmt.Sprintf("phase-%d", idx), "started", nil)
+		}(i)
+	}
+	wg.Wait()
+	wp.Close()
+
+	var buf bytes.Buffer
+	io.Copy(&buf, rp)
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines) != n {
+		t.Fatalf("expected %d JSON lines, got %d", n, len(lines))
+	}
+	for i, line := range lines {
+		var m map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("line %d not valid JSON: %q: %v", i, line, err)
+		}
 	}
 }
 

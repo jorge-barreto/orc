@@ -419,6 +419,35 @@ func TestRunCmd_HeadlessAndStepMutuallyExclusive(t *testing.T) {
 
 func TestRunCmd_QuietAndStepMutuallyExclusive(t *testing.T) {
 	dir := t.TempDir()
+	// Save and restore globals that EnableQuiet() mutates
+	origQuiet := ux.QuietMode
+	origReset := ux.Reset
+	origBold := ux.Bold
+	origDim := ux.Dim
+	origRed := ux.Red
+	origGreen := ux.Green
+	origYellow := ux.Yellow
+	origCyan := ux.Cyan
+	origMagenta := ux.Magenta
+	origBlue := ux.Blue
+	origBoldCyan := ux.BoldCyan
+	origBoldBlue := ux.BoldBlue
+	origBoldGreen := ux.BoldGreen
+	t.Cleanup(func() {
+		ux.QuietMode = origQuiet
+		ux.Reset = origReset
+		ux.Bold = origBold
+		ux.Dim = origDim
+		ux.Red = origRed
+		ux.Green = origGreen
+		ux.Yellow = origYellow
+		ux.Cyan = origCyan
+		ux.Magenta = origMagenta
+		ux.Blue = origBlue
+		ux.BoldCyan = origBoldCyan
+		ux.BoldBlue = origBoldBlue
+		ux.BoldGreen = origBoldGreen
+	})
 	orcDir := filepath.Join(dir, ".orc")
 	if err := os.MkdirAll(orcDir, 0755); err != nil {
 		t.Fatal(err)

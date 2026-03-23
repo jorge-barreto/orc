@@ -153,6 +153,7 @@ func TestRun_QuietMode_EmitsJSONLines(t *testing.T) {
 	origStdout := os.Stdout
 	rp, wp, _ := os.Pipe()
 	os.Stdout = wp
+	defer wp.Close() // safety net: close writer even if Run() fails
 	t.Cleanup(func() {
 		os.Stdout = origStdout
 		ux.QuietMode = false
