@@ -10,6 +10,7 @@ import (
 
 	"github.com/jorge-barreto/orc/internal/runner"
 	"github.com/jorge-barreto/orc/internal/state"
+	"github.com/jorge-barreto/orc/internal/ux"
 	cli "github.com/urfave/cli/v3"
 )
 
@@ -413,5 +414,145 @@ func TestRunCmd_HeadlessAndStepMutuallyExclusive(t *testing.T) {
 	}
 	if exitErr.Code != runner.ExitConfigError {
 		t.Fatalf("expected exit code %d, got %d", runner.ExitConfigError, exitErr.Code)
+	}
+}
+
+func TestNoColorFlag_DisablesColor(t *testing.T) {
+	origReset := ux.Reset
+	origBold := ux.Bold
+	origDim := ux.Dim
+	origRed := ux.Red
+	origGreen := ux.Green
+	origYellow := ux.Yellow
+	origCyan := ux.Cyan
+	origMagenta := ux.Magenta
+	origBlue := ux.Blue
+	origBoldCyan := ux.BoldCyan
+	origBoldBlue := ux.BoldBlue
+	origBoldGreen := ux.BoldGreen
+	t.Cleanup(func() {
+		ux.Reset = origReset
+		ux.Bold = origBold
+		ux.Dim = origDim
+		ux.Red = origRed
+		ux.Green = origGreen
+		ux.Yellow = origYellow
+		ux.Cyan = origCyan
+		ux.Magenta = origMagenta
+		ux.Blue = origBlue
+		ux.BoldCyan = origBoldCyan
+		ux.BoldBlue = origBoldBlue
+		ux.BoldGreen = origBoldGreen
+	})
+
+	colorDisabled := false
+	sub := &cli.Command{
+		Name: "sub",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			colorDisabled = ux.Red == ""
+			return nil
+		},
+	}
+	app := &cli.Command{
+		Name: "orc",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{Name: "no-color"},
+		},
+		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+			if cmd.Bool("no-color") || os.Getenv("NO_COLOR") != "" || os.Getenv("ORC_NO_COLOR") != "" || !ux.IsTerminal(os.Stdout) {
+				ux.DisableColor()
+			}
+			return ctx, nil
+		},
+		Commands: []*cli.Command{sub},
+	}
+	if err := app.Run(context.Background(), []string{"orc", "--no-color", "sub"}); err != nil {
+		t.Fatal(err)
+	}
+	if !colorDisabled {
+		t.Fatal("expected colors to be disabled after --no-color flag")
+	}
+}
+
+func TestNoColorEnvVars(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		envKey string
+	}{
+		{"NO_COLOR", "NO_COLOR"},
+		{"ORC_NO_COLOR", "ORC_NO_COLOR"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			origReset := ux.Reset
+			origBold := ux.Bold
+			origDim := ux.Dim
+			origRed := ux.Red
+			origGreen := ux.Green
+			origYellow := ux.Yellow
+			origCyan := ux.Cyan
+			origMagenta := ux.Magenta
+			origBlue := ux.Blue
+			origBoldCyan := ux.BoldCyan
+			origBoldBlue := ux.BoldBlue
+			origBoldGreen := ux.BoldGreen
+			t.Cleanup(func() {
+				ux.Reset = origReset
+				ux.Bold = origBold
+				ux.Dim = origDim
+				ux.Red = origRed
+				ux.Green = origGreen
+				ux.Yellow = origYellow
+				ux.Cyan = origCyan
+				ux.Magenta = origMagenta
+				ux.Blue = origBlue
+				ux.BoldCyan = origBoldCyan
+				ux.BoldBlue = origBoldBlue
+				ux.BoldGreen = origBoldGreen
+			})
+
+			// Restore color vars so we test the env var path, not the non-TTY path
+			ux.Reset = origReset
+			ux.Bold = origBold
+			ux.Dim = origDim
+			ux.Red = origRed
+			ux.Green = origGreen
+			ux.Yellow = origYellow
+			ux.Cyan = origCyan
+			ux.Magenta = origMagenta
+			ux.Blue = origBlue
+			ux.BoldCyan = origBoldCyan
+			ux.BoldBlue = origBoldBlue
+			ux.BoldGreen = origBoldGreen
+
+			t.Setenv(tc.envKey, "1")
+
+			colorDisabled := false
+			sub := &cli.Command{
+				Name: "sub",
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					colorDisabled = ux.Red == ""
+					return nil
+				},
+			}
+			app := &cli.Command{
+				Name: "orc",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{Name: "no-color"},
+				},
+				Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+					if cmd.Bool("no-color") || os.Getenv("NO_COLOR") != "" || os.Getenv("ORC_NO_COLOR") != "" || !ux.IsTerminal(os.Stdout) {
+						ux.DisableColor()
+					}
+					return ctx, nil
+				},
+				Commands: []*cli.Command{sub},
+			}
+			if err := app.Run(context.Background(), []string{"orc", "sub"}); err != nil {
+				t.Fatal(err)
+			}
+			if !colorDisabled {
+				t.Fatalf("expected colors to be disabled when %s is set", tc.envKey)
+			}
+		})
 	}
 }
