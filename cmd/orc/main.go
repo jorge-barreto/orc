@@ -269,23 +269,24 @@ func cancelCmd() *cli.Command {
 			&cli.BoolFlag{Name: "purge", Usage: "Remove all artifacts including history"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			cfgErr := func(err error) error { return &runner.ExitError{Code: runner.ExitConfigError, Err: err} }
 			ticket := cmd.Args().First()
 			if ticket == "" {
-				return fmt.Errorf("ticket argument is required")
+				return cfgErr(fmt.Errorf("ticket argument is required"))
 			}
 			if err := validateTicketPath(ticket); err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			projectRoot, err := findProjectRoot()
 			if err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			flagWorkflow := cmd.Root().String("workflow")
 			workflowName, configPath, err := resolveWorkflow(projectRoot, flagWorkflow)
 			if err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			artifactsDir := state.ArtifactsDirForWorkflow(projectRoot, workflowName, ticket)
@@ -382,9 +383,10 @@ func statusCmd() *cli.Command {
 		Usage:     "Show workflow status (all tickets, or one ticket)",
 		ArgsUsage: "[ticket]",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			cfgErr := func(err error) error { return &runner.ExitError{Code: runner.ExitConfigError, Err: err} }
 			projectRoot, err := findProjectRoot()
 			if err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			ticket := cmd.Args().First()
@@ -409,18 +411,18 @@ func statusCmd() *cli.Command {
 
 			// Single ticket view
 			if err := validateTicketPath(ticket); err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			flagWorkflow := cmd.Root().String("workflow")
 			workflowName, configPath, err := resolveWorkflow(projectRoot, flagWorkflow)
 			if err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			cfg, err := config.Load(configPath, projectRoot)
 			if err != nil {
-				return fmt.Errorf("loading config: %w", err)
+				return cfgErr(fmt.Errorf("loading config: %w", err))
 			}
 
 			artifactsDir := state.ArtifactsDirForWorkflow(projectRoot, workflowName, ticket)
@@ -446,28 +448,29 @@ func doctorCmd() *cli.Command {
 		Usage:     "Diagnose a failed workflow run using AI",
 		ArgsUsage: "<ticket>",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			cfgErr := func(err error) error { return &runner.ExitError{Code: runner.ExitConfigError, Err: err} }
 			ticket := cmd.Args().First()
 			if ticket == "" {
-				return fmt.Errorf("ticket argument is required")
+				return cfgErr(fmt.Errorf("ticket argument is required"))
 			}
 			if err := validateTicketPath(ticket); err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			projectRoot, err := findProjectRoot()
 			if err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			flagWorkflow := cmd.Root().String("workflow")
 			workflowName, configPath, err := resolveWorkflow(projectRoot, flagWorkflow)
 			if err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			cfg, err := config.Load(configPath, projectRoot)
 			if err != nil {
-				return fmt.Errorf("loading config: %w", err)
+				return cfgErr(fmt.Errorf("loading config: %w", err))
 			}
 
 			artifactsDir := state.ArtifactsDirForWorkflow(projectRoot, workflowName, ticket)

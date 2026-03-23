@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/jorge-barreto/orc/internal/runner"
 	"github.com/jorge-barreto/orc/internal/state"
+	cli "github.com/urfave/cli/v3"
 )
 
 func TestDiscoverWorkflows_None(t *testing.T) {
@@ -315,5 +319,60 @@ func TestFindProjectRoot_WorkflowsDir(t *testing.T) {
 	}
 	if got != dir {
 		t.Fatalf("expected %q, got %q", dir, got)
+	}
+}
+
+func TestCancelCmd_MissingTicket_ExitConfigError(t *testing.T) {
+	app := &cli.Command{
+		Name:     "orc",
+		Commands: []*cli.Command{cancelCmd()},
+	}
+	err := app.Run(context.Background(), []string{"orc", "cancel"})
+	if err == nil {
+		t.Fatal("expected error for missing ticket arg")
+	}
+	var exitErr *runner.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected *runner.ExitError, got %T: %v", err, err)
+	}
+	if exitErr.Code != runner.ExitConfigError {
+		t.Fatalf("expected exit code %d, got %d", runner.ExitConfigError, exitErr.Code)
+	}
+}
+
+func TestStatusCmd_BadTicket_ExitConfigError(t *testing.T) {
+	app := &cli.Command{
+		Name:     "orc",
+		Commands: []*cli.Command{statusCmd()},
+	}
+	// statusCmd without args is valid (shows all tickets), so use bad path to trigger validateTicketPath
+	err := app.Run(context.Background(), []string{"orc", "status", "../evil"})
+	if err == nil {
+		t.Fatal("expected error for bad ticket path")
+	}
+	var exitErr *runner.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected *runner.ExitError, got %T: %v", err, err)
+	}
+	if exitErr.Code != runner.ExitConfigError {
+		t.Fatalf("expected exit code %d, got %d", runner.ExitConfigError, exitErr.Code)
+	}
+}
+
+func TestDoctorCmd_MissingTicket_ExitConfigError(t *testing.T) {
+	app := &cli.Command{
+		Name:     "orc",
+		Commands: []*cli.Command{doctorCmd()},
+	}
+	err := app.Run(context.Background(), []string{"orc", "doctor"})
+	if err == nil {
+		t.Fatal("expected error for missing ticket arg")
+	}
+	var exitErr *runner.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected *runner.ExitError, got %T: %v", err, err)
+	}
+	if exitErr.Code != runner.ExitConfigError {
+		t.Fatalf("expected exit code %d, got %d", runner.ExitConfigError, exitErr.Code)
 	}
 }
