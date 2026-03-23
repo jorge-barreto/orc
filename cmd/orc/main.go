@@ -32,7 +32,7 @@ func main() {
 			&cli.StringFlag{Name: "workflow", Aliases: []string{"w"}, Usage: "Select a named workflow from .orc/workflows/"},
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
-			if cmd.Bool("no-color") || os.Getenv("NO_COLOR") != "" || !ux.IsTerminal(os.Stdout) {
+			if cmd.Bool("no-color") || os.Getenv("NO_COLOR") != "" || os.Getenv("ORC_NO_COLOR") != "" || !ux.IsTerminal(os.Stdout) {
 				ux.DisableColor()
 			}
 			return ctx, nil
