@@ -3563,7 +3563,7 @@ func TestRun_WritesPhaseMetadata(t *testing.T) {
 	}
 }
 
-func TestRun_HeadlessEnvPassedToDispatcher(t *testing.T) {
+func TestRun_AutoModePassedToDispatcher(t *testing.T) {
 	cfg := &config.Config{
 		Name: "test",
 		Phases: []config.Phase{
