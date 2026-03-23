@@ -234,11 +234,9 @@ func Run(projectRoot string, cfg *config.Config, phaseIdx int, ticket, workflow 
 	auditDir := state.AuditDirForWorkflow(projectRoot, workflow, ticket)
 
 	// Resolve state directory: live artifacts or latest history entry
-	stateDir := artifactsDir
-	if !state.HasState(artifactsDir) {
-		if histDir, err := state.LatestHistoryDir(artifactsDir); err == nil && histDir != "" {
-			stateDir = histDir
-		}
+	stateDir, err := state.ResolveStateDir(artifactsDir)
+	if err != nil {
+		stateDir = artifactsDir // fall back to artifactsDir for log-only access
 	}
 
 	phase := cfg.Phases[phaseIdx]
