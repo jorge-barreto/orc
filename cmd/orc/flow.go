@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/jorge-barreto/orc/internal/config"
+	"github.com/jorge-barreto/orc/internal/runner"
 	"github.com/jorge-barreto/orc/internal/ux"
 	cli "github.com/urfave/cli/v3"
 )
@@ -16,9 +17,13 @@ func flowCmd() *cli.Command {
 		Name:  "flow",
 		Usage: "Visualize the workflow as a flow diagram",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			cfgErr := func(err error) error {
+				return &runner.ExitError{Code: runner.ExitConfigError, Err: err}
+			}
+
 			projectRoot, err := findProjectRoot()
 			if err != nil {
-				return err
+				return cfgErr(err)
 			}
 
 			flagWorkflow := cmd.Root().String("workflow")
@@ -28,11 +33,11 @@ func flowCmd() *cli.Command {
 			if flagWorkflow != "" || len(workflows) == 0 {
 				_, configPath, err := resolveWorkflow(projectRoot, flagWorkflow)
 				if err != nil {
-					return err
+					return cfgErr(err)
 				}
 				cfg, err := config.Load(configPath, projectRoot)
 				if err != nil {
-					return fmt.Errorf("loading config: %w", err)
+					return cfgErr(fmt.Errorf("loading config: %w", err))
 				}
 				ux.FlowViz(cfg)
 				return nil
