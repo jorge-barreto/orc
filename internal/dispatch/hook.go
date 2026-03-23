@@ -54,13 +54,14 @@ func RunHookWithLog(ctx context.Context, hookCmd, label string, phase config.Pha
 func DispatchWithHooks(ctx context.Context, phase config.Phase, env *Environment, dispatchFn DispatchFunc) (*Result, error) {
 	var preRunFailed bool
 	var preRunCode int
+	var preRunErr error
 
 	if phase.PreRun != "" {
 		code, err := RunHookWithLog(ctx, phase.PreRun, "pre-run", phase, env)
 		if err != nil {
-			return nil, err
-		}
-		if code != 0 {
+			preRunErr = err
+			preRunFailed = true
+		} else if code != 0 {
 			preRunFailed = true
 			preRunCode = code
 		}
@@ -87,6 +88,10 @@ func DispatchWithHooks(ctx context.Context, phase config.Phase, env *Environment
 
 	if preRunFailed && result == nil {
 		result = &Result{ExitCode: preRunCode}
+	}
+
+	if preRunErr != nil {
+		return nil, preRunErr
 	}
 
 	return result, dispatchErr

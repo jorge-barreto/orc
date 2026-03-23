@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -282,5 +283,47 @@ func TestDispatchWithHooks_PreRunFail_PostRunStillRuns(t *testing.T) {
 	}
 	if _, statErr := os.Stat(sentinel); os.IsNotExist(statErr) {
 		t.Fatal("post-run hook did not run (sentinel file missing)")
+	}
+}
+
+func TestDispatchWithHooks_PreRunInfraError_PostRunStillAttempted(t *testing.T) {
+	env := scriptEnv(t)
+	// Point to nonexistent logs dir so RunHookWithLog fails with fs.ErrNotExist.
+	env.ArtifactsDir = filepath.Join(t.TempDir(), "nonexistent", "artifacts")
+
+	phase := config.Phase{
+		Name:    "test",
+		Type:    "script",
+		PreRun:  "echo pre",
+		PostRun: "echo post",
+	}
+
+	called := false
+	fn := func(ctx context.Context, p config.Phase, e *Environment) (*Result, error) {
+		called = true
+		return &Result{ExitCode: 0}, nil
+	}
+
+	// Capture stderr to verify post-run was attempted.
+	origStderr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+
+	_, err := DispatchWithHooks(context.Background(), phase, env, fn)
+
+	w.Close()
+	var stderrBuf bytes.Buffer
+	io.Copy(&stderrBuf, r)
+	r.Close()
+	os.Stderr = origStderr
+
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("err = %v, want fs.ErrNotExist", err)
+	}
+	if called {
+		t.Fatal("dispatchFn was called despite pre-run infrastructure error")
+	}
+	if !strings.Contains(stderrBuf.String(), "warning: post-run hook error") {
+		t.Fatalf("stderr = %q, want post-run hook warning (proves post-run was attempted)", stderrBuf.String())
 	}
 }
