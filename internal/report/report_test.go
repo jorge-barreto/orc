@@ -850,3 +850,119 @@ func TestBuild_MissingMetadata(t *testing.T) {
 		t.Errorf("ToolsDenied = %v, want nil (no metadata)", p.ToolsDenied)
 	}
 }
+
+func TestBuild_AuditDirMetadata(t *testing.T) {
+	artifactsDir := t.TempDir()
+	auditDir := t.TempDir()
+	auditLogsDir := filepath.Join(auditDir, "logs")
+	if err := os.MkdirAll(auditLogsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+
+	// Write state.json in artifactsDir (required for state.Load)
+	writeJSON(t, artifactsDir, "state.json", map[string]any{
+		"phase_index": 2, "ticket": "KS-AUDIT", "status": "completed",
+	})
+	// Write timing.json and costs.json to auditDir (Build tries auditDir first; LoadTiming
+	// returns empty+nil when file missing, so the artifactsDir fallback never triggers)
+	writeJSON(t, auditDir, "timing.json", map[string]any{
+		"entries": []map[string]any{
+			{"phase": "plan", "start": now, "end": now.Add(30 * time.Second), "duration": "30s"},
+			{"phase": "implement", "start": now, "end": now.Add(60 * time.Second), "duration": "1m 00s"},
+		},
+	})
+	writeJSON(t, auditDir, "costs.json", map[string]any{"phases": []map[string]any{}})
+
+	// Write dispatch-counts.json in auditDir: phase 0 ran once, phase 1 ran twice
+	writeJSON(t, auditDir, "dispatch-counts.json", map[string]any{"0": 1, "1": 2})
+
+	// Write metadata only in auditDir at AuditMetaPath paths (simulate purged artifacts)
+	meta0 := &state.PhaseMetadata{
+		PhaseName: "plan", PhaseType: "agent", PhaseIndex: 0,
+		Model: "sonnet", SessionID: "audit-sess-0",
+	}
+	if err := state.SaveMetadata(state.AuditMetaPath(auditDir, 0, 1), meta0); err != nil {
+		t.Fatal(err)
+	}
+	meta1 := &state.PhaseMetadata{
+		PhaseName: "implement", PhaseType: "agent", PhaseIndex: 1,
+		Model: "opus", SessionID: "audit-sess-1",
+	}
+	if err := state.SaveMetadata(state.AuditMetaPath(auditDir, 1, 2), meta1); err != nil {
+		t.Fatal(err)
+	}
+
+	phases := []config.Phase{
+		{Name: "plan", Type: "agent"},
+		{Name: "implement", Type: "agent"},
+	}
+	st, _ := state.Load(artifactsDir)
+	data, err := Build(artifactsDir, auditDir, st, phases)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data.Phases) != 2 {
+		t.Fatalf("phases = %d, want 2", len(data.Phases))
+	}
+	if data.Phases[0].Model != "sonnet" {
+		t.Errorf("phases[0].Model = %q, want sonnet", data.Phases[0].Model)
+	}
+	if data.Phases[0].SessionID != "audit-sess-0" {
+		t.Errorf("phases[0].SessionID = %q, want audit-sess-0", data.Phases[0].SessionID)
+	}
+	if data.Phases[1].Model != "opus" {
+		t.Errorf("phases[1].Model = %q, want opus", data.Phases[1].Model)
+	}
+	if data.Phases[1].SessionID != "audit-sess-1" {
+		t.Errorf("phases[1].SessionID = %q, want audit-sess-1", data.Phases[1].SessionID)
+	}
+}
+
+func TestBuild_AuditDirFallsBackToArtifacts(t *testing.T) {
+	artifactsDir := t.TempDir()
+	auditDir := t.TempDir()
+	now := time.Now()
+
+	writeJSON(t, artifactsDir, "state.json", map[string]any{
+		"phase_index": 1, "ticket": "KS-FALLBACK", "status": "completed",
+	})
+	// Write timing.json and costs.json to auditDir (Build tries auditDir first)
+	writeJSON(t, auditDir, "timing.json", map[string]any{
+		"entries": []map[string]any{
+			{"phase": "plan", "start": now, "end": now.Add(30 * time.Second), "duration": "30s"},
+		},
+	})
+	writeJSON(t, auditDir, "costs.json", map[string]any{"phases": []map[string]any{}})
+
+	// Metadata only in artifactsDir, not in auditDir
+	if err := os.MkdirAll(filepath.Join(artifactsDir, "logs"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	meta0 := &state.PhaseMetadata{
+		PhaseName: "plan", PhaseType: "agent", PhaseIndex: 0,
+		Model: "haiku", SessionID: "fallback-sess-0",
+	}
+	if err := state.SaveMetadata(state.MetaPath(artifactsDir, 0), meta0); err != nil {
+		t.Fatal(err)
+	}
+
+	// Empty dispatch-counts in auditDir (no attempts recorded)
+	writeJSON(t, auditDir, "dispatch-counts.json", map[string]any{})
+
+	phases := []config.Phase{{Name: "plan", Type: "agent"}}
+	st, _ := state.Load(artifactsDir)
+	data, err := Build(artifactsDir, auditDir, st, phases)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data.Phases) != 1 {
+		t.Fatalf("phases = %d, want 1", len(data.Phases))
+	}
+	if data.Phases[0].Model != "haiku" {
+		t.Errorf("phases[0].Model = %q, want haiku", data.Phases[0].Model)
+	}
+	if data.Phases[0].SessionID != "fallback-sess-0" {
+		t.Errorf("phases[0].SessionID = %q, want fallback-sess-0", data.Phases[0].SessionID)
+	}
+}

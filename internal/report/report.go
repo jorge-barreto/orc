@@ -89,11 +89,15 @@ func Build(artifactsDir, auditDir string, st *state.State, phases []config.Phase
 	loopCounts, _ := state.LoadLoopCounts(artifactsDir)
 
 	// Step 3.5: Load phase metadata (keyed by phase name for retry matching)
+	var attemptCounts map[int]int
+	if auditDir != "" {
+		attemptCounts, _ = state.LoadAttemptCounts(auditDir)
+	}
 	metaByName := map[string][]*state.PhaseMetadata{}
 	for i := range phases {
 		var meta *state.PhaseMetadata
-		if auditDir != "" {
-			meta, _ = state.LoadMetadata(state.MetaPath(auditDir, i))
+		if auditDir != "" && attemptCounts[i] > 0 {
+			meta, _ = state.LoadMetadata(state.AuditMetaPath(auditDir, i, attemptCounts[i]))
 		}
 		if meta == nil {
 			meta, _ = state.LoadMetadata(state.MetaPath(artifactsDir, i))
