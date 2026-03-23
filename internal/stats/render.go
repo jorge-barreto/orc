@@ -80,6 +80,9 @@ func RenderText(w io.Writer, s *Stats) {
 		catWidth := 0
 		for _, f := range s.Failures {
 			cat := strings.ReplaceAll(f.Category, "_", " ")
+			if cat == "" {
+				cat = "unknown"
+			}
 			cat = strings.ToUpper(cat[:1]) + cat[1:]
 			if len(cat) > catWidth {
 				catWidth = len(cat)
@@ -88,6 +91,9 @@ func RenderText(w io.Writer, s *Stats) {
 		catWidth++ // pad to longest+1
 		for _, f := range s.Failures {
 			cat := strings.ReplaceAll(f.Category, "_", " ")
+			if cat == "" {
+				cat = "unknown"
+			}
 			cat = strings.ToUpper(cat[:1]) + cat[1:]
 			fmt.Fprintf(w, "    %-*s  %d  (%.1f%%)\n", catWidth, cat, f.Count, f.Percent)
 		}

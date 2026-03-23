@@ -632,3 +632,20 @@ func TestRenderText_NoRuns(t *testing.T) {
 		t.Errorf("expected 'No audited runs found' in output, got:\n%s", output)
 	}
 }
+
+func TestRenderText_EmptyFailureCategory(t *testing.T) {
+	s := &Stats{
+		TotalRuns:    1,
+		TotalTickets: 1,
+		SuccessRate:  0,
+		Failures: []FailureStat{
+			{Category: "", Count: 1, Percent: 100.0},
+		},
+	}
+	var buf bytes.Buffer
+	RenderText(&buf, s)
+	output := buf.String()
+	if !strings.Contains(output, "Unknown") {
+		t.Errorf("expected 'Unknown' fallback for empty category, got:\n%s", output)
+	}
+}
