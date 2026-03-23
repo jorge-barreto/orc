@@ -57,6 +57,9 @@ func lastDuration(timing *state.Timing, phaseName string) time.Duration {
 
 // RunSummary prints the run summary table showing phase outcomes.
 func RunSummary(phases []config.Phase, timing *state.Timing, failedPhase int, skipped map[string]bool) {
+	if QuietMode {
+		return
+	}
 	lastIdx := len(phases) - 1
 	if failedPhase >= 0 {
 		lastIdx = failedPhase

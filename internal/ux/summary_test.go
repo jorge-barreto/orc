@@ -352,6 +352,29 @@ func TestRunSummary_PhantomPhasesHidden(t *testing.T) {
 	}
 }
 
+func TestRunSummary_QuietSuppressed(t *testing.T) {
+	origQuiet := QuietMode
+	t.Cleanup(func() { QuietMode = origQuiet })
+	QuietMode = true
+
+	phases := []config.Phase{
+		{Name: "plan", Type: "agent"},
+		{Name: "implement", Type: "agent"},
+	}
+	now := time.Now()
+	timing := makeTiming([]state.TimingEntry{
+		{Phase: "plan", Start: now, End: now.Add(10 * time.Second)},
+		{Phase: "implement", Start: now, End: now.Add(20 * time.Second)},
+	})
+
+	out := captureOutput(func() {
+		RunSummary(phases, timing, -1, nil)
+	})
+	if out != "" {
+		t.Errorf("RunSummary should produce no output in quiet mode, got: %q", out)
+	}
+}
+
 func TestRunSummary_ColumnAlignment(t *testing.T) {
 	phases := []config.Phase{
 		{Name: "a-very-long-phase-nm", Type: "agent"}, // 20 chars

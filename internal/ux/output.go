@@ -1,9 +1,11 @@
 package ux
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jorge-barreto/orc/internal/config"
@@ -24,6 +26,11 @@ var (
 	BoldBlue  = "\033[1;34m"
 	BoldGreen = "\033[1;32m"
 )
+
+// QuietMode suppresses decorated output and emits JSON lines instead.
+var QuietMode bool
+
+var quietMu sync.Mutex
 
 // IsTerminal reports whether the given file is a terminal.
 func IsTerminal(f *os.File) bool {
@@ -50,12 +57,41 @@ func DisableColor() {
 	BoldGreen = ""
 }
 
+// EnableQuiet activates machine-friendly JSON output and disables color.
+func EnableQuiet() {
+	QuietMode = true
+	DisableColor()
+}
+
+// QuietPhaseEvent emits a single JSON line for a phase transition.
+// extra keys are merged into the event object.
+func QuietPhaseEvent(phase string, status string, extra map[string]interface{}) {
+	event := map[string]interface{}{
+		"phase":  phase,
+		"status": status,
+	}
+	for k, v := range extra {
+		event[k] = v
+	}
+	data, err := json.Marshal(event)
+	if err != nil {
+		return
+	}
+	quietMu.Lock()
+	fmt.Println(string(data))
+	quietMu.Unlock()
+}
+
 func timestamp() string {
 	return time.Now().Format("15:04:05")
 }
 
 // PhaseHeader prints a timestamped phase header.
 func PhaseHeader(index, total int, phase config.Phase) {
+	if QuietMode {
+		QuietPhaseEvent(phase.Name, "started", nil)
+		return
+	}
 	fmt.Printf("\n%s[%s]%s %s══════════════════════════════════════%s\n",
 		Dim, timestamp(), Reset, Cyan, Reset)
 	desc := ""
@@ -78,6 +114,10 @@ func PhaseComplete(index int, duration time.Duration) {
 
 // PhaseFail prints a phase failure message.
 func PhaseFail(index int, phaseName, errMsg string) {
+	if QuietMode {
+		QuietPhaseEvent(phaseName, "failed", map[string]interface{}{"error": errMsg})
+		return
+	}
 	fmt.Printf("%s[%s]%s  %s✗ Phase %d (%s) failed: %s%s\n",
 		Dim, timestamp(), Reset, Red, index+1, phaseName, errMsg, Reset)
 }
@@ -85,6 +125,9 @@ func PhaseFail(index int, phaseName, errMsg string) {
 // ResumeHint prints a resume command hint.
 // If sessionResumable is true, suggests --resume to continue the interrupted agent session.
 func ResumeHint(ticket string, sessionResumable bool) {
+	if QuietMode {
+		return
+	}
 	if sessionResumable {
 		fmt.Printf("\n%sResume:%s orc run %s --resume\n", Yellow, Reset, ticket)
 	} else {
@@ -94,29 +137,47 @@ func ResumeHint(ticket string, sessionResumable bool) {
 
 // LoopBack prints a loop-back message for loop iterations.
 func LoopBack(fromPhase, toPhase string, iteration, max int) {
+	if QuietMode {
+		QuietPhaseEvent(fromPhase, "loop_back", map[string]interface{}{"goto": toPhase, "iteration": iteration, "max": max})
+		return
+	}
 	fmt.Printf("%s[%s]%s  %s↻ %q iteration %d/%d — looping back to %q%s\n",
 		Dim, timestamp(), Reset, Yellow, fromPhase, iteration, max, toPhase, Reset)
 }
 
 // LoopExhausted prints a message when a loop has exhausted its max iterations.
 func LoopExhausted(phaseName string, iteration int) {
+	if QuietMode {
+		QuietPhaseEvent(phaseName, "loop_exhausted", map[string]interface{}{"iterations": iteration})
+		return
+	}
 	fmt.Printf("%s[%s]%s  %s✗ %q: loop exhausted after %d iterations%s\n",
 		Dim, timestamp(), Reset, Red, phaseName, iteration, Reset)
 }
 
 // PhaseSkip prints a phase skip message (condition not met).
 func PhaseSkip(index int, phaseName string) {
+	if QuietMode {
+		QuietPhaseEvent(phaseName, "skipped", nil)
+		return
+	}
 	fmt.Printf("%s[%s]%s  %s– Phase %d (%s) skipped (condition not met)%s\n",
 		Dim, timestamp(), Reset, Dim, index+1, phaseName, Reset)
 }
 
 // ToolUse prints an inline tool call.
 func ToolUse(name, input string) {
+	if QuietMode {
+		return
+	}
 	fmt.Printf("  %s⚡ %s%s %s\n", Cyan, name, Reset, input)
 }
 
 // ToolDenied prints a denied tool call.
 func ToolDenied(name, input string) {
+	if QuietMode {
+		return
+	}
 	summary := input
 	if len(summary) > 80 {
 		summary = summary[:77] + "..."
@@ -126,6 +187,9 @@ func ToolDenied(name, input string) {
 
 // PermissionPrompt prints a permission denial prompt header.
 func PermissionPrompt(tools []string) {
+	if QuietMode {
+		return
+	}
 	fmt.Printf("\n  %s⚠ Tools denied: %s%s\n", Yellow, strings.Join(tools, ", "), Reset)
 }
 
@@ -156,6 +220,9 @@ func wrapLines(text string, maxWidth int) []string {
 
 // AgentQuestion displays an AskUserQuestion from the agent with numbered options.
 func AgentQuestion(question string, options []string) {
+	if QuietMode {
+		return
+	}
 	fmt.Printf("\n  %s┌─ Agent Question ─────────────────────────%s\n", BoldCyan, Reset)
 	for _, line := range wrapLines(question, 60) {
 		fmt.Printf("  %s│%s %s\n", BoldCyan, Reset, line)
