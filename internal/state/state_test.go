@@ -564,6 +564,21 @@ func TestResolveStateDir_NoRun(t *testing.T) {
 	}
 }
 
+func TestResolveStateDir_PartialArchive(t *testing.T) {
+	dir := t.TempDir()
+	// Create history dir with an entry but NO state.json inside it
+	histEntry := filepath.Join(dir, "history", "20260322T120000")
+	if err := os.MkdirAll(histEntry, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Do NOT write state.json — this simulates a partial archive
+
+	_, err := ResolveStateDir(dir)
+	if err == nil {
+		t.Fatal("expected error for partial archive (history dir without state.json), got nil")
+	}
+}
+
 func TestResolveStateDir_PreferLiveOverHistory(t *testing.T) {
 	dir := t.TempDir()
 	writeStateJSON(t, dir)
