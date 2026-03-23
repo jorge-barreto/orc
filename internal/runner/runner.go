@@ -291,9 +291,9 @@ mainLoop:
 
 		if err != nil || (result != nil && result.ExitCode != 0) {
 			r.Timing.AddEnd(phase.Name)
-			errMsg := "non-zero exit"
+			errMsg := fmt.Sprintf("%s exited with non-zero status", phase.Type)
 			if result != nil && result.TimedOut {
-				errMsg = fmt.Sprintf("timed out after %dm", phase.Timeout)
+				errMsg = fmt.Sprintf("timed out after %dm — consider increasing 'timeout' in config (current: %d)", phase.Timeout, phase.Timeout)
 			} else if err != nil {
 				errMsg = err.Error()
 			}
@@ -494,15 +494,15 @@ mainLoop:
 					}
 					if idx < r.State.GetPhaseIndex() {
 						if err := r.prepareBackwardJump(idx, r.State.GetPhaseIndex(), loopCounts); err != nil {
-							return err
+							return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("preparing rewind to phase %d: %w", idx, err))
 						}
 						if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
-							return fmt.Errorf("saving loop counts after rewind: %w", err)
+							return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("saving loop counts after rewind: %w", err))
 						}
 					}
 					r.State.SetPhase(idx)
 					if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
-						return fmt.Errorf("saving state after rewind: %w", err)
+						return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("saving state after rewind: %w", err))
 					}
 					continue mainLoop
 				case "continue":
@@ -515,16 +515,16 @@ mainLoop:
 
 	r.State.SetStatus(state.StatusCompleted)
 	if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
-		return fmt.Errorf("saving final state: %w", err)
+		return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("saving final state: %w", err))
 	}
 	if saveErr := r.State.Save(r.auditDir); saveErr != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to save audit state: %v\n", saveErr)
 	}
-	if err := r.Timing.Flush(r.auditDir); err != nil {
-		return fmt.Errorf("flushing timing: %w", err)
+	if flushErr := r.Timing.Flush(r.auditDir); flushErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to flush timing to audit: %v\n", flushErr)
 	}
-	if err := r.Costs.Flush(r.auditDir); err != nil {
-		return fmt.Errorf("flushing costs: %w", err)
+	if flushErr := r.Costs.Flush(r.auditDir); flushErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to flush costs to audit: %v\n", flushErr)
 	}
 	// Flush timing and costs to artifacts dir so they are included in the archive
 	if flushErr := r.Timing.Flush(r.Env.ArtifactsDir); flushErr != nil {
@@ -766,9 +766,9 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 		if pr.err != nil || (pr.result != nil && pr.result.ExitCode != 0) {
 			cancel() // cancel the other goroutine
 			r.Timing.AddEndAt(phase.Name, pr.endTime)
-			errMsg := "non-zero exit"
+			errMsg := fmt.Sprintf("%s exited with non-zero status", phase.Type)
 			if pr.result != nil && pr.result.TimedOut {
-				errMsg = fmt.Sprintf("timed out after %dm", phase.Timeout)
+				errMsg = fmt.Sprintf("timed out after %dm — consider increasing 'timeout' in config (current: %d)", phase.Timeout, phase.Timeout)
 			} else if pr.err != nil {
 				errMsg = pr.err.Error()
 			}
@@ -880,15 +880,15 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 				}
 				if idx < r.State.GetPhaseIndex() {
 					if err := r.prepareBackwardJump(idx, r.State.GetPhaseIndex(), loopCounts); err != nil {
-						return err
+						return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("preparing rewind to phase %d: %w", idx, err))
 					}
 					if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
-						return fmt.Errorf("saving loop counts after rewind: %w", err)
+						return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("saving loop counts after rewind: %w", err))
 					}
 				}
 				r.State.SetPhase(idx)
 				if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
-					return fmt.Errorf("saving state after rewind: %w", err)
+					return r.failAndHint(state.StatusFailed, ExitRetryable, fmt.Errorf("saving state after rewind: %w", err))
 				}
 				return errStepRewind
 			case "continue":
