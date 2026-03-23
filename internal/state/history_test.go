@@ -207,6 +207,58 @@ func TestPruneHistory_NegativeLimit(t *testing.T) {
 	}
 }
 
+func TestPruneHistory_IgnoresFiles(t *testing.T) {
+	tempDir := t.TempDir()
+	histDir := filepath.Join(tempDir, "history")
+
+	// Create 3 history directories
+	dirNames := []string{
+		"2026-01-01T00-00-00.001",
+		"2026-01-01T00-00-00.002",
+		"2026-01-01T00-00-00.003",
+	}
+	for _, name := range dirNames {
+		if err := os.MkdirAll(filepath.Join(histDir, name), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Create 2 stray files
+	for _, name := range []string{".DS_Store", "README.txt"} {
+		if err := os.WriteFile(filepath.Join(histDir, name), []byte("stray"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Prune with limit=3 — exactly matches directory count, so no dirs should be removed
+	if err := PruneHistory(tempDir, 3); err != nil {
+		t.Fatalf("PruneHistory: %v", err)
+	}
+
+	entries, err := os.ReadDir(histDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 3 dirs + 2 stray files = 5 total entries
+	if len(entries) != 5 {
+		t.Fatalf("expected 5 entries (3 dirs + 2 files), got %d", len(entries))
+	}
+
+	// All 3 directories must survive
+	for _, name := range dirNames {
+		if _, err := os.Stat(filepath.Join(histDir, name)); err != nil {
+			t.Errorf("expected dir %s to survive: %v", name, err)
+		}
+	}
+
+	// Both stray files must be untouched
+	for _, name := range []string{".DS_Store", "README.txt"} {
+		if _, err := os.Stat(filepath.Join(histDir, name)); err != nil {
+			t.Errorf("expected stray file %s to be untouched: %v", name, err)
+		}
+	}
+}
+
 func TestListHistory(t *testing.T) {
 	tempDir := t.TempDir()
 	histDir := filepath.Join(tempDir, "history")

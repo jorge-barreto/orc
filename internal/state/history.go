@@ -155,6 +155,15 @@ func PruneHistory(artifactsDir string, limit int) error {
 		return err
 	}
 
+	// Filter to directories only — consistent with ListHistory/LatestHistoryDir.
+	dirs := entries[:0]
+	for _, e := range entries {
+		if e.IsDir() {
+			dirs = append(dirs, e)
+		}
+	}
+	entries = dirs
+
 	// entries from ReadDir are already sorted alphabetically (chronologically for timestamp names)
 	for len(entries) > limit {
 		oldest := entries[0]
