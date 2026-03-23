@@ -25,7 +25,7 @@ func testCmd() *cli.Command {
 			&cli.BoolFlag{Name: "auto", Usage: "Unattended mode — skip gates, no interactive steering"},
 			&cli.BoolFlag{Name: "verbose", Aliases: []string{"v"}, Usage: "Save raw stream-json output to .stream.jsonl files"},
 			&cli.BoolFlag{Name: "with-hooks", Usage: "Run pre-run and post-run hooks around the phase dispatch"},
-			&cli.BoolFlag{Name: "headless", Usage: "Non-interactive mode — implies --auto, disables color and stdin"},
+			&cli.BoolFlag{Name: "headless", Usage: "Non-interactive mode — JSONL output, implies --auto, disables color"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfgErr := func(err error) error {

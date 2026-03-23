@@ -76,7 +76,7 @@ func runCmd() *cli.Command {
 			&cli.BoolFlag{Name: "verbose", Aliases: []string{"v"}, Usage: "Save raw stream-json output to .stream.jsonl files"},
 			&cli.BoolFlag{Name: "resume", Usage: "Resume an interrupted agent phase using saved session"},
 			&cli.BoolFlag{Name: "step", Usage: "Step-through mode — pause after each phase for inspection"},
-			&cli.BoolFlag{Name: "headless", Usage: "Non-interactive mode for CI/CD — implies --auto, disables color and stdin"},
+			&cli.BoolFlag{Name: "headless", Usage: "Non-interactive mode for CI/CD — JSONL output, implies --auto, disables color"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfgErr := func(err error) error {
