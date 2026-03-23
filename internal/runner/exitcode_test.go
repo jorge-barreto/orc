@@ -13,7 +13,7 @@ func TestExitCodeFrom_Nil(t *testing.T) {
 }
 
 func TestExitCodeFrom_ExitError(t *testing.T) {
-	for _, code := range []int{ExitRetryable, ExitHumanNeeded, ExitConfigError, ExitSignal} {
+	for _, code := range []int{ExitPhaseFailure, ExitTimeout, ExitCostLimit, ExitInterrupted, ExitResumeFailure} {
 		err := &ExitError{Code: code, Err: fmt.Errorf("test")}
 		if got := ExitCodeFrom(err); got != code {
 			t.Fatalf("ExitCodeFrom(ExitError{%d}) = %d", code, got)
@@ -22,17 +22,17 @@ func TestExitCodeFrom_ExitError(t *testing.T) {
 }
 
 func TestExitCodeFrom_WrappedExitError(t *testing.T) {
-	inner := &ExitError{Code: ExitHumanNeeded, Err: fmt.Errorf("gate denied")}
+	inner := &ExitError{Code: ExitCostLimit, Err: fmt.Errorf("gate denied")}
 	wrapped := fmt.Errorf("run failed: %w", inner)
-	if code := ExitCodeFrom(wrapped); code != ExitHumanNeeded {
-		t.Fatalf("ExitCodeFrom(wrapped) = %d, want %d", code, ExitHumanNeeded)
+	if code := ExitCodeFrom(wrapped); code != ExitCostLimit {
+		t.Fatalf("ExitCodeFrom(wrapped) = %d, want %d", code, ExitCostLimit)
 	}
 }
 
 func TestExitCodeFrom_PlainError(t *testing.T) {
 	err := fmt.Errorf("some error")
-	if code := ExitCodeFrom(err); code != ExitRetryable {
-		t.Fatalf("ExitCodeFrom(plain) = %d, want %d", code, ExitRetryable)
+	if code := ExitCodeFrom(err); code != ExitPhaseFailure {
+		t.Fatalf("ExitCodeFrom(plain) = %d, want %d", code, ExitPhaseFailure)
 	}
 }
 
@@ -45,7 +45,7 @@ func TestExitError_Error(t *testing.T) {
 
 func TestExitError_Unwrap(t *testing.T) {
 	inner := fmt.Errorf("inner")
-	err := &ExitError{Code: ExitRetryable, Err: inner}
+	err := &ExitError{Code: ExitPhaseFailure, Err: inner}
 	if !errors.Is(err, inner) {
 		t.Fatal("Unwrap did not return inner error")
 	}
