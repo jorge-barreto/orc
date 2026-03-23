@@ -774,6 +774,7 @@ Directory Structure
   ├── timing.json             Start/end timestamps per phase
   ├── costs.json              Per-phase cost and token counts
   ├── loop-counts.json        Loop iteration counters per phase
+  ├── run-result.json         Machine-readable run summary
   ├── prompts/
   │   ├── phase-1.md          Rendered prompt for phase 1
   │   ├── phase-2.md          Rendered prompt for phase 2
@@ -812,6 +813,26 @@ loop-counts.json
 
 Tracks loop iteration counts per phase. Reset when using --retry or
 --from flags.
+
+run-result.json
+---------------
+
+Machine-readable summary of the run outcome, written on every run exit
+(success, failure, interrupt). Designed for programmatic consumption by
+launchers and CI/CD systems.
+
+Fields:
+  ticket                  string     Ticket identifier
+  workflow                string     Workflow name (empty for flat layout)
+  status                  string     "completed", "failed", or "interrupted"
+  exit_code               int        Process exit code (0=success, 1=retryable, 2=human-needed, 130=signal)
+  failed_phase            string?    Name of the failed phase (null on success)
+  phases_completed        int        Number of phases that completed successfully
+  phases_total            int        Total number of phases in workflow
+  total_cost_usd          float      Total cost across all agent phases
+  total_duration_seconds  float      Total wall-clock seconds
+  commits                 []string   Git commit hashes created during the run
+  artifacts_dir           string     Absolute path to the artifacts directory
 
 prompts/
 --------

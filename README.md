@@ -472,6 +472,7 @@ orc creates a `.orc/artifacts/<ticket>/` directory per ticket to store all run d
 ├── costs.json              # Per-phase cost and token counts
 ├── timing.json             # Per-phase timing data
 ├── loop-counts.json        # Persisted loop iteration counters
+├── run-result.json         # Machine-readable run summary (written on every exit)
 ├── prompts/                # Rendered prompt for each phase
 ├── logs/                   # Agent output for each phase
 ├── feedback/               # Loop/failure feedback
