@@ -44,3 +44,20 @@ func TestTotalElapsed_Race(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestAddEndAt(t *testing.T) {
+	t0 := time.Now()
+	timing := &Timing{
+		Entries: []TimingEntry{
+			{Phase: "a", Start: t0},
+		},
+	}
+	endTime := t0.Add(3 * time.Second)
+	timing.AddEndAt("a", endTime)
+	if timing.Entries[0].End != endTime {
+		t.Fatalf("End = %v, want %v", timing.Entries[0].End, endTime)
+	}
+	if timing.Entries[0].Duration == "" {
+		t.Fatal("Duration should be set")
+	}
+}

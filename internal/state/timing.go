@@ -76,6 +76,20 @@ func (t *Timing) AddEnd(phaseName string) {
 	}
 }
 
+// AddEndAt records the given end time for the most recent entry matching phaseName.
+func (t *Timing) AddEndAt(phaseName string, endTime time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for i := len(t.Entries) - 1; i >= 0; i-- {
+		if t.Entries[i].Phase == phaseName && t.Entries[i].End.IsZero() {
+			t.Entries[i].End = endTime
+			d := t.Entries[i].End.Sub(t.Entries[i].Start)
+			t.Entries[i].Duration = formatDuration(d)
+			break
+		}
+	}
+}
+
 // Flush writes the in-memory timing data to disk.
 func (t *Timing) Flush(artifactsDir string) error {
 	t.mu.Lock()
