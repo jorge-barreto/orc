@@ -105,7 +105,11 @@ func PhaseHeader(index, total int, phase config.Phase) {
 }
 
 // PhaseComplete prints a phase completion message.
-func PhaseComplete(index int, duration time.Duration) {
+func PhaseComplete(index int, phaseName string, duration time.Duration) {
+	if QuietMode {
+		QuietPhaseEvent(phaseName, "complete", map[string]interface{}{"duration_s": duration.Seconds()})
+		return
+	}
 	m := int(duration.Minutes())
 	s := int(duration.Seconds()) % 60
 	fmt.Printf("%s[%s]%s  %s✓ Phase %d complete (%dm %02ds)%s\n",

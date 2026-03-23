@@ -139,7 +139,7 @@ func testCmd() *cli.Command {
 			}
 
 			if result.ExitCode == 0 {
-				ux.PhaseComplete(phaseIdx, duration)
+				ux.PhaseComplete(phaseIdx, phase.Name, duration)
 			} else {
 				ux.PhaseFail(phaseIdx, phase.Name, fmt.Sprintf("exit code %d", result.ExitCode))
 			}

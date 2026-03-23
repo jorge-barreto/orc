@@ -139,6 +139,87 @@ func TestRun_AllPhasesSucceed(t *testing.T) {
 	}
 }
 
+func TestRun_QuietMode_EmitsJSONLines(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+
+	origStdout := os.Stdout
+	rp, wp, _ := os.Pipe()
+	os.Stdout = wp
+	t.Cleanup(func() {
+		os.Stdout = origStdout
+		ux.QuietMode = false
+	})
+
+	ux.QuietMode = true
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wp.Close()
+	var buf bytes.Buffer
+	io.Copy(&buf, rp)
+
+	lines := strings.Split(buf.String(), "\n")
+	var nonEmpty []string
+	for _, l := range lines {
+		if strings.TrimSpace(l) != "" {
+			nonEmpty = append(nonEmpty, l)
+		}
+	}
+	if len(nonEmpty) != 4 {
+		t.Fatalf("expected 4 JSON lines, got %d:\n%s", len(nonEmpty), buf.String())
+	}
+
+	type event struct {
+		Phase  string                 `json:"phase"`
+		Status string                 `json:"status"`
+		Extra  map[string]interface{} `json:"-"`
+	}
+
+	parseEvent := func(line string) map[string]interface{} {
+		var m map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("failed to parse JSON line %q: %v", line, err)
+		}
+		return m
+	}
+
+	e0 := parseEvent(nonEmpty[0])
+	if e0["phase"] != "a" || e0["status"] != "started" {
+		t.Fatalf("line 0: got %v, want phase=a status=started", e0)
+	}
+
+	e1 := parseEvent(nonEmpty[1])
+	if e1["phase"] != "a" || e1["status"] != "complete" {
+		t.Fatalf("line 1: got %v, want phase=a status=complete", e1)
+	}
+	if _, ok := e1["duration_s"]; !ok {
+		t.Fatalf("line 1: missing duration_s key: %v", e1)
+	}
+
+	e2 := parseEvent(nonEmpty[2])
+	if e2["phase"] != "b" || e2["status"] != "started" {
+		t.Fatalf("line 2: got %v, want phase=b status=started", e2)
+	}
+
+	e3 := parseEvent(nonEmpty[3])
+	if e3["phase"] != "b" || e3["status"] != "complete" {
+		t.Fatalf("line 3: got %v, want phase=b status=complete", e3)
+	}
+	if _, ok := e3["duration_s"]; !ok {
+		t.Fatalf("line 3: missing duration_s key: %v", e3)
+	}
+}
+
 func TestRun_FailNoLoop(t *testing.T) {
 	cfg := &config.Config{
 		Name: "test",

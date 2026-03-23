@@ -526,7 +526,7 @@ mainLoop:
 		if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
 			return fmt.Errorf("saving state after phase advance: %w", err)
 		}
-		ux.PhaseComplete(i, duration)
+		ux.PhaseComplete(i, phase.Name, duration)
 
 		// Step-through pause
 		if r.StepMode {
@@ -594,7 +594,7 @@ mainLoop:
 	// Archive run to history
 	if runID, archiveErr := state.ArchiveRun(r.Env.ArtifactsDir); archiveErr != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to archive run: %v\n", archiveErr)
-	} else {
+	} else if !ux.QuietMode {
 		fmt.Printf("  %sRun archived:%s %s\n", ux.Dim, ux.Reset, runID)
 	}
 	// Re-write run-result.json after archive so it remains accessible in the current artifacts dir.
@@ -634,8 +634,10 @@ func (r *Runner) handleLoopFailure(i int, phase config.Phase, loopCounts map[str
 				if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: failed to save loop counts: %v\n", err)
 				}
-				fmt.Printf("\n  Phase %q: loop exhausted after %d iterations, recovery exhausted after %d attempts. Manual intervention needed.\n",
-					phase.Name, iteration, phase.Loop.OnExhaust.Max)
+				if !ux.QuietMode {
+					fmt.Printf("\n  Phase %q: loop exhausted after %d iterations, recovery exhausted after %d attempts. Manual intervention needed.\n",
+						phase.Name, iteration, phase.Loop.OnExhaust.Max)
+				}
 				r.printRunSummary(i)
 				return false, r.failWithCategory(state.StatusFailed, ExitPhaseFailure, state.FailCategoryLoopExhaustion,
 					fmt.Sprintf("phase %q: loop exhausted (%d iterations) and recovery exhausted (%d attempts)", phase.Name, iteration, phase.Loop.OnExhaust.Max),
@@ -678,8 +680,10 @@ func (r *Runner) handleLoopFailure(i int, phase config.Phase, loopCounts map[str
 		if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to save loop counts: %v\n", err)
 		}
-		fmt.Printf("\n  Phase %q failed after %d iterations. Manual intervention needed.\n",
-			phase.Name, iteration)
+		if !ux.QuietMode {
+			fmt.Printf("\n  Phase %q failed after %d iterations. Manual intervention needed.\n",
+				phase.Name, iteration)
+		}
 		r.printRunSummary(i)
 		return false, r.failWithCategory(state.StatusFailed, ExitPhaseFailure, state.FailCategoryLoopExhaustion,
 			fmt.Sprintf("phase %q: failed after %d iterations", phase.Name, iteration),
@@ -841,7 +845,7 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 			}
 		} else {
 			r.Timing.AddEndAt(phase.Name, pr.endTime)
-			ux.PhaseComplete(pr.idx, pr.endTime.Sub(pr.startTime))
+			ux.PhaseComplete(pr.idx, phase.Name, pr.endTime.Sub(pr.startTime))
 		}
 	}
 	if saveErr := state.SaveAttemptCounts(r.auditDir, r.attemptCount); saveErr != nil {
