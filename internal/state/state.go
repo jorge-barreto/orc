@@ -3,6 +3,7 @@ package state
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -45,6 +46,23 @@ func statePath(artifactsDir string) string {
 func HasState(artifactsDir string) bool {
 	_, err := os.Stat(statePath(artifactsDir))
 	return err == nil
+}
+
+// ResolveStateDir finds the directory containing state.json for a ticket.
+// It checks the live artifacts directory first, then falls back to the
+// latest history entry. Returns an error if no state is found anywhere.
+func ResolveStateDir(artifactsDir string) (string, error) {
+	if HasState(artifactsDir) {
+		return artifactsDir, nil
+	}
+	histDir, err := LatestHistoryDir(artifactsDir)
+	if err != nil {
+		return "", fmt.Errorf("checking history: %w", err)
+	}
+	if histDir == "" || !HasState(histDir) {
+		return "", fmt.Errorf("no state found")
+	}
+	return histDir, nil
 }
 
 // Load reads the state from the artifacts directory. Returns a new state if not found.
