@@ -145,6 +145,20 @@ auto-approved, no steering), disables ANSI color codes, and produces
 clean parseable output. Designed for CI/CD pipelines, cron jobs, and
 wrapper scripts. Exit codes are the primary status signal. Incompatible
 with --step.
+
+Color Control
+-------------
+
+orc respects the standard NO_COLOR convention (https://no-color.org/):
+
+  --no-color flag          orc --no-color run KS-42
+  NO_COLOR env var         NO_COLOR=1 orc run KS-42
+  ORC_NO_COLOR env var     ORC_NO_COLOR=1 orc run KS-42
+  Non-TTY stdout           orc run KS-42 | tee log.txt   (auto-detected)
+
+--headless also disables color (in addition to disabling stdin and
+implying --auto). The --no-color flag is a global flag — it works on
+any command (run, flow, status, etc.).
 `
 
 const topicConfig = `Configuration Reference

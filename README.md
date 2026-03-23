@@ -161,6 +161,8 @@ orc run -w bugfix PROJ-123      # named workflow (explicit flag)
 
 **Headless mode**: `--headless` goes further than `--auto` — it also disables ANSI color codes so output is clean and parseable. Designed for CI/CD pipelines, cron jobs, and wrapper scripts where exit codes (0 = success, 1 = retryable failure, 2 = human needed, 3 = config error, 130 = signal) are the primary status signal. Incompatible with `--step`.
 
+**Color control**: orc disables color when any of these are true: `--no-color` flag is passed, `NO_COLOR` env var is set (standard [no-color.org](https://no-color.org/) convention), `ORC_NO_COLOR` env var is set, or stdout is not a TTY (e.g., piped output). `--headless` also disables color. The `--no-color` flag is global and works on any command.
+
 ### `orc flow`
 
 Visualizes the workflow config as a rich flow diagram with bracket-loop regions, phase icons, model badges, and color.
