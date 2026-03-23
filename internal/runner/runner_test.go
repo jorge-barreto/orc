@@ -3,6 +3,7 @@ package runner
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jorge-barreto/orc/internal/config"
 	"github.com/jorge-barreto/orc/internal/dispatch"
@@ -25,12 +27,14 @@ type mockDispatcher struct {
 	calls   []string
 	results map[string]*dispatch.Result
 	errors  map[string]error
+	delays  map[string]time.Duration
 }
 
 func newMock() *mockDispatcher {
 	return &mockDispatcher{
 		results: make(map[string]*dispatch.Result),
 		errors:  make(map[string]error),
+		delays:  make(map[string]time.Duration),
 	}
 }
 
@@ -38,6 +42,10 @@ func (m *mockDispatcher) Dispatch(ctx context.Context, phase config.Phase, env *
 	m.mu.Lock()
 	m.calls = append(m.calls, phase.Name)
 	m.mu.Unlock()
+
+	if d, ok := m.delays[phase.Name]; ok {
+		time.Sleep(d)
+	}
 
 	if err, ok := m.errors[phase.Name]; ok {
 		res := m.results[phase.Name]
@@ -689,6 +697,55 @@ func TestRun_OutputCheckFail(t *testing.T) {
 	}
 	if r.State.GetStatus() != state.StatusFailed {
 		t.Fatalf("status = %q", r.State.GetStatus())
+	}
+}
+
+func readTestMeta(t *testing.T, artifactsDir string, phaseIdx int) *state.PhaseMetadata {
+	t.Helper()
+	// Metadata is archived into history/ at the end of Run(); look there.
+	histDir, err := state.LatestHistoryDir(artifactsDir)
+	if err != nil || histDir == "" {
+		t.Fatalf("finding latest history dir for phase %d: err=%v histDir=%q", phaseIdx, err, histDir)
+	}
+	path := state.MetaPath(histDir, phaseIdx)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading meta for phase %d: %v", phaseIdx, err)
+	}
+	var meta state.PhaseMetadata
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("parsing meta for phase %d: %v", phaseIdx, err)
+	}
+	return &meta
+}
+
+func TestRun_ParallelTimingPerPhase(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "fast", Type: "script", Run: "echo", ParallelWith: "slow"},
+			{Name: "slow", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	mock.delays["slow"] = 200 * time.Millisecond
+	r := newTestRunner(t, cfg, mock)
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fastMeta := readTestMeta(t, r.Env.ArtifactsDir, 0)
+	slowMeta := readTestMeta(t, r.Env.ArtifactsDir, 1)
+
+	if slowMeta.DurationSecs <= fastMeta.DurationSecs {
+		t.Fatalf("slow duration (%f) should be > fast duration (%f)",
+			slowMeta.DurationSecs, fastMeta.DurationSecs)
+	}
+	if !fastMeta.EndTime.Before(slowMeta.EndTime) {
+		t.Fatalf("fast EndTime (%v) should be before slow EndTime (%v)",
+			fastMeta.EndTime, slowMeta.EndTime)
 	}
 }
 

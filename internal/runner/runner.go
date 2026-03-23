@@ -61,8 +61,7 @@ func writePhaseMetadata(artifactsDir string, phaseIdx int, meta *state.PhaseMeta
 }
 
 // buildPhaseMetadata constructs a PhaseMetadata from phase config and dispatch result.
-func buildPhaseMetadata(phase config.Phase, phaseIdx int, result *dispatch.Result, start time.Time) *state.PhaseMetadata {
-	end := time.Now()
+func buildPhaseMetadata(phase config.Phase, phaseIdx int, result *dispatch.Result, start time.Time, end time.Time) *state.PhaseMetadata {
 	meta := &state.PhaseMetadata{
 		PhaseName:    phase.Name,
 		PhaseType:    phase.Type,
@@ -250,7 +249,8 @@ mainLoop:
 		r.Env.ResumeSessionID = ""
 
 		// Write structured metadata before archiving
-		writePhaseMetadata(r.Env.ArtifactsDir, i, buildPhaseMetadata(phase, i, result, start))
+		end := time.Now()
+		writePhaseMetadata(r.Env.ArtifactsDir, i, buildPhaseMetadata(phase, i, result, start, end))
 
 		// Archive every attempt to audit (before any error/interrupt handling)
 		r.attemptCount[i]++
@@ -358,6 +358,7 @@ mainLoop:
 				}
 				reStart := time.Now()
 				reResult, reErr := rePromptFn(ctx, phase, r.Env, prompt, sessionID)
+				reEnd := time.Now()
 				if reErr != nil {
 					fmt.Fprintf(os.Stderr, "warning: re-prompt for missing outputs failed: %v\n", reErr)
 				}
@@ -369,7 +370,7 @@ mainLoop:
 				}
 				// Write metadata for re-prompt dispatch
 				if reResult != nil {
-					writePhaseMetadata(r.Env.ArtifactsDir, i, buildPhaseMetadata(phase, i, reResult, reStart))
+					writePhaseMetadata(r.Env.ArtifactsDir, i, buildPhaseMetadata(phase, i, reResult, reStart, reEnd))
 				}
 				r.attemptCount[i]++
 				archivePhaseFiles(r.Env.ArtifactsDir, r.auditDir, i, r.attemptCount[i], phase.Outputs)
@@ -704,31 +705,35 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 	defer cancel()
 
 	type phaseResult struct {
-		idx    int
-		result *dispatch.Result
-		err    error
+		idx       int
+		result    *dispatch.Result
+		err       error
+		startTime time.Time
+		endTime   time.Time
 	}
 
 	results := make(chan phaseResult, 2)
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	start := time.Now()
-
 	go func() {
 		defer wg.Done()
 		env1 := r.Env.Clone()
 		env1.PhaseIndex = idx1
+		phaseStart := time.Now()
 		res, err := r.dispatchWithHooks(ctx, phase1, env1)
-		results <- phaseResult{idx: idx1, result: res, err: err}
+		phaseEnd := time.Now()
+		results <- phaseResult{idx: idx1, result: res, err: err, startTime: phaseStart, endTime: phaseEnd}
 	}()
 
 	go func() {
 		defer wg.Done()
 		env2 := r.Env.Clone()
 		env2.PhaseIndex = idx2
+		phaseStart := time.Now()
 		res, err := r.dispatchWithHooks(ctx, phase2, env2)
-		results <- phaseResult{idx: idx2, result: res, err: err}
+		phaseEnd := time.Now()
+		results <- phaseResult{idx: idx2, result: res, err: err, startTime: phaseStart, endTime: phaseEnd}
 	}()
 
 	// Wait for both to complete
@@ -747,7 +752,7 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 	for pr := range results {
 		phase := r.Config.Phases[pr.idx]
 		// Write metadata before archiving
-		writePhaseMetadata(r.Env.ArtifactsDir, pr.idx, buildPhaseMetadata(phase, pr.idx, pr.result, start))
+		writePhaseMetadata(r.Env.ArtifactsDir, pr.idx, buildPhaseMetadata(phase, pr.idx, pr.result, pr.startTime, pr.endTime))
 		// Archive every parallel attempt to audit
 		r.attemptCount[pr.idx]++
 		archivePhaseFiles(r.Env.ArtifactsDir, r.auditDir, pr.idx, r.attemptCount[pr.idx], phase.Outputs)
@@ -760,7 +765,7 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 		}
 		if pr.err != nil || (pr.result != nil && pr.result.ExitCode != 0) {
 			cancel() // cancel the other goroutine
-			r.Timing.AddEnd(phase.Name)
+			r.Timing.AddEndAt(phase.Name, pr.endTime)
 			errMsg := "non-zero exit"
 			if pr.result != nil && pr.result.TimedOut {
 				errMsg = fmt.Sprintf("timed out after %dm", phase.Timeout)
@@ -774,8 +779,8 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 				failedIdx = pr.idx
 			}
 		} else {
-			r.Timing.AddEnd(phase.Name)
-			ux.PhaseComplete(pr.idx, time.Since(start))
+			r.Timing.AddEndAt(phase.Name, pr.endTime)
+			ux.PhaseComplete(pr.idx, pr.endTime.Sub(pr.startTime))
 		}
 	}
 	if saveErr := state.SaveAttemptCounts(r.auditDir, r.attemptCount); saveErr != nil {
