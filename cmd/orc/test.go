@@ -135,7 +135,7 @@ func testCmd() *cli.Command {
 
 			duration := time.Since(start)
 			if dispatchErr != nil {
-				return &runner.ExitError{Code: runner.ExitRetryable, Err: fmt.Errorf("phase %q dispatch failed: %w", phase.Name, dispatchErr)}
+				return &runner.ExitError{Code: runner.ExitPhaseFailure, Err: fmt.Errorf("phase %q dispatch failed: %w", phase.Name, dispatchErr)}
 			}
 
 			if result.ExitCode == 0 {
@@ -145,7 +145,7 @@ func testCmd() *cli.Command {
 			}
 
 			if result.ExitCode != 0 {
-				return &runner.ExitError{Code: runner.ExitRetryable, Err: fmt.Errorf("phase %q failed with exit code %d", phase.Name, result.ExitCode)}
+				return &runner.ExitError{Code: runner.ExitPhaseFailure, Err: fmt.Errorf("phase %q failed with exit code %d", phase.Name, result.ExitCode)}
 			}
 			return nil
 		},

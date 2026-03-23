@@ -205,7 +205,7 @@ func runCmd() *cli.Command {
 			// Handle --resume: validate and thread session ID
 			if resumeFlag {
 				if st.GetSessionID() == "" {
-					return cfgErr(fmt.Errorf("no interrupted agent session to resume (use --retry to restart the phase)"))
+					return &runner.ExitError{Code: runner.ExitResumeFailure, Err: fmt.Errorf("no interrupted agent session to resume (use --retry to restart the phase)")}
 				}
 				env.ResumeSessionID = st.GetSessionID()
 			}

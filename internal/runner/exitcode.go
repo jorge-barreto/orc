@@ -11,13 +11,6 @@ const (
 	ExitCostLimit     = 4 // Cost limit exceeded (per-phase or per-run)
 	ExitInterrupted   = 5 // Signal interrupt (SIGINT/SIGTERM/SIGHUP)
 	ExitResumeFailure = 6 // Cannot resume interrupted session
-
-	// Deprecated: use ExitPhaseFailure (1).
-	ExitRetryable = 1
-	// Deprecated: use ExitPhaseFailure (1) for gate denial or ExitCostLimit (4) for cost limit.
-	ExitHumanNeeded = 2
-	// Deprecated: use ExitInterrupted (5).
-	ExitSignal = 130
 )
 
 // ExitError wraps an error with an orc exit code.

@@ -156,7 +156,7 @@ func TestRun_FailNoLoop(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), `phase "b" failed`) {
 		t.Fatalf("expected phase b failure, got %v", err)
 	}
-	assertExitCode(t, err, ExitRetryable)
+	assertExitCode(t, err, ExitPhaseFailure)
 	if r.State.GetStatus() != state.StatusFailed {
 		t.Fatalf("status = %q", r.State.GetStatus())
 	}
@@ -250,7 +250,7 @@ func TestRun_LoopMaxExceeded(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "failed after 3 iterations") {
 		t.Fatalf("expected loop exhaustion error, got %v", err)
 	}
-	assertExitCode(t, err, ExitRetryable)
+	assertExitCode(t, err, ExitPhaseFailure)
 }
 
 func TestRun_LoopCounterPersisted(t *testing.T) {
@@ -409,7 +409,7 @@ func TestRun_LoopOnExhaustExhausted(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "recovery exhausted") {
 		t.Fatalf("expected recovery exhausted error, got %v", err)
 	}
-	assertExitCode(t, err, ExitRetryable)
+	assertExitCode(t, err, ExitPhaseFailure)
 }
 
 func TestRun_LoopExhaustFeedbackHeader(t *testing.T) {
@@ -662,7 +662,7 @@ func TestRun_ContextCancelled(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected error wrapping context.Canceled, got %v", err)
 	}
-	assertExitCode(t, err, ExitSignal)
+	assertExitCode(t, err, ExitInterrupted)
 	if r.State.GetStatus() != state.StatusInterrupted {
 		t.Fatalf("status = %q", r.State.GetStatus())
 	}
@@ -1199,10 +1199,48 @@ func TestRun_GateDenialExitCode(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for gate denial")
 	}
-	assertExitCode(t, err, ExitHumanNeeded)
+	assertExitCode(t, err, ExitPhaseFailure)
 	if r.State.GetStatus() != state.StatusFailed {
 		t.Fatalf("status = %q, want failed", r.State.GetStatus())
 	}
+}
+
+func TestRun_TimeoutExitCode(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Timeout: 1},
+		},
+	}
+	mock := newMock()
+	mock.results["a"] = &dispatch.Result{ExitCode: 1, TimedOut: true}
+	r := newTestRunner(t, cfg, mock)
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected error for timeout")
+	}
+	assertExitCode(t, err, ExitTimeout)
+	if r.State.GetFailureCategory() != state.FailCategoryTimeout {
+		t.Fatalf("failure_category = %q, want %q", r.State.GetFailureCategory(), state.FailCategoryTimeout)
+	}
+}
+
+func TestRun_ParallelTimeoutExitCode(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", ParallelWith: "b", Timeout: 1},
+			{Name: "b", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	mock.results["a"] = &dispatch.Result{ExitCode: 1, TimedOut: true}
+	r := newTestRunner(t, cfg, mock)
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected error for parallel timeout")
+	}
+	assertExitCode(t, err, ExitTimeout)
 }
 
 func TestRun_ConfigErrorExitCode(t *testing.T) {
@@ -1257,7 +1295,7 @@ func TestRun_RunCostLimitExceeded(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "run exceeded cost limit") {
 		t.Fatalf("expected run cost limit error, got %v", err)
 	}
-	assertExitCode(t, err, ExitHumanNeeded)
+	assertExitCode(t, err, ExitCostLimit)
 	if r.State.GetStatus() != state.StatusFailed {
 		t.Fatalf("status = %q, want failed", r.State.GetStatus())
 	}
@@ -1305,7 +1343,7 @@ func TestRun_PhaseCostLimitExceeded(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), `phase "a" exceeded cost limit`) {
 		t.Fatalf("expected phase cost limit error, got %v", err)
 	}
-	assertExitCode(t, err, ExitHumanNeeded)
+	assertExitCode(t, err, ExitCostLimit)
 	if r.State.GetStatus() != state.StatusFailed {
 		t.Fatalf("status = %q, want failed", r.State.GetStatus())
 	}
@@ -1384,7 +1422,7 @@ func TestRun_LoopCostLimitInteraction(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "run exceeded cost limit") {
 		t.Fatalf("expected run cost limit error, got %v", err)
 	}
-	assertExitCode(t, err, ExitHumanNeeded)
+	assertExitCode(t, err, ExitCostLimit)
 }
 
 // Cost limit tests — parallel path
@@ -1408,7 +1446,7 @@ func TestRun_ParallelRunCostLimitExceeded(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "run exceeded cost limit") {
 		t.Fatalf("expected run cost limit error, got %v", err)
 	}
-	assertExitCode(t, err, ExitHumanNeeded)
+	assertExitCode(t, err, ExitCostLimit)
 	if r.State.GetStatus() != state.StatusFailed {
 		t.Fatalf("status = %q, want failed", r.State.GetStatus())
 	}
@@ -1436,7 +1474,7 @@ func TestRun_ParallelPhaseCostLimitExceeded(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), `phase "a" exceeded cost limit`) {
 		t.Fatalf("expected phase cost limit error, got %v", err)
 	}
-	assertExitCode(t, err, ExitHumanNeeded)
+	assertExitCode(t, err, ExitCostLimit)
 	if r.State.GetStatus() != state.StatusFailed {
 		t.Fatalf("status = %q, want failed", r.State.GetStatus())
 	}
@@ -1570,7 +1608,7 @@ func TestRun_LoopCheckMaxExhausted(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "failed after 3 iterations") {
 		t.Fatalf("expected loop exhaustion error, got %v", err)
 	}
-	assertExitCode(t, err, ExitRetryable)
+	assertExitCode(t, err, ExitPhaseFailure)
 }
 
 func TestRun_LoopCheckFeedbackWritten(t *testing.T) {
@@ -1725,7 +1763,7 @@ func TestRun_LoopCheckWithOnExhaust(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "recovery exhausted") {
 		t.Fatalf("expected recovery exhausted error, got %v", err)
 	}
-	assertExitCode(t, err, ExitRetryable)
+	assertExitCode(t, err, ExitPhaseFailure)
 
 	// Failed runs are not archived; load loop counts directly from artifacts dir.
 	counts, err := state.LoadLoopCounts(r.Env.ArtifactsDir)
@@ -2393,7 +2431,7 @@ func TestRun_PostRunFailure_OverridesSuccess(t *testing.T) {
 	mock := newMock()
 	r := newTestRunner(t, cfg, mock)
 	err := r.Run(context.Background())
-	assertExitCode(t, err, ExitRetryable)
+	assertExitCode(t, err, ExitPhaseFailure)
 }
 
 func TestRun_PostRunWarning_OnDispatchFailure(t *testing.T) {
@@ -2534,7 +2572,7 @@ func TestRun_StepModeAbort(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	assertExitCode(t, err, ExitSignal)
+	assertExitCode(t, err, ExitInterrupted)
 	if r.State.GetStatus() != state.StatusInterrupted {
 		t.Fatalf("status = %q, want interrupted", r.State.GetStatus())
 	}
@@ -2860,7 +2898,7 @@ func TestRun_PreRunHookGoError_Propagates(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from pre-run hook Go error, got nil")
 	}
-	assertExitCode(t, err, ExitRetryable)
+	assertExitCode(t, err, ExitPhaseFailure)
 	if r.State.GetStatus() != state.StatusFailed {
 		t.Fatalf("status = %q, want %q", r.State.GetStatus(), state.StatusFailed)
 	}
@@ -3095,7 +3133,7 @@ func TestRun_StepModeParallelAbort(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from parallel abort, got nil")
 	}
-	assertExitCode(t, err, ExitSignal)
+	assertExitCode(t, err, ExitInterrupted)
 	if r.State.GetStatus() != state.StatusInterrupted {
 		t.Fatalf("status = %q, want interrupted", r.State.GetStatus())
 	}
@@ -3277,7 +3315,7 @@ func TestRun_FailureCategory_GateRejection(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for gate denial")
 	}
-	assertExitCode(t, err, ExitHumanNeeded)
+	assertExitCode(t, err, ExitPhaseFailure)
 	if got := r.State.GetFailureCategory(); got != state.FailCategoryGateRejection {
 		t.Fatalf("FailureCategory = %q, want %q", got, state.FailCategoryGateRejection)
 	}
@@ -3325,9 +3363,29 @@ func TestRun_FailureCategory_CostOverrun(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected cost overrun error")
 	}
-	assertExitCode(t, err, ExitHumanNeeded)
+	assertExitCode(t, err, ExitCostLimit)
 	if got := r.State.GetFailureCategory(); got != state.FailCategoryCostOverrun {
 		t.Fatalf("FailureCategory = %q, want %q", got, state.FailCategoryCostOverrun)
+	}
+}
+
+func TestRun_FailureCategory_Timeout(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet", Timeout: 1},
+		},
+	}
+	mock := newMock()
+	mock.results["a"] = &dispatch.Result{ExitCode: 1, TimedOut: true}
+	r := newTestRunner(t, cfg, mock)
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	assertExitCode(t, err, ExitTimeout)
+	if got := r.State.GetFailureCategory(); got != state.FailCategoryTimeout {
+		t.Fatalf("FailureCategory = %q, want %q", got, state.FailCategoryTimeout)
 	}
 }
 
@@ -3524,8 +3582,8 @@ func TestRun_RunResultOnFailure(t *testing.T) {
 	if result.Status != state.StatusFailed {
 		t.Fatalf("status = %q, want failed", result.Status)
 	}
-	if result.ExitCode != ExitRetryable {
-		t.Fatalf("exit_code = %d, want %d", result.ExitCode, ExitRetryable)
+	if result.ExitCode != ExitPhaseFailure {
+		t.Fatalf("exit_code = %d, want %d", result.ExitCode, ExitPhaseFailure)
 	}
 	if result.FailedPhase == nil || *result.FailedPhase != "b" {
 		t.Fatalf("failed_phase = %v, want 'b'", result.FailedPhase)
@@ -3566,5 +3624,8 @@ func TestRun_RunResultOnInterrupt(t *testing.T) {
 	}
 	if result.Status != state.StatusInterrupted {
 		t.Fatalf("status = %q, want interrupted", result.Status)
+	}
+	if result.ExitCode != ExitInterrupted {
+		t.Fatalf("exit_code = %d, want %d", result.ExitCode, ExitInterrupted)
 	}
 }
