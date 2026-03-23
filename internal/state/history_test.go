@@ -176,8 +176,34 @@ func TestPruneHistory_ZeroLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 0 {
-		t.Fatalf("expected 0 entries after prune with limit=0, got %d", len(entries))
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry after prune with limit=0, got %d", len(entries))
+	}
+	if entries[0].Name() != "c" {
+		t.Errorf("expected remaining entry to be \"c\", got %q", entries[0].Name())
+	}
+}
+
+func TestPruneHistory_NegativeLimit(t *testing.T) {
+	tempDir := t.TempDir()
+	histDir := filepath.Join(tempDir, "history")
+	for _, name := range []string{"a", "b", "c"} {
+		if err := os.MkdirAll(filepath.Join(histDir, name), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := PruneHistory(tempDir, -5); err != nil {
+		t.Fatalf("PruneHistory with limit=-5: %v", err)
+	}
+	entries, err := os.ReadDir(histDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry after prune with limit=-5, got %d", len(entries))
+	}
+	if entries[0].Name() != "c" {
+		t.Errorf("expected remaining entry to be \"c\", got %q", entries[0].Name())
 	}
 }
 

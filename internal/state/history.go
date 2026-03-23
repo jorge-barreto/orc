@@ -143,6 +143,9 @@ func ArchiveRun(artifactsDir string) (string, error) {
 // PruneHistory removes the oldest history entries until the count is within limit.
 // No-op if the history directory does not exist.
 func PruneHistory(artifactsDir string, limit int) error {
+	if limit <= 0 {
+		limit = 1
+	}
 	histDir := HistoryDir(artifactsDir)
 	entries, err := os.ReadDir(histDir)
 	if err != nil {
