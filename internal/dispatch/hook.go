@@ -76,6 +76,9 @@ func DispatchWithHooks(ctx context.Context, phase config.Phase, env *Environment
 	if phase.PostRun != "" {
 		code, err := RunHookWithLog(ctx, phase.PostRun, "post-run", phase, env)
 		if err != nil {
+			if !preRunFailed && dispatchErr == nil {
+				return result, fmt.Errorf("post-run hook: %w", err)
+			}
 			fmt.Fprintf(os.Stderr, "warning: post-run hook error: %v\n", err)
 		} else if code != 0 {
 			if !preRunFailed && dispatchErr == nil && result != nil && result.ExitCode == 0 {

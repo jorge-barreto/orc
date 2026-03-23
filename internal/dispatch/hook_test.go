@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -283,6 +284,56 @@ func TestDispatchWithHooks_PreRunFail_PostRunStillRuns(t *testing.T) {
 	}
 	if _, statErr := os.Stat(sentinel); os.IsNotExist(statErr) {
 		t.Fatal("post-run hook did not run (sentinel file missing)")
+	}
+}
+
+func TestDispatchWithHooks_PostRunInfraError_ReturnsError(t *testing.T) {
+	env := scriptEnv(t)
+	env.ArtifactsDir = filepath.Join(t.TempDir(), "nonexistent", "artifacts")
+
+	phase := config.Phase{Name: "test", Type: "script", PostRun: "echo cleanup"}
+	fn := func(ctx context.Context, p config.Phase, e *Environment) (*Result, error) {
+		return &Result{ExitCode: 0}, nil
+	}
+	_, err := DispatchWithHooks(context.Background(), phase, env, fn)
+	if err == nil {
+		t.Fatal("expected error from post-run hook infrastructure failure")
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("err = %v, want fs.ErrNotExist wrapped", err)
+	}
+	if !strings.Contains(err.Error(), "post-run hook") {
+		t.Fatalf("err = %v, want 'post-run hook' prefix", err)
+	}
+}
+
+func TestDispatchWithHooks_PostRunInfraError_DispatchFailed_Warning(t *testing.T) {
+	env := scriptEnv(t)
+	env.ArtifactsDir = filepath.Join(t.TempDir(), "nonexistent", "artifacts")
+
+	phase := config.Phase{Name: "test", Type: "script", PostRun: "echo cleanup"}
+	dispatchOrigErr := fmt.Errorf("dispatch failed")
+	fn := func(ctx context.Context, p config.Phase, e *Environment) (*Result, error) {
+		return nil, dispatchOrigErr
+	}
+
+	origStderr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+
+	_, err := DispatchWithHooks(context.Background(), phase, env, fn)
+
+	w.Close()
+	var stderrBuf bytes.Buffer
+	io.Copy(&stderrBuf, r)
+	r.Close()
+	os.Stderr = origStderr
+
+	if err != dispatchOrigErr {
+		t.Fatalf("err = %v, want original dispatch error", err)
+	}
+	if !strings.Contains(stderrBuf.String(), "warning: post-run hook error") {
+		t.Fatalf("stderr = %q, want post-run hook warning", stderrBuf.String())
 	}
 }
 
