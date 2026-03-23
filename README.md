@@ -136,6 +136,7 @@ orc run PROJ-123 --from 2            # still works with numbers
 orc run PROJ-123 --verbose     # save raw stream-json output
 orc run PROJ-123 --resume      # resume interrupted agent session
 orc run PROJ-123 --step        # step through phases interactively
+orc run PROJ-123 --headless    # non-interactive — for CI/CD pipelines
 orc run bugfix PROJ-123         # named workflow (positional)
 orc run -w bugfix PROJ-123      # named workflow (explicit flag)
 ```
@@ -149,6 +150,7 @@ orc run -w bugfix PROJ-123      # named workflow (explicit flag)
 | `--verbose`, `-v` | Save raw stream-json output to `.stream.jsonl` files in the logs directory |
 | `--resume` | Resume an interrupted agent phase using saved Claude session ID |
 | `--step` | Step-through mode — pause after each phase for inspection |
+| `--headless` | Non-interactive mode for CI/CD — implies `--auto`, disables color and stdin |
 | `--workflow`, `-w` | Select a named workflow from `.orc/workflows/` |
 
 `--retry`, `--from`, and `--resume` are mutually exclusive.
@@ -156,6 +158,8 @@ orc run -w bugfix PROJ-123      # named workflow (explicit flag)
 **Attended vs auto mode**: By default, orc runs in attended mode — you can type follow-up instructions to steer agent phases, if an agent attempts a tool that wasn't pre-approved, orc prompts you to approve it, and if the agent asks a question (via AskUserQuestion), orc displays it and collects your answer. With `--auto`, orc runs fully unattended with no stdin interaction.
 
 **Step-through mode**: `--step` pauses after each phase with an interactive prompt. You can continue, rewind to a specific phase, abort, or inspect artifact files. Incompatible with `--auto`.
+
+**Headless mode**: `--headless` goes further than `--auto` — it also disables ANSI color codes so output is clean and parseable. Designed for CI/CD pipelines, cron jobs, and wrapper scripts where exit codes (0 = success, 1 = retryable failure, 2 = human needed, 3 = config error, 130 = signal) are the primary status signal. Incompatible with `--step`.
 
 ### `orc flow`
 
@@ -296,6 +300,7 @@ orc test -w bugfix fix KS-42     # test a phase from a named workflow
 | `--auto` | Unattended mode — skip gates, no interactive steering |
 | `--verbose`, `-v` | Save raw stream-json output to `.stream.jsonl` files |
 | `--with-hooks` | Run pre-run and post-run hooks around the phase dispatch |
+| `--headless` | Non-interactive mode — implies `--auto`, disables color and stdin |
 
 Missing artifacts from prior phases produce a warning listing which files are absent and which earlier phases normally create them.
 

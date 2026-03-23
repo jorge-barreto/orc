@@ -103,6 +103,7 @@ CLI Flags
   orc run <ticket> --from <phase>     Start from phase (number or name)
   orc run <ticket> --resume        Resume interrupted agent phase session
   orc run <ticket> --step          Step through phases interactively
+  orc run <ticket> --headless     Non-interactive mode for CI/CD (implies --auto)
   orc flow                        Visualize workflow as a flow diagram
   orc run -w bugfix <ticket>    Run a named workflow (multi-workflow projects)
   orc flow -w bugfix            Flow diagram for a specific workflow
@@ -138,6 +139,12 @@ falls back to a fresh start automatically.
 
 --step pauses after each phase with an interactive prompt (continue,
 rewind, abort, or inspect artifacts). Incompatible with --auto.
+
+--headless runs in fully non-interactive mode: implies --auto (gates
+auto-approved, no steering), disables ANSI color codes, and produces
+clean parseable output. Designed for CI/CD pipelines, cron jobs, and
+wrapper scripts. Exit codes are the primary status signal. Incompatible
+with --step.
 `
 
 const topicConfig = `Configuration Reference
@@ -445,6 +452,7 @@ Prompts the operator for approval at the terminal. The operator can type
 captured as feedback in the phase log and the workflow stops.
 
 When --auto is passed, all gate phases are automatically approved and skipped.
+When --headless is used, gates are also auto-approved (headless implies --auto).
 
 Gate phases do not support the cwd field.
 
@@ -1242,6 +1250,7 @@ Flags:
   --auto         Unattended mode (skip gates, no steering)
   --verbose      Save raw stream-json output
   --with-hooks   Run pre-run and post-run hooks around the phase dispatch
+  --headless     Non-interactive mode (implies --auto, disables color)
 
 Notes:
 - Missing artifacts from prior phases produce a warning listing which
