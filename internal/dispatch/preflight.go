@@ -23,15 +23,20 @@ func Preflight(phases []config.Phase) error {
 		}
 	}
 
-	var missing []string
+	var hints []string
 	for bin := range needed {
 		if _, err := exec.LookPath(bin); err != nil {
-			missing = append(missing, bin)
+			switch bin {
+			case "claude":
+				hints = append(hints, "claude (install: npm install -g @anthropic-ai/claude-code)")
+			default:
+				hints = append(hints, bin)
+			}
 		}
 	}
 
-	if len(missing) > 0 {
-		return fmt.Errorf("required binaries not found in PATH: %s", strings.Join(missing, ", "))
+	if len(hints) > 0 {
+		return fmt.Errorf("required binaries not found in PATH: %s", strings.Join(hints, ", "))
 	}
 	return nil
 }

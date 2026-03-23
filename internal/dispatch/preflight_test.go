@@ -40,6 +40,23 @@ func TestPreflight_MissingBinary(t *testing.T) {
 	if !strings.Contains(err.Error(), "claude") {
 		t.Fatalf("expected error mentioning claude, got: %v", err)
 	}
+	if !strings.Contains(err.Error(), "npm install") {
+		t.Fatalf("expected error to mention npm install hint, got: %v", err)
+	}
+}
+
+func TestPreflight_ClaudeInstallHint(t *testing.T) {
+	t.Setenv("PATH", "/nonexistent")
+	phases := []config.Phase{
+		{Name: "a", Type: "agent", Prompt: "test.md"},
+	}
+	err := Preflight(phases)
+	if err == nil {
+		t.Fatal("expected error when PATH has no binaries")
+	}
+	if !strings.Contains(err.Error(), "npm install") {
+		t.Fatalf("expected install hint for claude, got: %v", err)
+	}
 }
 
 func TestPreflight_HooksNeedBash(t *testing.T) {
