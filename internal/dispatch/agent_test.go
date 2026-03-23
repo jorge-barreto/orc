@@ -124,6 +124,31 @@ func TestRenderAndSavePrompt_NoFeedback(t *testing.T) {
 	}
 }
 
+func TestRenderAndSavePrompt_MissingFile_ErrorContext(t *testing.T) {
+	dir := t.TempDir()
+	artDir := filepath.Join(dir, "artifacts")
+	if err := state.EnsureDir(artDir); err != nil {
+		t.Fatal(err)
+	}
+	env := &Environment{
+		ProjectRoot:  dir,
+		ArtifactsDir: artDir,
+		PhaseIndex:   0,
+	}
+	phase := config.Phase{
+		Name:   "implement",
+		Type:   "agent",
+		Prompt: ".orc/phases/nonexistent.md",
+	}
+	_, err := RenderAndSavePrompt(phase, env)
+	if err == nil {
+		t.Fatal("expected error for missing prompt file, got nil")
+	}
+	if !strings.Contains(err.Error(), "reading prompt template") {
+		t.Errorf("error %q does not contain 'reading prompt template'", err.Error())
+	}
+}
+
 func TestDispatchWithResume_FreshStart(t *testing.T) {
 	var calls []dispatchCall
 	renderCalled := false

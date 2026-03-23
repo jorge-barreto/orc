@@ -160,7 +160,7 @@ func dispatchWithResume(
 func RenderAndSavePrompt(phase config.Phase, env *Environment) (string, error) {
 	promptData, err := os.ReadFile(filepath.Join(env.ProjectRoot, phase.Prompt))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("reading prompt template %q: %w", filepath.Join(env.ProjectRoot, phase.Prompt), err)
 	}
 	rendered := ExpandVars(string(promptData), env.Vars())
 
@@ -176,7 +176,7 @@ func RenderAndSavePrompt(phase config.Phase, env *Environment) (string, error) {
 	}
 
 	if err := os.WriteFile(state.PromptPath(env.ArtifactsDir, env.PhaseIndex), []byte(rendered), 0644); err != nil {
-		return "", err
+		return "", fmt.Errorf("saving rendered prompt: %w", err)
 	}
 	return rendered, nil
 }
@@ -235,7 +235,7 @@ func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 		for _, d := range tr.Stream.PermissionDenials {
 			names = append(names, d.String())
 		}
-		fmt.Fprintf(os.Stderr, "  permission denials: %s\n", strings.Join(names, ", "))
+		fmt.Fprintf(os.Stderr, "  permission denials: %s — add these tools to 'allow-tools' in your phase config, or run without --auto to approve interactively\n", strings.Join(names, ", "))
 	}
 
 	// In unattended mode, log user questions as warnings
