@@ -140,7 +140,7 @@ func (c *Config) PhaseIndex(name string) int {
 func ResolvePhaseRef(value string, phases []Phase) (int, error) {
 	if n, err := strconv.Atoi(value); err == nil {
 		if n < 1 || n > len(phases) {
-			return 0, fmt.Errorf("%d is out of range (1-%d)", n, len(phases))
+			return 0, fmt.Errorf("phase %d is out of range (1-%d)", n, len(phases))
 		}
 		return n - 1, nil
 	}

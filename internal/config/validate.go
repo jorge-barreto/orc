@@ -106,7 +106,7 @@ func Validate(cfg *Config, projectRoot string) error {
 			}
 			promptPath := filepath.Join(projectRoot, p.Prompt)
 			if _, err := os.Stat(promptPath); err != nil {
-				return fmt.Errorf("config: agent phase %q: prompt file %q not found", p.Name, promptPath)
+				return fmt.Errorf("config: agent phase %q: prompt file %q not found — create the file or update the 'prompt' field", p.Name, promptPath)
 			}
 			if p.Model == "" && cfg.Model != "" {
 				p.Model = cfg.Model
@@ -169,7 +169,7 @@ func Validate(cfg *Config, projectRoot string) error {
 		}
 
 		if p.Timeout < 0 {
-			return fmt.Errorf("config: phase %q: timeout must be >= 0", p.Name)
+			return fmt.Errorf("config: phase %q: timeout must be >= 0 (got %d)", p.Name, p.Timeout)
 		}
 
 		if p.MaxCost < 0 {
@@ -241,7 +241,7 @@ func Validate(cfg *Config, projectRoot string) error {
 				return fmt.Errorf("config: phase %q: parallel-with %q references unknown phase", p.Name, p.ParallelWith)
 			}
 			if p.Loop != nil {
-				return fmt.Errorf("config: phase %q: parallel-with and loop cannot be combined", p.Name)
+				return fmt.Errorf("config: phase %q: parallel-with and loop cannot be combined — split into separate phases", p.Name)
 			}
 		}
 	}

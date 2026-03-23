@@ -89,7 +89,7 @@ func TestValidate_AgentRequiresPrompt(t *testing.T) {
 
 func TestValidate_AgentPromptMissing(t *testing.T) {
 	cfg := minimalConfig(Phase{Name: "a", Type: "agent", Prompt: "prompts/missing.md"})
-	if err := Validate(cfg, t.TempDir()); err == nil || !strings.Contains(err.Error(), "not found") {
+	if err := Validate(cfg, t.TempDir()); err == nil || !strings.Contains(err.Error(), "create the file or update") {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -177,7 +177,7 @@ func TestValidate_ValidEfforts(t *testing.T) {
 
 func TestValidate_NegativeTimeout(t *testing.T) {
 	cfg := minimalConfig(Phase{Name: "a", Type: "script", Run: "echo", Timeout: -1})
-	if err := Validate(cfg, t.TempDir()); err == nil || !strings.Contains(err.Error(), "timeout must be >= 0") {
+	if err := Validate(cfg, t.TempDir()); err == nil || !strings.Contains(err.Error(), "(got -1)") {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -339,7 +339,7 @@ func TestValidate_ParallelWithLoop(t *testing.T) {
 		scriptPhase("a"),
 		Phase{Name: "b", Type: "script", Run: "echo", ParallelWith: "a", Loop: &Loop{Goto: "a", Max: 3}},
 	)
-	if err := Validate(cfg, t.TempDir()); err == nil || !strings.Contains(err.Error(), "cannot be combined") {
+	if err := Validate(cfg, t.TempDir()); err == nil || !strings.Contains(err.Error(), "split into separate phases") {
 		t.Fatalf("expected parallel+loop error, got %v", err)
 	}
 }
