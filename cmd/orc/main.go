@@ -433,7 +433,7 @@ func statusCmd() *cli.Command {
 			}
 
 			artifactsDir := state.ArtifactsDirForWorkflow(projectRoot, workflowName, ticket)
-			stateDir, err := resolveStateDir(artifactsDir)
+			stateDir, err := state.ResolveStateDir(artifactsDir)
 			if err != nil {
 				return fmt.Errorf("no run found for ticket %s", ticket)
 			}
@@ -481,12 +481,16 @@ func doctorCmd() *cli.Command {
 
 			artifactsDir := state.ArtifactsDirForWorkflow(projectRoot, workflowName, ticket)
 			auditDir := state.AuditDirForWorkflow(projectRoot, workflowName, ticket)
-			st, err := state.Load(artifactsDir)
+			stateDir, err := state.ResolveStateDir(artifactsDir)
+			if err != nil {
+				return fmt.Errorf("no run found for ticket %s", ticket)
+			}
+			st, err := state.Load(stateDir)
 			if err != nil {
 				return fmt.Errorf("loading state: %w", err)
 			}
 
-			return doctor.Run(ctx, auditDir, artifactsDir, cfg, st)
+			return doctor.Run(ctx, auditDir, stateDir, cfg, st)
 		},
 	}
 }
