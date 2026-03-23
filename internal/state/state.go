@@ -60,7 +60,7 @@ func ResolveStateDir(artifactsDir string) (string, error) {
 		return "", fmt.Errorf("checking history: %w", err)
 	}
 	if histDir == "" || !HasState(histDir) {
-		return "", fmt.Errorf("no state found")
+		return "", fmt.Errorf("no state found in %s — has this ticket been run before?", artifactsDir)
 	}
 	return histDir, nil
 }
