@@ -237,7 +237,9 @@ func runCmd() *cli.Command {
 						if _, archiveErr := state.ArchiveRun(artifactsDir); archiveErr != nil {
 							fmt.Fprintf(os.Stderr, "warning: failed to archive stale run: %v\n", archiveErr)
 						}
-						state.PruneHistory(artifactsDir, cfg.HistoryLimit)
+						if pruneErr := state.PruneHistory(artifactsDir, cfg.HistoryLimit); pruneErr != nil {
+							fmt.Fprintf(os.Stderr, "warning: failed to prune history: %v\n", pruneErr)
+						}
 					}
 				}
 			}
