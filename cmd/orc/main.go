@@ -233,16 +233,7 @@ func runCmd() *cli.Command {
 			if !resumeFlag && retryVal == "" && fromVal == "" && state.HasState(artifactsDir) {
 				existing, existErr := state.Load(artifactsDir)
 				if existErr == nil {
-					archiveStale := false
-					switch existing.GetStatus() {
-					case state.StatusCompleted:
-						archiveStale = true
-					case state.StatusRunning:
-						archiveStale = existing.GetPhaseIndex() > 0
-					case state.StatusFailed, state.StatusInterrupted:
-						archiveStale = true
-					}
-					if archiveStale {
+					if shouldArchiveStale(existing.GetStatus()) {
 						if _, archiveErr := state.ArchiveRun(artifactsDir); archiveErr != nil {
 							fmt.Fprintf(os.Stderr, "warning: failed to archive stale run: %v\n", archiveErr)
 						}
@@ -567,6 +558,18 @@ func improveCmd() *cli.Command {
 			}
 			return improve.OneShot(ctx, projectRoot, instruction)
 		},
+	}
+}
+
+// shouldArchiveStale reports whether a prior run with the given status should be
+// archived before starting a fresh run. All known statuses and unknown statuses
+// return true — archive rather than silently discard.
+func shouldArchiveStale(status string) bool {
+	switch status {
+	case state.StatusCompleted, state.StatusRunning, state.StatusFailed, state.StatusInterrupted:
+		return true
+	default:
+		return true // safe default: archive unknown states rather than silently discard
 	}
 }
 

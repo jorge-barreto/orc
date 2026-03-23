@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jorge-barreto/orc/internal/state"
 )
 
 func TestDiscoverWorkflows_None(t *testing.T) {
@@ -267,6 +269,27 @@ func TestResolveWorkflow_FlagWithNoWorkflowsDir(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no .orc/workflows/ directory") {
 		t.Fatalf("expected 'no workflows dir' error, got: %v", err)
+	}
+}
+
+func TestShouldArchiveStale(t *testing.T) {
+	tests := []struct {
+		status string
+		want   bool
+	}{
+		{state.StatusRunning, true},
+		{state.StatusCompleted, true},
+		{state.StatusFailed, true},
+		{state.StatusInterrupted, true},
+		{"unknown", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.status, func(t *testing.T) {
+			got := shouldArchiveStale(tc.status)
+			if got != tc.want {
+				t.Errorf("shouldArchiveStale(%q) = %v, want %v", tc.status, got, tc.want)
+			}
+		})
 	}
 }
 
