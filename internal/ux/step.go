@@ -48,7 +48,7 @@ func safeArtifactPath(artifactsDir, target string) (string, error) {
 	clean := filepath.Clean(target)
 	full := filepath.Join(artifactsDir, clean)
 	if !strings.HasPrefix(full, artifactsDir+string(filepath.Separator)) && full != artifactsDir {
-		return "", fmt.Errorf("path %q escapes artifacts directory", target)
+		return "", fmt.Errorf("path %q escapes artifacts directory — use a simple filename, not a path with '..' or '/'", target)
 	}
 	return full, nil
 }

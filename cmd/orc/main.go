@@ -518,7 +518,7 @@ func initCmd() *cli.Command {
 			}
 			dir, err := os.Getwd()
 			if err != nil {
-				return err
+				return fmt.Errorf("determining working directory: %w", err)
 			}
 			if wfName := cmd.String("add-workflow"); wfName != "" {
 				return scaffold.InitWorkflow(dir, wfName, cmd.String("recipe"))
@@ -615,7 +615,7 @@ func findProjectRoot() (string, error) {
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", fmt.Errorf("no .orc/ project found (searched from cwd to root)")
+			return "", fmt.Errorf("no .orc/ project found (searched from cwd to root) — run 'orc init' to create one")
 		}
 		dir = parent
 	}

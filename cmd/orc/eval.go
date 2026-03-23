@@ -87,7 +87,7 @@ func evalCmd() *cli.Command {
 
 			fingerprint, cases, err := eval.RunEval(ctx, projectRoot, configPath, workflowName, cfg, caseName)
 			if err != nil {
-				return err
+				return fmt.Errorf("running eval: %w", err)
 			}
 
 			if cmd.Bool("json") {
