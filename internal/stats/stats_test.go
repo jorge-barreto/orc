@@ -566,6 +566,60 @@ func TestRenderJSON_RoundTrips(t *testing.T) {
 	}
 }
 
+func TestRenderJSON_EmptyStats_ArraysNotNull(t *testing.T) {
+	s := &Stats{}
+	var buf bytes.Buffer
+	if err := RenderJSON(&buf, s); err != nil {
+		t.Fatalf("RenderJSON error: %v", err)
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("JSON unmarshal error: %v", err)
+	}
+	for _, field := range []string{"phases", "failures", "weeks"} {
+		val, exists := out[field]
+		if !exists {
+			t.Errorf("expected %q field in JSON output", field)
+			continue
+		}
+		arr, ok := val.([]interface{})
+		if !ok {
+			t.Errorf("expected %q to be an array, got %T (value: %v)", field, val, val)
+			continue
+		}
+		if len(arr) != 0 {
+			t.Errorf("expected %q to be empty array, got %d elements", field, len(arr))
+		}
+	}
+}
+
+func TestRenderJSON_AggregateEmpty_ArraysNotNull(t *testing.T) {
+	s := Aggregate(nil)
+	var buf bytes.Buffer
+	if err := RenderJSON(&buf, s); err != nil {
+		t.Fatalf("RenderJSON error: %v", err)
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("JSON unmarshal error: %v", err)
+	}
+	for _, field := range []string{"phases", "failures", "weeks"} {
+		val, exists := out[field]
+		if !exists {
+			t.Errorf("expected %q field in JSON output", field)
+			continue
+		}
+		arr, ok := val.([]interface{})
+		if !ok {
+			t.Errorf("expected %q to be an array, got %T (value: %v)", field, val, val)
+			continue
+		}
+		if len(arr) != 0 {
+			t.Errorf("expected %q to be empty array, got %d elements", field, len(arr))
+		}
+	}
+}
+
 func TestRenderText_NoRuns(t *testing.T) {
 	// Stats with zero runs should produce output with "—" placeholders (no panic)
 	s := &Stats{} // TotalRuns == 0

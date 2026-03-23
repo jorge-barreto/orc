@@ -171,6 +171,15 @@ func toJSONStats(s *Stats) jsonStats {
 			RunCount:  w.RunCount,
 		})
 	}
+	if js.Phases == nil {
+		js.Phases = []jsonPhase{}
+	}
+	if js.Failures == nil {
+		js.Failures = []FailureStat{}
+	}
+	if js.Weeks == nil {
+		js.Weeks = []jsonWeek{}
+	}
 	return js
 }
 
