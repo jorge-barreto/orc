@@ -136,8 +136,7 @@ orc run PROJ-123 --from 2            # still works with numbers
 orc run PROJ-123 --verbose     # save raw stream-json output
 orc run PROJ-123 --resume      # resume interrupted agent session
 orc run PROJ-123 --step        # step through phases interactively
-orc run PROJ-123 --headless    # non-interactive — for CI/CD pipelines
-orc run PROJ-123 --quiet       # machine-friendly JSON line output
+orc run PROJ-123 --headless    # non-interactive — JSONL output for CI/CD
 orc run bugfix PROJ-123         # named workflow (positional)
 orc run -w bugfix PROJ-123      # named workflow (explicit flag)
 ```
@@ -151,8 +150,7 @@ orc run -w bugfix PROJ-123      # named workflow (explicit flag)
 | `--verbose`, `-v` | Save raw stream-json output to `.stream.jsonl` files in the logs directory |
 | `--resume` | Resume an interrupted agent phase using saved Claude session ID |
 | `--step` | Step-through mode — pause after each phase for inspection |
-| `--headless` | Non-interactive mode for CI/CD — implies `--auto`, disables color and stdin |
-| `--quiet` | Machine-friendly output — emit JSON lines instead of decorated text (implies `--auto`, `--no-color`) |
+| `--headless` | Non-interactive mode — JSONL output, implies `--auto`, disables color |
 | `--workflow`, `-w` | Select a named workflow from `.orc/workflows/` |
 
 `--retry`, `--from`, and `--resume` are mutually exclusive.
@@ -161,11 +159,10 @@ orc run -w bugfix PROJ-123      # named workflow (explicit flag)
 
 **Step-through mode**: `--step` pauses after each phase with an interactive prompt. You can continue, rewind to a specific phase, abort, or inspect artifact files. Incompatible with `--auto`.
 
-**Headless mode**: `--headless` goes further than `--auto` — it also disables ANSI color codes so output is clean and parseable. Designed for CI/CD pipelines, cron jobs, and wrapper scripts where exit codes (0 = success, 1 = phase failure, 2 = timeout, 3 = config error, 4 = cost limit, 5 = interrupted, 6 = resume failure) are the primary status signal. Incompatible with `--step`.
+**Headless mode**: `--headless` (or `ORC_HEADLESS=1`) runs in fully non-interactive mode — implies `--auto` (gates auto-approved, no steering), disables ANSI color, and emits machine-readable JSONL instead of decorated text. One JSON line per phase transition to stdout: `{"phase":"plan","status":"started"}`, `{"phase":"plan","status":"complete","duration_s":120.5}`. Errors remain on stderr as plain text. Exit codes (0 = success, 1 = phase failure, 2 = timeout, 3 = config error, 4 = cost limit, 5 = interrupted, 6 = resume failure) are the primary status signal. Incompatible with `--step`. Useful for CI/CD pipelines, cron jobs, launchers, monitoring dashboards, and log aggregation.
 
-**Quiet mode**: `--quiet` (or `ORC_QUIET=1`) goes beyond `--headless` — instead of human-readable text, orc emits one JSON line per phase transition to stdout: `{"phase":"plan","status":"started"}`, `{"phase":"plan","status":"complete","duration_s":120.5}`. Output is valid JSONL (one JSON object per line). Errors remain on stderr as plain text. Implies `--auto` and `--no-color`. Incompatible with `--step`. Useful for launchers, monitoring dashboards, and log aggregation.
 
-**Color control**: orc disables color when any of these are true: `--no-color` flag is passed, `NO_COLOR` env var is set (standard [no-color.org](https://no-color.org/) convention), `ORC_NO_COLOR` env var is set, or stdout is not a TTY (e.g., piped output). `--headless` also disables color. The `--no-color` flag is global and works on any command.
+**Color control**: orc disables color when any of these are true: `--no-color` flag is passed, `NO_COLOR` env var is set (standard [no-color.org](https://no-color.org/) convention), `ORC_NO_COLOR` env var is set, or stdout is not a TTY (e.g., piped output). `--headless` disables color and switches to JSONL output. The `--no-color` flag is global and works on any command.
 
 ### `orc flow`
 
@@ -306,8 +303,7 @@ orc test -w bugfix fix KS-42     # test a phase from a named workflow
 | `--auto` | Unattended mode — skip gates, no interactive steering |
 | `--verbose`, `-v` | Save raw stream-json output to `.stream.jsonl` files |
 | `--with-hooks` | Run pre-run and post-run hooks around the phase dispatch |
-| `--headless` | Non-interactive mode — implies `--auto`, disables color and stdin |
-| `--quiet` | Machine-friendly output — JSON lines instead of decorated text (implies `--auto`, `--no-color`) |
+| `--headless` | Non-interactive mode — JSONL output, implies `--auto`, disables color |
 
 Missing artifacts from prior phases produce a warning listing which files are absent and which earlier phases normally create them.
 
