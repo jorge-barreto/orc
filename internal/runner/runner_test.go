@@ -3048,6 +3048,49 @@ func TestRun_RePromptRecordsCostAndArchive(t *testing.T) {
 	}
 }
 
+func TestRun_RePromptFnError(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet",
+				Outputs: []string{"result.md"}},
+		},
+	}
+
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		// Succeed but do NOT write result.md — triggers re-prompt
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+
+	r := newTestRunner(t, cfg, mock)
+	r.RePromptFn = func(ctx context.Context, phase config.Phase, env *dispatch.Environment, prompt, sessionID string) (*dispatch.Result, error) {
+		return nil, fmt.Errorf("agent crashed")
+	}
+
+	oldStderr := os.Stderr
+	pr, pw, _ := os.Pipe()
+	os.Stderr = pw
+
+	err := r.Run(context.Background())
+
+	pw.Close()
+	var buf bytes.Buffer
+	io.Copy(&buf, pr)
+	os.Stderr = oldStderr
+
+	if err == nil {
+		t.Fatal("expected run to fail due to missing outputs")
+	}
+	stderr := buf.String()
+	if !strings.Contains(stderr, "warning: re-prompt for missing outputs failed: agent crashed") {
+		t.Fatalf("stderr should contain re-prompt warning, got: %q", stderr)
+	}
+	if got := r.State.GetFailureCategory(); got != state.FailCategoryOutputMissing {
+		t.Fatalf("FailureCategory = %q, want %q", got, state.FailCategoryOutputMissing)
+	}
+	assertExitCode(t, err, ExitPhaseFailure)
+}
+
 func TestRun_StepMode_PreRunHookFailure(t *testing.T) {
 	cfg := &config.Config{
 		Name: "test",
