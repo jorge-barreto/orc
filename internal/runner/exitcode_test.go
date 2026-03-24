@@ -13,7 +13,7 @@ func TestExitCodeFrom_Nil(t *testing.T) {
 }
 
 func TestExitCodeFrom_ExitError(t *testing.T) {
-	for _, code := range []int{ExitPhaseFailure, ExitTimeout, ExitCostLimit, ExitInterrupted, ExitResumeFailure} {
+	for _, code := range []int{ExitPhaseFailure, ExitTimeout, ExitCostLimit, ExitInterrupted, ExitResumeFailure, ExitInfraError} {
 		err := &ExitError{Code: code, Err: fmt.Errorf("test")}
 		if got := ExitCodeFrom(err); got != code {
 			t.Fatalf("ExitCodeFrom(ExitError{%d}) = %d", code, got)
