@@ -592,6 +592,9 @@ cancelled. After both complete, the runner advances past both phases.
 Constraints: parallel-with and loop cannot be combined on the same
 phase.
 
+Session resume (--resume) is not supported for parallel agent phases;
+if interrupted, they must be re-run from scratch.
+
 Loops
 -----
 
@@ -722,6 +725,9 @@ reset loop counts.
 
 The session ID is cleared when a phase completes successfully or when
 using --retry/--from.
+
+Note: parallel agent phases do not persist session IDs — if a parallel
+agent is interrupted, --resume cannot recover its session.
 
 Step-Through Mode
 ~~~~~~~~~~~~~~~~~
