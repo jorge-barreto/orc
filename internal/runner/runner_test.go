@@ -2812,6 +2812,97 @@ func TestRun_StepModeInvalidRewindReprompts(t *testing.T) {
 	}
 }
 
+func TestRun_StepModeRewindForwardRejected(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo"},
+			{Name: "c", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	r.StepMode = true
+	firstCall := true
+	r.StepPromptFn = func(artifactsDir string, phaseIdx int, phaseName string) ux.StepAction {
+		if phaseName == "a" && firstCall {
+			firstCall = false
+			return ux.StepAction{Type: "rewind", Target: "3"} // forward: phase a is index 0, target 3 is index 2
+		}
+		return ux.StepAction{Type: "continue"}
+	}
+
+	oldStderr := os.Stderr
+	pr, pw, _ := os.Pipe()
+	os.Stderr = pw
+
+	err := r.Run(context.Background())
+
+	pw.Close()
+	var buf bytes.Buffer
+	io.Copy(&buf, pr)
+	os.Stderr = oldStderr
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q, want completed", r.State.GetStatus())
+	}
+	calls := mock.callNames()
+	if len(calls) != 3 {
+		t.Fatalf("calls = %v, want [a b c]", calls)
+	}
+	if !strings.Contains(buf.String(), "rewind only jumps backward") {
+		t.Fatalf("stderr should contain 'rewind only jumps backward', got: %q", buf.String())
+	}
+}
+
+func TestRun_StepModeParallelRewindForwardRejected(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo", ParallelWith: "c"},
+			{Name: "c", Type: "script", Run: "echo"},
+			{Name: "d", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	r.StepMode = true
+	rejected := false
+	r.StepPromptFn = func(artifactsDir string, phaseIdx int, phaseName string) ux.StepAction {
+		if phaseName == "b + c" && !rejected {
+			rejected = true
+			return ux.StepAction{Type: "rewind", Target: "4"} // forward: after b+c state index is 3, target 4 is index 3 >= 3
+		}
+		return ux.StepAction{Type: "continue"}
+	}
+
+	oldStderr := os.Stderr
+	pr, pw, _ := os.Pipe()
+	os.Stderr = pw
+
+	err := r.Run(context.Background())
+
+	pw.Close()
+	var buf bytes.Buffer
+	io.Copy(&buf, pr)
+	os.Stderr = oldStderr
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q, want completed", r.State.GetStatus())
+	}
+	if !strings.Contains(buf.String(), "rewind only jumps backward") {
+		t.Fatalf("stderr should contain 'rewind only jumps backward', got: %q", buf.String())
+	}
+}
+
 func TestRun_RePromptRecordsCostAndArchive(t *testing.T) {
 	cfg := &config.Config{
 		Name: "test",

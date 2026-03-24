@@ -597,13 +597,15 @@ mainLoop:
 						fmt.Fprintf(os.Stderr, "  invalid rewind target: %v\n", err)
 						continue
 					}
-					if idx < r.State.GetPhaseIndex() {
-						if err := r.prepareBackwardJump(idx, r.State.GetPhaseIndex(), loopCounts); err != nil {
-							return r.failAndHint(state.StatusFailed, ExitPhaseFailure, fmt.Errorf("preparing rewind to phase %d: %w", idx, err))
-						}
-						if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
-							return r.failAndHint(state.StatusFailed, ExitPhaseFailure, fmt.Errorf("saving loop counts after rewind: %w", err))
-						}
+					if idx >= r.State.GetPhaseIndex() {
+						fmt.Fprintf(os.Stderr, "  rewind target %q is not before the current phase — rewind only jumps backward\n", action.Target)
+						continue
+					}
+					if err := r.prepareBackwardJump(idx, r.State.GetPhaseIndex(), loopCounts); err != nil {
+						return r.failAndHint(state.StatusFailed, ExitPhaseFailure, fmt.Errorf("preparing rewind to phase %d: %w", idx, err))
+					}
+					if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
+						return r.failAndHint(state.StatusFailed, ExitPhaseFailure, fmt.Errorf("saving loop counts after rewind: %w", err))
 					}
 					r.State.SetPhase(idx)
 					if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
@@ -1009,13 +1011,15 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 					fmt.Fprintf(os.Stderr, "  invalid rewind target: %v\n", err)
 					continue
 				}
-				if idx < r.State.GetPhaseIndex() {
-					if err := r.prepareBackwardJump(idx, r.State.GetPhaseIndex(), loopCounts); err != nil {
-						return r.failAndHint(state.StatusFailed, ExitPhaseFailure, fmt.Errorf("preparing rewind to phase %d: %w", idx, err))
-					}
-					if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
-						return r.failAndHint(state.StatusFailed, ExitPhaseFailure, fmt.Errorf("saving loop counts after rewind: %w", err))
-					}
+				if idx >= r.State.GetPhaseIndex() {
+					fmt.Fprintf(os.Stderr, "  rewind target %q is not before the current phase — rewind only jumps backward\n", action.Target)
+					continue
+				}
+				if err := r.prepareBackwardJump(idx, r.State.GetPhaseIndex(), loopCounts); err != nil {
+					return r.failAndHint(state.StatusFailed, ExitPhaseFailure, fmt.Errorf("preparing rewind to phase %d: %w", idx, err))
+				}
+				if err := state.SaveLoopCounts(r.Env.ArtifactsDir, loopCounts); err != nil {
+					return r.failAndHint(state.StatusFailed, ExitPhaseFailure, fmt.Errorf("saving loop counts after rewind: %w", err))
 				}
 				r.State.SetPhase(idx)
 				if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
