@@ -197,7 +197,7 @@ func Build(artifactsDir, auditDir string, st *state.State, phases []config.Phase
 		phaseResults = append(phaseResults, pr)
 	}
 
-	// Fallback: if timing.Entries is empty and phase_index > 0, produce minimal entries
+	// Fallback: if entries are empty and phase_index > 0, produce minimal entries
 	if len(timingEntries) == 0 && st.GetPhaseIndex() > 0 {
 		limit := st.GetPhaseIndex()
 		if limit > len(phases) {
