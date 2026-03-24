@@ -182,6 +182,7 @@ func (r *Runner) writeRunResult(exitCode int, failedPhase string) {
 		Commits:              state.CollectCommits(r.Env.ProjectRoot, r.baseCommit),
 		ArtifactsDir:         r.Env.ArtifactsDir,
 	}
+	result.Phases = r.buildPhaseResults(failedPhase)
 
 	if r.auditDir != "" {
 		if err := state.WriteRunResult(r.auditDir, result); err != nil {
@@ -191,6 +192,49 @@ func (r *Runner) writeRunResult(exitCode int, failedPhase string) {
 	if err := state.WriteRunResult(r.Env.ArtifactsDir, result); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to write run-result.json: %v\n", err)
 	}
+}
+
+// buildPhaseResults assembles per-phase results from timing, cost, and status data.
+func (r *Runner) buildPhaseResults(failedPhase string) []state.PhaseResult {
+	phaseIndex := r.State.GetPhaseIndex()
+	results := make([]state.PhaseResult, 0, len(r.Config.Phases))
+
+	// Build duration map: sum all timing entries per phase (loops may repeat a phase)
+	durations := make(map[string]float64)
+	if r.Timing != nil {
+		for _, e := range r.Timing.Entries {
+			if !e.End.IsZero() {
+				durations[e.Phase] += e.End.Sub(e.Start).Seconds()
+			}
+		}
+	}
+
+	for i, phase := range r.Config.Phases {
+		var status string
+		switch {
+		case r.skipped != nil && r.skipped[phase.Name]:
+			status = "skipped"
+		case failedPhase == phase.Name:
+			status = "failed"
+		case i < phaseIndex:
+			status = "completed"
+		default:
+			status = "pending"
+		}
+
+		costUSD := 0.0
+		if r.Costs != nil {
+			costUSD = r.Costs.PhaseCost(phase.Name)
+		}
+
+		results = append(results, state.PhaseResult{
+			Name:            phase.Name,
+			Status:          status,
+			DurationSeconds: durations[phase.Name],
+			CostUSD:         costUSD,
+		})
+	}
+	return results
 }
 
 // Run executes the workflow from the current state.
