@@ -55,7 +55,7 @@ Validation (`internal/config/validate.go`) enforces: unique phase names, `loop.g
 ## Conventions
 
 - Go 1.22+ required (for urfave/cli/v3)
-- Dependencies: only `gopkg.in/yaml.v3` and `github.com/urfave/cli/v3` beyond stdlib
+- Dependencies: only `gopkg.in/yaml.v3`, `github.com/urfave/cli/v3`, and `github.com/google/uuid` beyond stdlib
 - State files are written atomically (write to `.tmp`, fsync, rename)
 - Child processes inherit the parent env plus `ORC_*` variables; `CLAUDECODE` is stripped so `claude -p` can run
 - Variable substitution uses `os.Expand()` with a custom map + env fallback (`internal/dispatch/expand.go`)
