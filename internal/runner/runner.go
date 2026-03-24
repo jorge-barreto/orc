@@ -890,6 +890,9 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 			}
 			appendPhaseLog(r.Env.ArtifactsDir, pr.idx, fmt.Sprintf("\n[orc] phase %q failed: %s\n", phase.Name, errMsg))
 			ux.PhaseFail(pr.idx, phase.Name, errMsg)
+			if phase.Type == "agent" && pr.result != nil && pr.result.SessionID != "" {
+				fmt.Fprintf(os.Stderr, "warning: session ID from parallel phase %q not persisted — resume is not supported for parallel agents\n", phase.Name)
+			}
 			if firstErr == nil {
 				firstErr = fmt.Errorf("phase %q failed: %s", phase.Name, errMsg)
 				failedIdx = pr.idx
@@ -897,6 +900,9 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 			}
 		} else {
 			r.Timing.AddEndAt(phase.Name, pr.endTime)
+			if phase.Type == "agent" && pr.result != nil && pr.result.SessionID != "" {
+				fmt.Fprintf(os.Stderr, "warning: session ID from parallel phase %q not persisted — resume is not supported for parallel agents\n", phase.Name)
+			}
 			ux.PhaseComplete(pr.idx, phase.Name, pr.endTime.Sub(pr.startTime))
 		}
 	}

@@ -2519,6 +2519,75 @@ func TestRun_NoSessionIDForScriptPhase(t *testing.T) {
 	}
 }
 
+func TestRun_ParallelAgentSessionIDWarning(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "test.md", ParallelWith: "b"},
+			{Name: "b", Type: "agent", Prompt: "test.md"},
+		},
+	}
+	mock := newMock()
+	mock.results["a"] = &dispatch.Result{ExitCode: 0, SessionID: "session-parallel-a"}
+	mock.results["b"] = &dispatch.Result{ExitCode: 0, SessionID: "session-parallel-b"}
+	r := newTestRunner(t, cfg, mock)
+
+	oldStderr := os.Stderr
+	pr, pw, _ := os.Pipe()
+	os.Stderr = pw
+
+	err := r.Run(context.Background())
+
+	pw.Close()
+	var buf bytes.Buffer
+	io.Copy(&buf, pr)
+	os.Stderr = oldStderr
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	stderr := buf.String()
+	if !strings.Contains(stderr, "session ID from parallel phase") {
+		t.Fatalf("stderr should contain 'session ID from parallel phase', got: %q", stderr)
+	}
+	if !strings.Contains(stderr, `"a"`) {
+		t.Fatalf("stderr should contain phase name \"a\", got: %q", stderr)
+	}
+	if !strings.Contains(stderr, `"b"`) {
+		t.Fatalf("stderr should contain phase name \"b\", got: %q", stderr)
+	}
+}
+
+func TestRun_ParallelScriptNoSessionIDWarning(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo", ParallelWith: "b"},
+			{Name: "b", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+
+	oldStderr := os.Stderr
+	pr, pw, _ := os.Pipe()
+	os.Stderr = pw
+
+	err := r.Run(context.Background())
+
+	pw.Close()
+	var buf bytes.Buffer
+	io.Copy(&buf, pr)
+	os.Stderr = oldStderr
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "session ID from parallel phase") {
+		t.Fatalf("stderr should NOT contain 'session ID from parallel phase', got: %q", buf.String())
+	}
+}
+
 func TestRun_PreRunSuccess(t *testing.T) {
 	cfg := &config.Config{
 		Name:   "test",
