@@ -866,6 +866,65 @@ func TestRun_ParallelBothSucceed(t *testing.T) {
 	}
 }
 
+func TestRun_ParallelNonAdjacentIntermediateSkipped(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo", ParallelWith: "c"},
+			{Name: "b", Type: "script", Run: "echo"},
+			{Name: "c", Type: "script", Run: "echo"},
+			{Name: "d", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q", r.State.GetStatus())
+	}
+	// a, c, d dispatched; b skipped
+	if mock.callCount() != 3 {
+		t.Fatalf("expected 3 calls, got %d: %v", mock.callCount(), mock.callNames())
+	}
+	for _, name := range mock.callNames() {
+		if name == "b" {
+			t.Fatal("phase b should not be dispatched (intermediate skipped)")
+		}
+	}
+
+	data, err := os.ReadFile(state.RunResultPath(r.Env.ArtifactsDir))
+	if err != nil {
+		t.Fatalf("run-result.json not written: %v", err)
+	}
+	var result state.RunResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(result.Phases) != 4 {
+		t.Fatalf("len(phases) = %d, want 4", len(result.Phases))
+	}
+	cases := []struct {
+		name   string
+		status string
+	}{
+		{"a", "completed"},
+		{"b", "skipped"},
+		{"c", "completed"},
+		{"d", "completed"},
+	}
+	for i, tc := range cases {
+		if result.Phases[i].Name != tc.name {
+			t.Fatalf("phases[%d].name = %q, want %q", i, result.Phases[i].Name, tc.name)
+		}
+		if result.Phases[i].Status != tc.status {
+			t.Fatalf("phases[%d].status = %q, want %q", i, result.Phases[i].Status, tc.status)
+		}
+	}
+}
+
 func TestRun_ParallelOneFails(t *testing.T) {
 	cfg := &config.Config{
 		Name: "test",

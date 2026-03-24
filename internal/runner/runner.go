@@ -964,6 +964,17 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 		}
 	}
 
+	// Mark intermediate phases (between the two parallel partners) as skipped.
+	// These phases are never dispatched — jumping past them without marking
+	// them would cause buildPhaseResults to report them as "completed".
+	lo, hi := idx1, idx2
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	for mid := lo + 1; mid < hi; mid++ {
+		r.skipped[r.Config.Phases[mid].Name] = true
+	}
+
 	// Advance past both phases — set to the one after the later index
 	if idx2 > idx1 {
 		r.State.SetPhase(idx2 + 1)
