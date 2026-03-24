@@ -14,6 +14,7 @@ import (
 	"github.com/jorge-barreto/orc/internal/dispatch"
 	"github.com/jorge-barreto/orc/internal/state"
 	"github.com/jorge-barreto/orc/internal/ux"
+	cli "github.com/urfave/cli/v3"
 )
 
 func TestCheckMissingArtifacts_NoPriorPhases(t *testing.T) {
@@ -332,5 +333,80 @@ func TestOrcTest_HooksNotRun(t *testing.T) {
 	}
 	if _, err := os.Stat(sentinel + ".post"); !os.IsNotExist(err) {
 		t.Fatal("orc test calls dispatch.Dispatch directly, not dispatchWithHooks — post-run hook must not run")
+	}
+}
+
+func TestTestCmd_PositionalDisambiguationHint(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	yaml := "name: bugfix\nphases:\n  - name: plan\n    type: script\n    run: echo ok\n"
+	if err := os.WriteFile(filepath.Join(dir, ".orc", "workflows", "bugfix.yaml"), []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Save and restore globals that EnableQuiet() mutates
+	origQuiet := ux.QuietMode
+	origReset := ux.Reset
+	origBold := ux.Bold
+	origDim := ux.Dim
+	origRed := ux.Red
+	origGreen := ux.Green
+	origYellow := ux.Yellow
+	origCyan := ux.Cyan
+	origMagenta := ux.Magenta
+	origBlue := ux.Blue
+	origBoldCyan := ux.BoldCyan
+	origBoldBlue := ux.BoldBlue
+	origBoldGreen := ux.BoldGreen
+	t.Cleanup(func() {
+		ux.QuietMode = origQuiet
+		ux.Reset = origReset
+		ux.Bold = origBold
+		ux.Dim = origDim
+		ux.Red = origRed
+		ux.Green = origGreen
+		ux.Yellow = origYellow
+		ux.Cyan = origCyan
+		ux.Magenta = origMagenta
+		ux.Blue = origBlue
+		ux.BoldCyan = origBoldCyan
+		ux.BoldBlue = origBoldBlue
+		ux.BoldGreen = origBoldGreen
+	})
+
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(orig) //nolint:errcheck
+
+	t.Setenv("CLAUDECODE", "")
+
+	r, w, _ := os.Pipe()
+	oldStderr := os.Stderr
+	os.Stderr = w
+
+	app := &cli.Command{
+		Name:     "orc",
+		Commands: []*cli.Command{testCmd()},
+	}
+	_ = app.Run(context.Background(), []string{"orc", "test", "bugfix", "plan", "TICKET-1"})
+
+	w.Close()
+	os.Stderr = oldStderr
+	var buf bytes.Buffer
+	io.Copy(&buf, r) //nolint:errcheck
+
+	got := buf.String()
+	if !strings.Contains(got, `hint: treating "bugfix" as workflow name`) {
+		t.Errorf("expected hint about treating %q as workflow name, got: %q", "bugfix", got)
+	}
+	if !strings.Contains(got, "matched .orc/workflows/bugfix.yaml") {
+		t.Errorf("expected matched path in hint, got: %q", got)
+	}
+	if !strings.Contains(got, "use -w to be explicit") {
+		t.Errorf("expected -w suggestion in hint, got: %q", got)
 	}
 }

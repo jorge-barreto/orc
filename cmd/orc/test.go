@@ -53,10 +53,12 @@ func testCmd() *cli.Command {
 			var phaseRef, ticket string
 			switch {
 			case len(args) == 3 && flagWorkflow == "":
-				if _, found := resolveWorkflowByName(projectRoot, args[0]); found {
+				if matchedPath, found := resolveWorkflowByName(projectRoot, args[0]); found {
 					flagWorkflow = args[0]
 					phaseRef = args[1]
 					ticket = args[2]
+					rel, _ := filepath.Rel(projectRoot, matchedPath)
+					fmt.Fprintf(os.Stderr, "hint: treating %q as workflow name (matched %s); use -w to be explicit\n", args[0], rel)
 				} else {
 					return cfgErr(fmt.Errorf("expected: orc test <phase> <ticket>"))
 				}

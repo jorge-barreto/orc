@@ -1233,6 +1233,10 @@ Running a Named Workflow
   orc run -w bugfix TICKET-123       Explicit: -w/--workflow flag
   orc run TICKET-123                  Uses default workflow
 
+When the first argument matches a workflow file name, orc emits a hint to
+stderr explaining the interpretation. Use -w/--workflow to suppress the hint
+and be explicit about your intent.
+
 Default Workflow Resolution
 ---------------------------
 

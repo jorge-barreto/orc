@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -645,5 +647,118 @@ func TestNoColorEnvVars(t *testing.T) {
 				t.Fatalf("expected colors to be disabled when %s is set", tc.envKey)
 			}
 		})
+	}
+}
+
+func TestRunCmd_PositionalDisambiguationHint(t *testing.T) {
+	dir := t.TempDir()
+	// Save and restore globals that EnableQuiet() mutates
+	origQuiet := ux.QuietMode
+	origReset := ux.Reset
+	origBold := ux.Bold
+	origDim := ux.Dim
+	origRed := ux.Red
+	origGreen := ux.Green
+	origYellow := ux.Yellow
+	origCyan := ux.Cyan
+	origMagenta := ux.Magenta
+	origBlue := ux.Blue
+	origBoldCyan := ux.BoldCyan
+	origBoldBlue := ux.BoldBlue
+	origBoldGreen := ux.BoldGreen
+	t.Cleanup(func() {
+		ux.QuietMode = origQuiet
+		ux.Reset = origReset
+		ux.Bold = origBold
+		ux.Dim = origDim
+		ux.Red = origRed
+		ux.Green = origGreen
+		ux.Yellow = origYellow
+		ux.Cyan = origCyan
+		ux.Magenta = origMagenta
+		ux.Blue = origBlue
+		ux.BoldCyan = origBoldCyan
+		ux.BoldBlue = origBoldBlue
+		ux.BoldGreen = origBoldGreen
+	})
+
+	if err := os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	yaml := "name: bugfix\nphases:\n  - name: plan\n    type: script\n    run: echo ok\n"
+	if err := os.WriteFile(filepath.Join(dir, ".orc", "workflows", "bugfix.yaml"), []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(orig) //nolint:errcheck
+
+	t.Setenv("CLAUDECODE", "")
+
+	r, w, _ := os.Pipe()
+	oldStderr := os.Stderr
+	os.Stderr = w
+
+	app := &cli.Command{
+		Name:     "orc",
+		Commands: []*cli.Command{runCmd()},
+	}
+	_ = app.Run(context.Background(), []string{"orc", "run", "bugfix", "TICKET-1"})
+
+	w.Close()
+	os.Stderr = oldStderr
+	var buf bytes.Buffer
+	io.Copy(&buf, r) //nolint:errcheck
+
+	got := buf.String()
+	if !strings.Contains(got, `hint: treating "bugfix" as workflow name`) {
+		t.Errorf("expected hint about treating %q as workflow name, got: %q", "bugfix", got)
+	}
+	if !strings.Contains(got, "matched .orc/workflows/bugfix.yaml") {
+		t.Errorf("expected matched path in hint, got: %q", got)
+	}
+	if !strings.Contains(got, "use -w to be explicit") {
+		t.Errorf("expected -w suggestion in hint, got: %q", got)
+	}
+}
+
+func TestRunCmd_NoDisambiguationHint_SingleArg(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".orc"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	yaml := "name: test\nphases:\n  - name: a\n    type: script\n    run: echo ok\n"
+	if err := os.WriteFile(filepath.Join(dir, ".orc", "config.yaml"), []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(orig) //nolint:errcheck
+
+	t.Setenv("CLAUDECODE", "")
+
+	r, w, _ := os.Pipe()
+	oldStderr := os.Stderr
+	os.Stderr = w
+
+	app := &cli.Command{
+		Name:     "orc",
+		Commands: []*cli.Command{runCmd()},
+	}
+	_ = app.Run(context.Background(), []string{"orc", "run", "TICKET-1"})
+
+	w.Close()
+	os.Stderr = oldStderr
+	var buf bytes.Buffer
+	io.Copy(&buf, r) //nolint:errcheck
+
+	if strings.Contains(buf.String(), "hint:") {
+		t.Errorf("expected no hint for single-arg invocation, got: %q", buf.String())
 	}
 }
