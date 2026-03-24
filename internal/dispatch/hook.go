@@ -89,12 +89,12 @@ func DispatchWithHooks(ctx context.Context, phase config.Phase, env *Environment
 		}
 	}
 
-	if preRunFailed && result == nil {
-		result = &Result{ExitCode: preRunCode}
-	}
-
 	if preRunErr != nil {
 		return nil, preRunErr
+	}
+
+	if preRunFailed && result == nil {
+		result = &Result{ExitCode: preRunCode}
 	}
 
 	return result, dispatchErr
