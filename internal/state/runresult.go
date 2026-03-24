@@ -36,15 +36,16 @@ func RunResultPath(dir string) string {
 	return filepath.Join(dir, "run-result.json")
 }
 
-// WriteRunResult writes the run result to disk atomically.
+// WriteRunResult writes the run result to disk atomically. It does not modify the passed RunResult.
 func WriteRunResult(dir string, result *RunResult) error {
-	if result.Commits == nil {
-		result.Commits = []string{}
+	local := *result
+	if local.Commits == nil {
+		local.Commits = []string{}
 	}
-	if result.Phases == nil {
-		result.Phases = []PhaseResult{}
+	if local.Phases == nil {
+		local.Phases = []PhaseResult{}
 	}
-	data, err := json.MarshalIndent(result, "", "  ")
+	data, err := json.MarshalIndent(local, "", "  ")
 	if err != nil {
 		return err
 	}

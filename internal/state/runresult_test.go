@@ -144,6 +144,34 @@ func TestWriteRunResult_EmptyPhases(t *testing.T) {
 	}
 }
 
+func TestWriteRunResult_DoesNotMutateCaller(t *testing.T) {
+	dir := t.TempDir()
+	result := &RunResult{Status: StatusCompleted}
+	// Commits and Phases are nil — not set
+
+	if err := WriteRunResult(dir, result); err != nil {
+		t.Fatalf("WriteRunResult: %v", err)
+	}
+
+	if result.Commits != nil {
+		t.Errorf("Commits: expected nil after WriteRunResult, got %v", result.Commits)
+	}
+	if result.Phases != nil {
+		t.Errorf("Phases: expected nil after WriteRunResult, got %v", result.Phases)
+	}
+
+	data, err := os.ReadFile(RunResultPath(dir))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !bytes.Contains(data, []byte(`"commits": []`)) {
+		t.Errorf("expected commits to serialize as [], got: %s", data)
+	}
+	if !bytes.Contains(data, []byte(`"phases": []`)) {
+		t.Errorf("expected phases to serialize as [], got: %s", data)
+	}
+}
+
 func TestCollectCommits_EmptyBase(t *testing.T) {
 	commits := CollectCommits(t.TempDir(), "")
 	if commits != nil {
