@@ -33,7 +33,8 @@ var QuietMode bool
 var quietMu sync.Mutex
 
 // IsTerminal reports whether the given file is a terminal.
-func IsTerminal(f *os.File) bool {
+// It is a var so tests can override it to control the TTY check.
+var IsTerminal = func(f *os.File) bool {
 	fi, err := f.Stat()
 	if err != nil {
 		return false
