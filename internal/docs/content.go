@@ -848,6 +848,13 @@ Fields:
   total_duration_seconds  float      Total wall-clock seconds
   commits                 []string   Git commit hashes created during the run
   artifacts_dir           string     Absolute path to the artifacts directory
+  phases                  []object   Per-phase breakdown (one entry per config phase)
+
+Phase object fields:
+  name                    string     Phase name from config
+  status                  string     "completed", "skipped", "failed", or "pending"
+  duration_seconds        float      Wall-clock seconds for this phase (0 if skipped/pending)
+  cost_usd                float      Cost in USD (0 for non-agent phases)
 
 prompts/
 --------

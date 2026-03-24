@@ -473,7 +473,7 @@ orc creates a `.orc/artifacts/<ticket>/` directory per ticket to store all run d
 ├── costs.json              # Per-phase cost and token counts
 ├── timing.json             # Per-phase timing data
 ├── loop-counts.json        # Persisted loop iteration counters
-├── run-result.json         # Machine-readable run summary (written on every exit)
+├── run-result.json         # Machine-readable run summary with per-phase breakdown
 ├── prompts/                # Rendered prompt for each phase
 ├── logs/                   # Agent output for each phase
 ├── feedback/               # Loop/failure feedback
@@ -491,7 +491,7 @@ orc also maintains `.orc/audit/<ticket>/` to preserve data across cancellations 
 .orc/audit/<ticket>/
 ├── costs.json              # Persisted cost data (survives cancel)
 ├── timing.json             # Persisted timing data
-├── run-result.json         # Machine-readable run summary (survives cancel)
+├── run-result.json         # Machine-readable run summary with per-phase breakdown
 ├── logs/
 │   ├── phase-1.iter-1.log  # Archived logs from prior loop iterations
 │   └── ...
