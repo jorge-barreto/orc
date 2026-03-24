@@ -46,17 +46,17 @@ func historyCmd() *cli.Command {
 			if err := validateTicketPath(ticket); err != nil {
 				return cfgErr(err)
 			}
-			cfg, err := config.Load(configPath, projectRoot)
-			if err != nil {
-				return cfgErr(fmt.Errorf("loading config: %w", err))
-			}
-			if err := config.ValidateTicket(cfg.TicketPattern, ticket); err != nil {
-				return cfgErr(err)
-			}
 
 			artifactsDir := state.ArtifactsDirForWorkflow(projectRoot, workflowName, ticket)
 
 			if cmd.Bool("prune") {
+				cfg, err := config.Load(configPath, projectRoot)
+				if err != nil {
+					return cfgErr(fmt.Errorf("loading config: %w", err))
+				}
+				if err := config.ValidateTicket(cfg.TicketPattern, ticket); err != nil {
+					return cfgErr(err)
+				}
 				limit := cfg.HistoryLimit
 				if err := state.PruneHistory(artifactsDir, limit); err != nil {
 					return fmt.Errorf("pruning history: %w", err)

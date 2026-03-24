@@ -367,7 +367,7 @@ func TestHistoryCmd_BadTicketPattern_ExitConfigError(t *testing.T) {
 		Name:     "orc",
 		Commands: []*cli.Command{historyCmd()},
 	}
-	err := app.Run(context.Background(), []string{"orc", "history", "bad-ticket"})
+	err := app.Run(context.Background(), []string{"orc", "history", "--prune", "bad-ticket"})
 	if err == nil {
 		t.Fatal("expected error for ticket not matching pattern")
 	}
@@ -380,6 +380,32 @@ func TestHistoryCmd_BadTicketPattern_ExitConfigError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "does not match pattern") {
 		t.Fatalf("expected 'does not match pattern' in error, got: %v", err)
+	}
+}
+
+func TestHistoryCmd_ListSucceedsWithBrokenConfig(t *testing.T) {
+	dir := t.TempDir()
+	orcDir := filepath.Join(dir, ".orc")
+	if err := os.MkdirAll(orcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(orcDir, "config.yaml"),
+		[]byte("name: test\nphases:\n  - name: plan\n    type: agent\n    prompt: nonexistent-prompt.md\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(orig) //nolint:errcheck
+
+	app := &cli.Command{
+		Name:     "orc",
+		Commands: []*cli.Command{historyCmd()},
+	}
+	err := app.Run(context.Background(), []string{"orc", "history", "myticket"})
+	if err != nil {
+		t.Fatalf("expected no error listing history with broken config, got: %v", err)
 	}
 }
 
