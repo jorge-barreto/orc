@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/jorge-barreto/orc/internal/runner"
-	"github.com/jorge-barreto/orc/internal/state"
 	"github.com/jorge-barreto/orc/internal/ux"
 	cli "github.com/urfave/cli/v3"
 )
@@ -280,23 +279,9 @@ func TestResolveWorkflow_FlagWithNoWorkflowsDir(t *testing.T) {
 }
 
 func TestShouldArchiveStale(t *testing.T) {
-	tests := []struct {
-		status string
-		want   bool
-	}{
-		{state.StatusRunning, true},
-		{state.StatusCompleted, true},
-		{state.StatusFailed, true},
-		{state.StatusInterrupted, true},
-		{"unknown", true},
-	}
-	for _, tc := range tests {
-		t.Run(tc.status, func(t *testing.T) {
-			got := shouldArchiveStale(tc.status)
-			if got != tc.want {
-				t.Errorf("shouldArchiveStale(%q) = %v, want %v", tc.status, got, tc.want)
-			}
-		})
+	// shouldArchiveStale is unconditionally true for all statuses.
+	if !shouldArchiveStale("anything") {
+		t.Error("shouldArchiveStale should always return true")
 	}
 }
 

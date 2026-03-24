@@ -578,15 +578,11 @@ func improveCmd() *cli.Command {
 }
 
 // shouldArchiveStale reports whether a prior run with the given status should be
-// archived before starting a fresh run. All known statuses and unknown statuses
-// return true — archive rather than silently discard.
-func shouldArchiveStale(status string) bool {
-	switch status {
-	case state.StatusCompleted, state.StatusRunning, state.StatusFailed, state.StatusInterrupted:
-		return true
-	default:
-		return true // safe default: archive unknown states rather than silently discard
-	}
+// archived before starting a fresh run. Currently unconditional — every status
+// (completed, running, failed, interrupted, unknown) gets archived rather than
+// silently discarded.
+func shouldArchiveStale(_ string) bool {
+	return true
 }
 
 // validateTicketPath rejects ticket values that would escape the artifacts directory.
