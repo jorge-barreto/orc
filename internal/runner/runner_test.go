@@ -3631,6 +3631,19 @@ func TestRun_RunResultOnSuccess(t *testing.T) {
 	if result.FailedPhase != nil {
 		t.Fatalf("failed_phase should be nil, got %q", *result.FailedPhase)
 	}
+	// Also verify audit dir copy
+	auditDir := state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket)
+	auditData, err := os.ReadFile(state.RunResultPath(auditDir))
+	if err != nil {
+		t.Fatalf("run-result.json not written to audit dir: %v", err)
+	}
+	var auditResult state.RunResult
+	if err := json.Unmarshal(auditData, &auditResult); err != nil {
+		t.Fatalf("invalid audit JSON: %v", err)
+	}
+	if auditResult.Status != state.StatusCompleted {
+		t.Fatalf("audit status = %q, want completed", auditResult.Status)
+	}
 }
 
 func TestRun_RunResultOnFailure(t *testing.T) {
@@ -3669,6 +3682,22 @@ func TestRun_RunResultOnFailure(t *testing.T) {
 	if result.PhasesCompleted != 1 {
 		t.Fatalf("phases_completed = %d, want 1", result.PhasesCompleted)
 	}
+	// Also verify audit dir copy
+	auditDir := state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket)
+	auditData, err := os.ReadFile(state.RunResultPath(auditDir))
+	if err != nil {
+		t.Fatalf("run-result.json not written to audit dir: %v", err)
+	}
+	var auditResult state.RunResult
+	if err := json.Unmarshal(auditData, &auditResult); err != nil {
+		t.Fatalf("invalid audit JSON: %v", err)
+	}
+	if auditResult.Status != state.StatusFailed {
+		t.Fatalf("audit status = %q, want failed", auditResult.Status)
+	}
+	if auditResult.FailedPhase == nil || *auditResult.FailedPhase != "b" {
+		t.Fatalf("audit failed_phase = %v, want 'b'", auditResult.FailedPhase)
+	}
 }
 
 func TestRun_RunResultOnInterrupt(t *testing.T) {
@@ -3705,5 +3734,18 @@ func TestRun_RunResultOnInterrupt(t *testing.T) {
 	}
 	if result.ExitCode != ExitInterrupted {
 		t.Fatalf("exit_code = %d, want %d", result.ExitCode, ExitInterrupted)
+	}
+	// Also verify audit dir copy
+	auditDir := state.AuditDir(r.Env.ProjectRoot, r.Env.Ticket)
+	auditData, err := os.ReadFile(state.RunResultPath(auditDir))
+	if err != nil {
+		t.Fatalf("run-result.json not written to audit dir: %v", err)
+	}
+	var auditResult state.RunResult
+	if err := json.Unmarshal(auditData, &auditResult); err != nil {
+		t.Fatalf("invalid audit JSON: %v", err)
+	}
+	if auditResult.Status != state.StatusInterrupted {
+		t.Fatalf("audit status = %q, want interrupted", auditResult.Status)
 	}
 }

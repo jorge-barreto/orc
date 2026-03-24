@@ -151,7 +151,7 @@ func captureBaseCommit(projectRoot string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// writeRunResult writes run-result.json to the artifacts directory.
+// writeRunResult writes run-result.json to the audit and artifacts directories.
 // Errors are logged as warnings — run result should not break the run.
 func (r *Runner) writeRunResult(exitCode int, failedPhase string) {
 	var failedPhasePtr *string
@@ -183,6 +183,11 @@ func (r *Runner) writeRunResult(exitCode int, failedPhase string) {
 		ArtifactsDir:         r.Env.ArtifactsDir,
 	}
 
+	if r.auditDir != "" {
+		if err := state.WriteRunResult(r.auditDir, result); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to write run-result.json to audit: %v\n", err)
+		}
+	}
 	if err := state.WriteRunResult(r.Env.ArtifactsDir, result); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to write run-result.json: %v\n", err)
 	}

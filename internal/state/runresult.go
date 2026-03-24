@@ -23,12 +23,12 @@ type RunResult struct {
 }
 
 // RunResultPath returns the path to the run-result.json file.
-func RunResultPath(artifactsDir string) string {
-	return filepath.Join(artifactsDir, "run-result.json")
+func RunResultPath(dir string) string {
+	return filepath.Join(dir, "run-result.json")
 }
 
 // WriteRunResult writes the run result to disk atomically.
-func WriteRunResult(artifactsDir string, result *RunResult) error {
+func WriteRunResult(dir string, result *RunResult) error {
 	if result.Commits == nil {
 		result.Commits = []string{}
 	}
@@ -36,7 +36,7 @@ func WriteRunResult(artifactsDir string, result *RunResult) error {
 	if err != nil {
 		return err
 	}
-	return WriteFileAtomic(RunResultPath(artifactsDir), data, 0644)
+	return WriteFileAtomic(RunResultPath(dir), data, 0644)
 }
 
 // CollectCommits returns the list of commit hashes between baseCommit and HEAD.
