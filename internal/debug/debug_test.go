@@ -357,14 +357,24 @@ func TestRun_ArchivedRun(t *testing.T) {
 	}
 
 	logContent := "⚡ Read file.go\nsome output\n"
-	os.WriteFile(filepath.Join(logsDir, "phase-1.log"), []byte(logContent), 0644)
-	os.WriteFile(filepath.Join(promptsDir, "phase-1.md"), []byte("rendered prompt\n"), 0644)
-	os.WriteFile(filepath.Join(histDir, "state.json"),
-		[]byte(`{"phase_index":1,"ticket":"TEST-1","status":"completed"}`), 0644)
-	os.WriteFile(filepath.Join(histDir, "timing.json"),
-		[]byte(`{"entries":[{"phase":"plan","start":"2026-01-01T00:00:00Z","end":"2026-01-01T00:01:00Z","duration":"1m 00s"}]}`), 0644)
-	os.WriteFile(filepath.Join(histDir, "costs.json"),
-		[]byte(`{"phases":[{"name":"plan","phase_index":0,"cost_usd":0.05,"input_tokens":1000,"output_tokens":500}],"total_cost_usd":0.05}`), 0644)
+	if err := os.WriteFile(filepath.Join(logsDir, "phase-1.log"), []byte(logContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(promptsDir, "phase-1.md"), []byte("rendered prompt\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(histDir, "state.json"),
+		[]byte(`{"phase_index":1,"ticket":"TEST-1","status":"completed"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(histDir, "timing.json"),
+		[]byte(`{"entries":[{"phase":"plan","start":"2026-01-01T00:00:00Z","end":"2026-01-01T00:01:00Z","duration":"1m 00s"}]}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(histDir, "costs.json"),
+		[]byte(`{"phases":[{"name":"plan","phase_index":0,"cost_usd":0.05,"input_tokens":1000,"output_tokens":500}],"total_cost_usd":0.05}`), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := Run(dir, cfg, 0, "TEST-1", ""); err != nil {
 		t.Errorf("Run returned error for archived run: %v", err)
