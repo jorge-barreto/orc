@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/jorge-barreto/orc/internal/config"
 	"github.com/jorge-barreto/orc/internal/dispatch"
 	"github.com/jorge-barreto/orc/internal/state"
+	"github.com/jorge-barreto/orc/internal/ux"
 )
 
 func TestCheckMissingArtifacts_NoPriorPhases(t *testing.T) {
@@ -106,6 +108,74 @@ func TestCheckMissingArtifacts_MultiplePriorPhases(t *testing.T) {
 	}
 	if !strings.Contains(got, "phase 2: code") {
 		t.Errorf("expected output to contain %q, got: %q", "phase 2: code", got)
+	}
+}
+
+func TestCheckMissingArtifacts_QuietMode_EmitsJSONL(t *testing.T) {
+	origQuiet := ux.QuietMode
+	t.Cleanup(func() { ux.QuietMode = origQuiet })
+	ux.QuietMode = true
+
+	tmpDir := t.TempDir()
+	phases := []config.Phase{
+		{Name: "plan", Outputs: []string{"plan.md"}},
+		{Name: "code", Outputs: []string{"code.md"}},
+		{Name: "review"},
+	}
+
+	// Capture stdout (QuietPhaseEvent writes there)
+	oldStdout := os.Stdout
+	rOut, wOut, _ := os.Pipe()
+	os.Stdout = wOut
+
+	// Capture stderr (should be empty in quiet mode)
+	oldStderr := os.Stderr
+	rErr, wErr, _ := os.Pipe()
+	os.Stderr = wErr
+
+	checkMissingArtifacts(phases, 2, tmpDir)
+
+	wOut.Close()
+	os.Stdout = oldStdout
+	wErr.Close()
+	os.Stderr = oldStderr
+
+	var bufOut, bufErr bytes.Buffer
+	io.Copy(&bufOut, rOut)
+	io.Copy(&bufErr, rErr)
+
+	// stderr must be empty — no raw text in quiet mode
+	if bufErr.String() != "" {
+		t.Errorf("expected no stderr output in quiet mode, got: %q", bufErr.String())
+	}
+
+	// stdout must contain 2 JSONL lines (plan.md + code.md both missing)
+	lines := strings.Split(strings.TrimSpace(bufOut.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 JSONL lines (one per missing artifact), got %d: %q", len(lines), bufOut.String())
+	}
+
+	for i, line := range lines {
+		var event map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			t.Fatalf("line %d is not valid JSON: %v\nline: %s", i, err, line)
+		}
+		if event["status"] != "warning" {
+			t.Errorf("line %d: status = %v, want \"warning\"", i, event["status"])
+		}
+		if _, ok := event["artifact"]; !ok {
+			t.Errorf("line %d: missing \"artifact\" key", i)
+		}
+	}
+
+	var first, second map[string]interface{}
+	json.Unmarshal([]byte(lines[0]), &first)
+	json.Unmarshal([]byte(lines[1]), &second)
+	if first["artifact"] != "plan.md" || first["phase"] != "plan" {
+		t.Errorf("first event: got artifact=%v phase=%v, want plan.md/plan", first["artifact"], first["phase"])
+	}
+	if second["artifact"] != "code.md" || second["phase"] != "code" {
+		t.Errorf("second event: got artifact=%v phase=%v, want code.md/code", second["artifact"], second["phase"])
 	}
 }
 

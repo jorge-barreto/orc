@@ -155,20 +155,39 @@ func testCmd() *cli.Command {
 // the target phase. For each missing file, it prints a warning showing which
 // earlier phase normally creates it.
 func checkMissingArtifacts(phases []config.Phase, targetIdx int, artifactsDir string) {
-	var warnings []string
+	type missingArtifact struct {
+		output    string
+		phaseIdx  int
+		phaseName string
+	}
+	var missing []missingArtifact
 	for i := 0; i < targetIdx; i++ {
 		for _, output := range phases[i].Outputs {
 			path := filepath.Join(artifactsDir, output)
 			if _, err := os.Stat(path); err != nil {
-				warnings = append(warnings, fmt.Sprintf("  %s (normally created by phase %d: %s)", output, i+1, phases[i].Name))
+				missing = append(missing, missingArtifact{
+					output:    output,
+					phaseIdx:  i,
+					phaseName: phases[i].Name,
+				})
 			}
 		}
 	}
-	if len(warnings) > 0 {
-		fmt.Fprintf(os.Stderr, "%swarning: missing artifacts from earlier phases:%s\n", ux.Yellow, ux.Reset)
-		for _, w := range warnings {
-			fmt.Fprintf(os.Stderr, "%s%s%s\n", ux.Yellow, w, ux.Reset)
-		}
-		fmt.Fprintln(os.Stderr)
+	if len(missing) == 0 {
+		return
 	}
+	if ux.QuietMode {
+		for _, m := range missing {
+			ux.QuietPhaseEvent(m.phaseName, "warning", map[string]interface{}{
+				"message":  "missing artifact from earlier phase",
+				"artifact": m.output,
+			})
+		}
+		return
+	}
+	fmt.Fprintf(os.Stderr, "%swarning: missing artifacts from earlier phases:%s\n", ux.Yellow, ux.Reset)
+	for _, m := range missing {
+		fmt.Fprintf(os.Stderr, "%s  %s (normally created by phase %d: %s)%s\n", ux.Yellow, m.output, m.phaseIdx+1, m.phaseName, ux.Reset)
+	}
+	fmt.Fprintln(os.Stderr)
 }
