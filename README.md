@@ -491,6 +491,7 @@ orc also maintains `.orc/audit/<ticket>/` to preserve data across cancellations 
 .orc/audit/<ticket>/
 ├── costs.json              # Persisted cost data (survives cancel)
 ├── timing.json             # Persisted timing data
+├── run-result.json         # Machine-readable run summary (survives cancel)
 ├── logs/
 │   ├── phase-1.iter-1.log  # Archived logs from prior loop iterations
 │   └── ...

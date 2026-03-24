@@ -902,7 +902,7 @@ Audit Directory
 ---------------
 
 orc maintains a separate .orc/audit/<ticket>/ directory that preserves
-cost data, timing, and archived iteration logs across cancellations and
+cost data, timing, run results, and archived iteration logs across cancellations and
 re-runs. When a phase loops, its previous iteration's logs and prompts
 are archived here with iteration numbers (e.g., phase-1.iter-1.log).
 
