@@ -595,6 +595,10 @@ func TestNoColorFlag_DisablesColor(t *testing.T) {
 		ux.BoldGreen = origBoldGreen
 	})
 
+	origIsTerminal := ux.IsTerminal
+	ux.IsTerminal = func(f *os.File) bool { return true }
+	t.Cleanup(func() { ux.IsTerminal = origIsTerminal })
+
 	colorDisabled := false
 	sub := &cli.Command{
 		Name: "sub",
@@ -673,6 +677,10 @@ func TestNoColorEnvVars(t *testing.T) {
 			ux.BoldCyan = origBoldCyan
 			ux.BoldBlue = origBoldBlue
 			ux.BoldGreen = origBoldGreen
+
+			origIsTerminal := ux.IsTerminal
+			ux.IsTerminal = func(f *os.File) bool { return true }
+			t.Cleanup(func() { ux.IsTerminal = origIsTerminal })
 
 			t.Setenv(tc.envKey, "1")
 
