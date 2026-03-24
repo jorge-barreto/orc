@@ -61,3 +61,18 @@ func TestAddEndAt(t *testing.T) {
 		t.Fatal("Duration should be set")
 	}
 }
+
+func TestAddStartAt(t *testing.T) {
+	startTime := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	timing := &Timing{}
+	timing.AddStartAt("a", startTime)
+	if len(timing.Entries) != 1 {
+		t.Fatalf("len(Entries) = %d, want 1", len(timing.Entries))
+	}
+	if timing.Entries[0].Start != startTime {
+		t.Fatalf("Start = %v, want %v", timing.Entries[0].Start, startTime)
+	}
+	if timing.Entries[0].Phase != "a" {
+		t.Fatalf("Phase = %q, want %q", timing.Entries[0].Phase, "a")
+	}
+}

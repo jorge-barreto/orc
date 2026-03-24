@@ -62,6 +62,16 @@ func (t *Timing) AddStart(phaseName string) {
 	})
 }
 
+// AddStartAt appends a new timing entry for the given phase with the specified start time.
+func (t *Timing) AddStartAt(phaseName string, startTime time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.Entries = append(t.Entries, TimingEntry{
+		Phase: phaseName,
+		Start: startTime,
+	})
+}
+
 // AddEnd records the end time for the most recent entry matching phaseName.
 func (t *Timing) AddEnd(phaseName string) {
 	t.mu.Lock()
