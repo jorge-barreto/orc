@@ -671,6 +671,8 @@ orc run returns structured exit codes for scripting and CI/CD:
        received.
   6    Resume failure. Cannot resume an interrupted session
        (session ID missing or invalid).
+  7    Infrastructure error. All phases completed but a state-save
+       or other infrastructure operation failed afterward.
 
 A wrapper script can check $? to decide how to react:
 
@@ -683,6 +685,7 @@ A wrapper script can check $? to decide how to react:
     4) echo "Cost limit hit — review budget" ;;
     5) echo "Interrupted" ;;
     6) echo "Resume failed — use --retry instead" ;;
+    7) echo "Infrastructure error — investigate state persistence" ;;
   esac
 
 Signal Handling
@@ -820,7 +823,7 @@ Tracks the current phase index, ticket identifier, workflow status
 (running, completed, failed, interrupted), the Claude session ID
 for interrupted agent phases (used by --resume), and for failed/interrupted
 runs, a failure_category (loop_exhaustion, cost_overrun, gate_rejection,
-script_failure, output_missing, interrupted, agent_error) and optional
+script_failure, output_missing, interrupted, agent_error, state_save) and optional
 failure_detail with a human-readable description. Written atomically
 after every phase.
 
@@ -847,7 +850,7 @@ Fields:
   ticket                  string     Ticket identifier
   workflow                string     Workflow name (empty for flat layout)
   status                  string     "completed", "failed", or "interrupted"
-  exit_code               int        Process exit code (0=success, 1=phase-failure, 2=timeout, 3=config-error, 4=cost-limit, 5=interrupted, 6=resume-failure)
+  exit_code               int        Process exit code (0=success, 1=phase-failure, 2=timeout, 3=config-error, 4=cost-limit, 5=interrupted, 6=resume-failure, 7=infra-error)
   failed_phase            string?    Name of the failed phase (null on success)
   phases_completed        int        Number of phases that completed successfully
   phases_total            int        Total number of phases in workflow

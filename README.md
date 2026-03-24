@@ -51,7 +51,7 @@ You define your workflow as a series of **phases** in a YAML config file. Each p
 - **`orc report`**: Generate a run summary with timing, costs, phase outcomes, loop activity, and artifact listing — markdown or JSON
 - **`orc stats`**: Aggregate metrics across runs — success rate, cost/duration distributions, per-phase breakdown, failure categories, and weekly trends
 - **`orc eval`**: Measure workflow quality, cost, and time across eval cases pinned to known git refs — track score trends across config changes
-- **Structured exit codes**: 0 (success), 1 (phase failure), 2 (timeout), 3 (config error), 4 (cost limit), 5 (interrupted), 6 (resume failure)
+- **Structured exit codes**: 0 (success), 1 (phase failure), 2 (timeout), 3 (config error), 4 (cost limit), 5 (interrupted), 6 (resume failure), 7 (infrastructure error)
 
 ## Prerequisites
 
@@ -639,6 +639,7 @@ Resume the workflow later — it picks up from the interrupted phase.
 | 4 | Cost limit exceeded — per-phase or per-run cost budget hit |
 | 5 | Interrupted — SIGINT, SIGTERM, or SIGHUP received |
 | 6 | Resume failure — cannot resume interrupted session |
+| 7 | Infrastructure error — all phases completed but state persistence failed |
 
 ## Run Summary
 
