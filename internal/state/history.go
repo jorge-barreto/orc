@@ -212,7 +212,7 @@ func ListHistory(artifactsDir string) ([]HistoryEntry, error) {
 		costs, _ := LoadCosts(entryDir)
 		var costUSD float64
 		if costs != nil {
-			costUSD = costs.TotalCostUSD
+			costUSD = costs.TotalCost()
 		}
 
 		result = append(result, HistoryEntry{
