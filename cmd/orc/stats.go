@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jorge-barreto/orc/internal/config"
 	"github.com/jorge-barreto/orc/internal/runner"
 	"github.com/jorge-barreto/orc/internal/state"
 	"github.com/jorge-barreto/orc/internal/stats"
@@ -32,7 +33,7 @@ func statsCmd() *cli.Command {
 			}
 
 			flagWorkflow := cmd.Root().String("workflow")
-			workflowName, _, err := resolveWorkflow(projectRoot, flagWorkflow)
+			workflowName, configPath, err := resolveWorkflow(projectRoot, flagWorkflow)
 			if err != nil {
 				return cfgErr(err)
 			}
@@ -40,6 +41,15 @@ func statsCmd() *cli.Command {
 			ticket := cmd.Args().First()
 			if ticket != "" {
 				if err := validateTicketPath(ticket); err != nil {
+					return cfgErr(err)
+				}
+			}
+			cfg, err := config.Load(configPath, projectRoot)
+			if err != nil {
+				return cfgErr(fmt.Errorf("loading config: %w", err))
+			}
+			if ticket != "" {
+				if err := config.ValidateTicket(cfg.TicketPattern, ticket); err != nil {
 					return cfgErr(err)
 				}
 			}

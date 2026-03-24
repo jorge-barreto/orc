@@ -362,6 +362,78 @@ func TestStatusCmd_BadTicket_ExitConfigError(t *testing.T) {
 	}
 }
 
+func TestHistoryCmd_BadTicketPattern_ExitConfigError(t *testing.T) {
+	dir := t.TempDir()
+	orcDir := filepath.Join(dir, ".orc")
+	if err := os.MkdirAll(orcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(orcDir, "config.yaml"),
+		[]byte("name: test\nticket-pattern: '^[A-Z]+-\\d+$'\nphases:\n  - name: a\n    type: script\n    run: echo ok\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(orig) //nolint:errcheck
+
+	app := &cli.Command{
+		Name:     "orc",
+		Commands: []*cli.Command{historyCmd()},
+	}
+	err := app.Run(context.Background(), []string{"orc", "history", "bad-ticket"})
+	if err == nil {
+		t.Fatal("expected error for ticket not matching pattern")
+	}
+	var exitErr *runner.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected *runner.ExitError, got %T: %v", err, err)
+	}
+	if exitErr.Code != runner.ExitConfigError {
+		t.Fatalf("expected exit code %d, got %d", runner.ExitConfigError, exitErr.Code)
+	}
+	if !strings.Contains(err.Error(), "does not match pattern") {
+		t.Fatalf("expected 'does not match pattern' in error, got: %v", err)
+	}
+}
+
+func TestStatsCmd_BadTicketPattern_ExitConfigError(t *testing.T) {
+	dir := t.TempDir()
+	orcDir := filepath.Join(dir, ".orc")
+	if err := os.MkdirAll(orcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(orcDir, "config.yaml"),
+		[]byte("name: test\nticket-pattern: '^[A-Z]+-\\d+$'\nphases:\n  - name: a\n    type: script\n    run: echo ok\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(orig) //nolint:errcheck
+
+	app := &cli.Command{
+		Name:     "orc",
+		Commands: []*cli.Command{statsCmd()},
+	}
+	err := app.Run(context.Background(), []string{"orc", "stats", "bad-ticket"})
+	if err == nil {
+		t.Fatal("expected error for ticket not matching pattern")
+	}
+	var exitErr *runner.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected *runner.ExitError, got %T: %v", err, err)
+	}
+	if exitErr.Code != runner.ExitConfigError {
+		t.Fatalf("expected exit code %d, got %d", runner.ExitConfigError, exitErr.Code)
+	}
+	if !strings.Contains(err.Error(), "does not match pattern") {
+		t.Fatalf("expected 'does not match pattern' in error, got: %v", err)
+	}
+}
+
 func TestDoctorCmd_MissingTicket_ExitConfigError(t *testing.T) {
 	app := &cli.Command{
 		Name:     "orc",
