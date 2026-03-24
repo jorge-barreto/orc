@@ -4130,6 +4130,43 @@ func TestRun_RunResultPhasesOnFailure(t *testing.T) {
 	}
 }
 
+func TestRun_RunResultPhasesWithPending(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo"},
+			{Name: "c", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	mock.results["b"] = &dispatch.Result{ExitCode: 1}
+	r := newTestRunner(t, cfg, mock)
+
+	_ = r.Run(context.Background()) // expect error; don't fatal
+
+	data, err := os.ReadFile(state.RunResultPath(r.Env.ArtifactsDir))
+	if err != nil {
+		t.Fatalf("run-result.json not written: %v", err)
+	}
+	var result state.RunResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(result.Phases) != 3 {
+		t.Fatalf("len(phases) = %d, want 3", len(result.Phases))
+	}
+	if result.Phases[0].Status != "completed" {
+		t.Fatalf("phases[0].status = %q, want completed", result.Phases[0].Status)
+	}
+	if result.Phases[1].Status != "failed" {
+		t.Fatalf("phases[1].status = %q, want failed", result.Phases[1].Status)
+	}
+	if result.Phases[2].Status != "pending" {
+		t.Fatalf("phases[2].status = %q, want pending", result.Phases[2].Status)
+	}
+}
+
 func TestRun_RunResultPhasesWithSkip(t *testing.T) {
 	cfg := &config.Config{
 		Name: "test",
