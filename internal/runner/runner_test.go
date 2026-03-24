@@ -3862,3 +3862,62 @@ func TestRun_RunResultPhasesWithSkip(t *testing.T) {
 		t.Fatalf("phases[1].status = %q, want completed", result.Phases[1].Status)
 	}
 }
+
+func TestRun_RunResultPhasesLoopReEntryOverridesSkip(t *testing.T) {
+	markerFile := filepath.Join(t.TempDir(), "marker")
+
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo", Condition: "test -f " + markerFile},
+			{Name: "c", Type: "script", Run: "echo", Loop: &config.Loop{Goto: "a", Min: 1, Max: 3}},
+		},
+	}
+
+	cCount := 0
+	mu := sync.Mutex{}
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		if phase.Name == "c" {
+			mu.Lock()
+			cCount++
+			n := cCount
+			mu.Unlock()
+			if n == 1 {
+				// First pass: create marker so b's condition passes on re-entry, then fail c to trigger loop back
+				os.WriteFile(markerFile, []byte("ok"), 0644)
+				return &dispatch.Result{ExitCode: 1, Output: "c failed"}, nil
+			}
+		}
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+
+	r := newTestRunner(t, cfg, mock)
+
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(state.RunResultPath(r.Env.ArtifactsDir))
+	if err != nil {
+		t.Fatalf("run-result.json not written: %v", err)
+	}
+	var result state.RunResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(result.Phases) != 3 {
+		t.Fatalf("len(phases) = %d, want 3", len(result.Phases))
+	}
+	// Phase b was skipped on first pass but ran on second pass after loop re-entry.
+	// It must be reported as "completed", not "skipped".
+	if result.Phases[0].Status != "completed" {
+		t.Fatalf("phases[0].status = %q, want completed", result.Phases[0].Status)
+	}
+	if result.Phases[1].Status != "completed" {
+		t.Fatalf("phases[1].status = %q, want completed", result.Phases[1].Status)
+	}
+	if result.Phases[2].Status != "completed" {
+		t.Fatalf("phases[2].status = %q, want completed", result.Phases[2].Status)
+	}
+}

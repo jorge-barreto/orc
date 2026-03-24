@@ -664,6 +664,7 @@ func (r *Runner) prepareBackwardJump(gotoIdx, currentIdx int, loopCounts map[str
 		name := r.Config.Phases[j].Name
 		delete(loopCounts, name)
 		delete(loopCounts, name+":exhaust")
+		delete(r.skipped, name)
 	}
 	return state.ClearFeedback(r.Env.ArtifactsDir)
 }
