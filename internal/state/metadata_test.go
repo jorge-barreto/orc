@@ -119,3 +119,26 @@ func TestSaveMetadata_NilSlices(t *testing.T) {
 		}
 	}
 }
+
+func TestSaveMetadata_DoesNotMutateInput(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "logs"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	path := MetaPath(dir, 0)
+	meta := &PhaseMetadata{
+		PhaseName:   "build",
+		PhaseType:   "script",
+		ToolsUsed:   nil,
+		ToolsDenied: nil,
+	}
+	if err := SaveMetadata(path, meta); err != nil {
+		t.Fatal(err)
+	}
+	if meta.ToolsUsed != nil {
+		t.Errorf("ToolsUsed was mutated: got %v, want nil", meta.ToolsUsed)
+	}
+	if meta.ToolsDenied != nil {
+		t.Errorf("ToolsDenied was mutated: got %v, want nil", meta.ToolsDenied)
+	}
+}

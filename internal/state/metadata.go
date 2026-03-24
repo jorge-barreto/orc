@@ -29,15 +29,17 @@ type PhaseMetadata struct {
 }
 
 // SaveMetadata writes phase metadata to a .meta.json file atomically.
-// Nil slices are coerced to empty slices so they serialize as [] not null.
+// Nil slices are coerced to empty slices on a local copy so they serialize
+// as [] not null; the caller's struct is not mutated.
 func SaveMetadata(path string, meta *PhaseMetadata) error {
-	if meta.ToolsUsed == nil {
-		meta.ToolsUsed = []string{}
+	local := *meta
+	if local.ToolsUsed == nil {
+		local.ToolsUsed = []string{}
 	}
-	if meta.ToolsDenied == nil {
-		meta.ToolsDenied = []string{}
+	if local.ToolsDenied == nil {
+		local.ToolsDenied = []string{}
 	}
-	data, err := json.MarshalIndent(meta, "", "  ")
+	data, err := json.MarshalIndent(&local, "", "  ")
 	if err != nil {
 		return err
 	}
