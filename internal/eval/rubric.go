@@ -13,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/jorge-barreto/orc/internal/dispatch"
 )
 
 // CriterionResult holds the outcome of evaluating one rubric criterion.
@@ -43,14 +45,15 @@ func filteredEnv(extras ...string) []string {
 		"TICKET": true, "ARTIFACTS_DIR": true, "WORK_DIR": true,
 		"PROJECT_ROOT": true, "WORKFLOW": true,
 	}
+	base := dispatch.FilteredEnv()
 	var env []string
-	for _, e := range os.Environ() {
+	for _, e := range base {
 		idx := strings.IndexByte(e, '=')
 		if idx < 0 {
 			continue
 		}
 		key := e[:idx]
-		if strings.HasPrefix(key, "CLAUDECODE") || strings.HasPrefix(key, "ORC_") || overridden[key] {
+		if strings.HasPrefix(key, "ORC_") || overridden[key] {
 			continue
 		}
 		env = append(env, e)
