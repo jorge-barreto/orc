@@ -157,7 +157,7 @@ orc run -w bugfix PROJ-123      # named workflow (explicit flag)
 
 **Attended vs auto mode**: By default, orc runs in attended mode — you can type follow-up instructions to steer agent phases, if an agent attempts a tool that wasn't pre-approved, orc prompts you to approve it, and if the agent asks a question (via AskUserQuestion), orc displays it and collects your answer. With `--auto`, orc runs fully unattended with no stdin interaction.
 
-**Step-through mode**: `--step` pauses after each phase with an interactive prompt. You can continue, rewind to a specific phase, abort, or inspect artifact files. Incompatible with `--auto`.
+**Step-through mode**: `--step` pauses after each phase with an interactive prompt. You can continue, rewind to a previous phase (forward jumps are rejected), abort, or inspect artifact files. Incompatible with `--auto`.
 
 **Headless mode**: `--headless` (or `ORC_HEADLESS=1`) runs in fully non-interactive mode — implies `--auto` (gates auto-approved, no steering), disables ANSI color, and emits machine-readable JSONL instead of decorated text. One JSON line per phase transition to stdout: `{"phase":"plan","status":"started"}`, `{"phase":"plan","status":"complete","duration_s":120.5}`. Errors remain on stderr as plain text. Exit codes (0 = success, 1 = phase failure, 2 = timeout, 3 = config error, 4 = cost limit, 5 = interrupted, 6 = resume failure) are the primary status signal. Incompatible with `--step`. Useful for CI/CD pipelines, cron jobs, launchers, monitoring dashboards, and log aggregation.
 

@@ -13,7 +13,7 @@ import (
 
 // StepAction represents the user's choice at a step-through prompt.
 type StepAction struct {
-	Type   string // "continue", "rewind", "abort", "inspect", "unknown"
+	Type   string // "continue", "rewind" (backward only), "abort", "inspect", "unknown"
 	Target string // phase ref for rewind, filename for inspect
 }
 

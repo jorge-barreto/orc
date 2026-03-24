@@ -747,9 +747,10 @@ Commands:
   a, abort               Stop the run, save state as interrupted
   i <file>, inspect file Print an artifact file to the terminal
 
-Rewind preserves artifacts from completed phases. When rewinding
-backward, loop counters for phases between the target and the current
-position are reset so loops re-execute correctly.
+Rewind jumps backward to a previous phase. Forward targets are
+rejected. Artifacts from completed phases are preserved; loop counters
+for phases between the target and the current position are reset so
+loops re-execute correctly.
 
 --step is incompatible with --auto (step-through requires interactive
 input).
