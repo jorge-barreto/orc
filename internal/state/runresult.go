@@ -7,19 +7,28 @@ import (
 	"strings"
 )
 
+// PhaseResult holds per-phase outcome data for run-result.json.
+type PhaseResult struct {
+	Name            string  `json:"name"`
+	Status          string  `json:"status"`
+	DurationSeconds float64 `json:"duration_seconds"`
+	CostUSD         float64 `json:"cost_usd"`
+}
+
 // RunResult holds the outcome of a completed workflow run.
 type RunResult struct {
-	Ticket               string   `json:"ticket"`
-	Workflow             string   `json:"workflow"`
-	Status               string   `json:"status"`
-	ExitCode             int      `json:"exit_code"`
-	FailedPhase          *string  `json:"failed_phase"`
-	PhasesCompleted      int      `json:"phases_completed"`
-	PhasesTotal          int      `json:"phases_total"`
-	TotalCostUSD         float64  `json:"total_cost_usd"`
-	TotalDurationSeconds float64  `json:"total_duration_seconds"`
-	Commits              []string `json:"commits"`
-	ArtifactsDir         string   `json:"artifacts_dir"`
+	Ticket               string        `json:"ticket"`
+	Workflow             string        `json:"workflow"`
+	Status               string        `json:"status"`
+	ExitCode             int           `json:"exit_code"`
+	FailedPhase          *string       `json:"failed_phase"`
+	PhasesCompleted      int           `json:"phases_completed"`
+	PhasesTotal          int           `json:"phases_total"`
+	TotalCostUSD         float64       `json:"total_cost_usd"`
+	TotalDurationSeconds float64       `json:"total_duration_seconds"`
+	Commits              []string      `json:"commits"`
+	ArtifactsDir         string        `json:"artifacts_dir"`
+	Phases               []PhaseResult `json:"phases"`
 }
 
 // RunResultPath returns the path to the run-result.json file.
@@ -31,6 +40,9 @@ func RunResultPath(dir string) string {
 func WriteRunResult(dir string, result *RunResult) error {
 	if result.Commits == nil {
 		result.Commits = []string{}
+	}
+	if result.Phases == nil {
+		result.Phases = []PhaseResult{}
 	}
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
