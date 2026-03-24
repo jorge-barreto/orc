@@ -4256,3 +4256,65 @@ func TestRun_RunResultPhasesLoopReEntryOverridesSkip(t *testing.T) {
 		t.Fatalf("phases[2].status = %q, want completed", result.Phases[2].Status)
 	}
 }
+
+func TestRun_RunResultSurvivesArchive(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	r := newTestRunner(t, cfg, mock)
+	artDir := r.Env.ArtifactsDir
+
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify archiving occurred: history/ must exist with exactly 1 entry
+	histDir := filepath.Join(artDir, "history")
+	entries, err := os.ReadDir(histDir)
+	if err != nil {
+		t.Fatalf("reading history dir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 history entry, got %d", len(entries))
+	}
+	runDir := filepath.Join(histDir, entries[0].Name())
+
+	// Verify originals were moved: top-level state.json must be gone
+	if _, err := os.Stat(filepath.Join(artDir, "state.json")); !os.IsNotExist(err) {
+		t.Fatal("top-level state.json should have been archived away")
+	}
+
+	// Core assertion: run-result.json must survive the archive+restore sequence
+	data, err := os.ReadFile(state.RunResultPath(r.Env.ArtifactsDir))
+	if err != nil {
+		t.Fatalf("run-result.json not found after archive: %v", err)
+	}
+	var result state.RunResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("invalid JSON in run-result.json: %v", err)
+	}
+	if result.Status != state.StatusCompleted {
+		t.Fatalf("status = %q, want completed", result.Status)
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("exit_code = %d, want 0", result.ExitCode)
+	}
+
+	// Verify archived copy also contains run-result.json
+	archData, err := os.ReadFile(state.RunResultPath(runDir))
+	if err != nil {
+		t.Fatalf("run-result.json missing from archive: %v", err)
+	}
+	var archResult state.RunResult
+	if err := json.Unmarshal(archData, &archResult); err != nil {
+		t.Fatalf("invalid JSON in archived run-result.json: %v", err)
+	}
+	if archResult.Status != state.StatusCompleted {
+		t.Fatalf("archived status = %q, want completed", archResult.Status)
+	}
+}
