@@ -11,6 +11,7 @@ const (
 	ExitCostLimit     = 4 // Cost limit exceeded (per-phase or per-run)
 	ExitInterrupted   = 5 // Signal interrupt (SIGINT/SIGTERM/SIGHUP)
 	ExitResumeFailure = 6 // Cannot resume interrupted session
+	ExitInfraError    = 7 // Infrastructure error (state save failed after phases completed)
 )
 
 // ExitError wraps an error with an orc exit code.

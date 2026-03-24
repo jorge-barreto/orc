@@ -3780,6 +3780,28 @@ func TestRun_FailureCategory_Interrupted(t *testing.T) {
 	}
 }
 
+func TestRun_FinalStateSaveFailure_InfraExitCode(t *testing.T) {
+	cfg := &config.Config{Name: "test", Phases: nil}
+	r := newTestRunner(t, cfg, newMock())
+
+	// Pre-create all dirs EnsureDir expects so MkdirAll is a no-op on them
+	artDir := r.Env.ArtifactsDir
+	for _, sub := range []string{"", "prompts", "logs", "feedback"} {
+		os.MkdirAll(filepath.Join(artDir, sub), 0755)
+	}
+	os.Chmod(artDir, 0555)
+	t.Cleanup(func() { os.Chmod(artDir, 0755) })
+
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	assertExitCode(t, err, ExitInfraError)
+	if got := r.State.GetFailureCategory(); got != state.FailCategoryStateSave {
+		t.Fatalf("FailureCategory = %q, want %q", got, state.FailCategoryStateSave)
+	}
+}
+
 func TestRun_WritesPhaseMetadata(t *testing.T) {
 	cfg := &config.Config{
 		Name: "test",

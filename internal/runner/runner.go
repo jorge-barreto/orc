@@ -628,7 +628,7 @@ mainLoop:
 
 	r.State.SetStatus(state.StatusCompleted)
 	if err := r.State.Save(r.Env.ArtifactsDir); err != nil {
-		return r.failAndHint(state.StatusFailed, ExitPhaseFailure, fmt.Errorf("saving final state: %w", err))
+		return r.failWithCategory(state.StatusFailed, ExitInfraError, state.FailCategoryStateSave, err.Error(), fmt.Errorf("saving final state: %w", err))
 	}
 	if saveErr := r.State.Save(r.auditDir); saveErr != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to save audit state: %v\n", saveErr)

@@ -26,6 +26,7 @@ const (
 	FailCategoryInterrupted    = "interrupted"
 	FailCategoryAgentError     = "agent_error"
 	FailCategoryTimeout        = "timeout"
+	FailCategoryStateSave      = "state_save"
 )
 
 type State struct {
