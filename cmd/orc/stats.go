@@ -43,12 +43,10 @@ func statsCmd() *cli.Command {
 				if err := validateTicketPath(ticket); err != nil {
 					return cfgErr(err)
 				}
-			}
-			cfg, err := config.Load(configPath, projectRoot)
-			if err != nil {
-				return cfgErr(fmt.Errorf("loading config: %w", err))
-			}
-			if ticket != "" {
+				cfg, err := config.Load(configPath, projectRoot)
+				if err != nil {
+					return cfgErr(fmt.Errorf("loading config: %w", err))
+				}
 				if err := config.ValidateTicket(cfg.TicketPattern, ticket); err != nil {
 					return cfgErr(err)
 				}

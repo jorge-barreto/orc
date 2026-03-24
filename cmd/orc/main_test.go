@@ -445,6 +445,32 @@ func TestStatsCmd_BadTicketPattern_ExitConfigError(t *testing.T) {
 	}
 }
 
+func TestStatsCmd_NoArgsSucceedsWithBrokenConfig(t *testing.T) {
+	dir := t.TempDir()
+	orcDir := filepath.Join(dir, ".orc")
+	if err := os.MkdirAll(orcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(orcDir, "config.yaml"),
+		[]byte("name: test\nphases:\n  - name: plan\n    type: agent\n    prompt: nonexistent-prompt.md\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(orig) //nolint:errcheck
+
+	app := &cli.Command{
+		Name:     "orc",
+		Commands: []*cli.Command{statsCmd()},
+	}
+	err := app.Run(context.Background(), []string{"orc", "stats"})
+	if err != nil {
+		t.Fatalf("expected no error running stats with no args and broken config, got: %v", err)
+	}
+}
+
 func TestDoctorCmd_MissingTicket_ExitConfigError(t *testing.T) {
 	app := &cli.Command{
 		Name:     "orc",
