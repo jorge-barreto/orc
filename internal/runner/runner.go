@@ -334,10 +334,10 @@ mainLoop:
 
 		// Normal dispatch
 		ux.PhaseHeader(i, total, phase)
-		r.Timing.AddStart(phase.Name)
+		start := time.Now()
+		r.Timing.AddStartAt(phase.Name, start)
 
 		r.Env.PhaseIndex = i
-		start := time.Now()
 		result, err := r.dispatchWithHooks(ctx, phase, r.Env)
 
 		// Persist session ID immediately so it survives interruption.
@@ -805,9 +805,6 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 	ux.PhaseHeader(idx1, total, phase1)
 	ux.PhaseHeader(idx2, total, phase2)
 
-	r.Timing.AddStart(phase1.Name)
-	r.Timing.AddStart(phase2.Name)
-
 	// Check run-level cost limit before starting parallel phases
 	if r.Config.MaxCost > 0 && r.Costs.TotalCost() > r.Config.MaxCost {
 		r.printRunSummary(idx1)
@@ -836,6 +833,7 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 		env1 := r.Env.Clone()
 		env1.PhaseIndex = idx1
 		phaseStart := time.Now()
+		r.Timing.AddStartAt(phase1.Name, phaseStart)
 		res, err := r.dispatchWithHooks(ctx, phase1, env1)
 		phaseEnd := time.Now()
 		results <- phaseResult{idx: idx1, result: res, err: err, startTime: phaseStart, endTime: phaseEnd}
@@ -846,6 +844,7 @@ func (r *Runner) runParallel(parentCtx context.Context, idx1, idx2, total int, l
 		env2 := r.Env.Clone()
 		env2.PhaseIndex = idx2
 		phaseStart := time.Now()
+		r.Timing.AddStartAt(phase2.Name, phaseStart)
 		res, err := r.dispatchWithHooks(ctx, phase2, env2)
 		phaseEnd := time.Now()
 		results <- phaseResult{idx: idx2, result: res, err: err, startTime: phaseStart, endTime: phaseEnd}
