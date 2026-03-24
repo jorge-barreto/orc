@@ -3781,6 +3781,10 @@ func TestRun_FailureCategory_Interrupted(t *testing.T) {
 }
 
 func TestRun_FinalStateSaveFailure_InfraExitCode(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("test requires non-root to enforce directory permissions")
+	}
+
 	cfg := &config.Config{Name: "test", Phases: nil}
 	r := newTestRunner(t, cfg, newMock())
 
