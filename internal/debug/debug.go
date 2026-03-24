@@ -250,13 +250,20 @@ func Run(projectRoot string, cfg *config.Config, phaseIdx int, ticket, workflow 
 	// Load timing — try auditDir first, fallback to artifactsDir
 	var timingEntry *state.TimingEntry
 	timing, err := state.LoadTiming(auditDir)
-	if err != nil || len(timing.Entries) == 0 {
+	var te []state.TimingEntry
+	if err == nil {
+		te = timing.Entries()
+	}
+	if err != nil || len(te) == 0 {
 		timing, _ = state.LoadTiming(stateDir)
+		if timing != nil {
+			te = timing.Entries()
+		}
 	}
 	if timing != nil {
-		for i := len(timing.Entries) - 1; i >= 0; i-- {
-			if timing.Entries[i].Phase == phase.Name {
-				e := timing.Entries[i]
+		for i := len(te) - 1; i >= 0; i-- {
+			if te[i].Phase == phase.Name {
+				e := te[i]
 				timingEntry = &e
 				break
 			}

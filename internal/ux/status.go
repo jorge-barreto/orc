@@ -75,8 +75,9 @@ func RenderStatus(cfg *config.Config, st *state.State, artifactsDir, auditDir st
 		}
 	}
 	if st.GetStatus() == state.StatusRunning && timing != nil {
-		for i := len(timing.Entries) - 1; i >= 0; i-- {
-			te := timing.Entries[i]
+		runEntries := timing.Entries()
+		for i := len(runEntries) - 1; i >= 0; i-- {
+			te := runEntries[i]
 			if te.End.IsZero() && !te.Start.IsZero() {
 				fmt.Printf("%sRunning:%s %s (%s)\n", Bold, Reset, te.Phase, state.FormatDuration(time.Since(te.Start)))
 				break
@@ -100,20 +101,24 @@ func RenderStatus(cfg *config.Config, st *state.State, artifactsDir, auditDir st
 	}
 
 	// Completed phases — show full execution trace from timing entries
-	hasCompleted := timing != nil && len(timing.Entries) > 0
+	var timingEntries []state.TimingEntry
+	if timing != nil {
+		timingEntries = timing.Entries()
+	}
+	hasCompleted := timing != nil && len(timingEntries) > 0
 	if hasCompleted {
 		fmt.Printf("\n  %s%-4s%-20s%8s%10s%16s%18s%8s%s\n",
 			Bold, "#", "PHASE", "TIME", "COST", "TOKENS IN/OUT", "CACHE R/W", "RUN", Reset)
 
 		// Count total occurrences of each phase to know which ones repeated
 		phaseTotal := make(map[string]int)
-		for _, te := range timing.Entries {
+		for _, te := range timingEntries {
 			phaseTotal[te.Phase]++
 		}
 
 		costIdx := 0
 		phaseSeen := make(map[string]int)
-		for i, te := range timing.Entries {
+		for i, te := range timingEntries {
 			phaseSeen[te.Phase]++
 
 			dur := te.Duration

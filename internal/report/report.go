@@ -110,6 +110,7 @@ func Build(artifactsDir, auditDir string, st *state.State, phases []config.Phase
 
 	// Step 4: Build PhaseResult entries from timing entries
 	phaseResults := []PhaseResult{}
+	timingEntries := timing.Entries()
 
 	failedPhaseName := ""
 	if st.GetStatus() == "failed" && st.GetPhaseIndex() < len(phases) {
@@ -125,7 +126,7 @@ func Build(artifactsDir, auditDir string, st *state.State, phases []config.Phase
 	}
 	costConsumed := map[string]int{}
 
-	for i, te := range timing.Entries {
+	for i, te := range timingEntries {
 		phaseType := lookupPhaseType(phases, te.Phase)
 
 		var costUSD float64
@@ -155,8 +156,8 @@ func Build(artifactsDir, auditDir string, st *state.State, phases []config.Phase
 		if st.GetStatus() == "failed" && te.Phase == failedPhaseName {
 			// Only mark the LAST timing entry for the failed phase as "Fail"
 			isLast := true
-			for j := i + 1; j < len(timing.Entries); j++ {
-				if timing.Entries[j].Phase == failedPhaseName {
+			for j := i + 1; j < len(timingEntries); j++ {
+				if timingEntries[j].Phase == failedPhaseName {
 					isLast = false
 					break
 				}
@@ -197,7 +198,7 @@ func Build(artifactsDir, auditDir string, st *state.State, phases []config.Phase
 	}
 
 	// Fallback: if timing.Entries is empty and phase_index > 0, produce minimal entries
-	if len(timing.Entries) == 0 && st.GetPhaseIndex() > 0 {
+	if len(timingEntries) == 0 && st.GetPhaseIndex() > 0 {
 		limit := st.GetPhaseIndex()
 		if limit > len(phases) {
 			limit = len(phases)

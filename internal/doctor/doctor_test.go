@@ -177,12 +177,10 @@ func TestGatherFeedback_MissingDir(t *testing.T) {
 
 func TestGatherTiming_WithData(t *testing.T) {
 	dir := t.TempDir()
-	timing := &state.Timing{
-		Entries: []state.TimingEntry{
-			{Phase: "build", Duration: "1m 30s"},
-			{Phase: "test", Duration: "0m 45s"},
-		},
-	}
+	timing := state.NewTiming([]state.TimingEntry{
+		{Phase: "build", Duration: "1m 30s"},
+		{Phase: "test", Duration: "0m 45s"},
+	})
 	timing.Flush(dir)
 
 	result := gatherTiming(dir)
@@ -196,11 +194,9 @@ func TestGatherTiming_WithData(t *testing.T) {
 
 func TestGatherTiming_MissingEnd(t *testing.T) {
 	dir := t.TempDir()
-	timing := &state.Timing{
-		Entries: []state.TimingEntry{
-			{Phase: "build"},
-		},
-	}
+	timing := state.NewTiming([]state.TimingEntry{
+		{Phase: "build"},
+	})
 	timing.Flush(dir)
 
 	result := gatherTiming(dir)
@@ -244,12 +240,10 @@ func TestGatherTimingWithFallback_WorkflowNamespaced(t *testing.T) {
 	auditDir := state.AuditDirForWorkflow(projectRoot, "bugfix", "T-001")
 	os.MkdirAll(auditDir, 0755)
 
-	timing := &state.Timing{
-		Entries: []state.TimingEntry{
-			{Phase: "plan", Duration: "1m 10s"},
-			{Phase: "implement", Duration: "3m 20s"},
-		},
-	}
+	timing := state.NewTiming([]state.TimingEntry{
+		{Phase: "plan", Duration: "1m 10s"},
+		{Phase: "implement", Duration: "3m 20s"},
+	})
 	timing.Flush(auditDir)
 
 	artifactsDir := state.ArtifactsDirForWorkflow(projectRoot, "bugfix", "T-001")
@@ -304,11 +298,9 @@ func TestRun_WorkflowNamespaced_GathersData(t *testing.T) {
 
 	os.WriteFile(state.LogPath(artifactsDir, 0), []byte("build failed: exit 1"), 0644)
 
-	timing := &state.Timing{
-		Entries: []state.TimingEntry{
-			{Phase: "build", Duration: "0m 15s"},
-		},
-	}
+	timing := state.NewTiming([]state.TimingEntry{
+		{Phase: "build", Duration: "0m 15s"},
+	})
 	timing.Flush(auditDir)
 
 	os.WriteFile(state.AuditLogPath(auditDir, 0, 1), []byte("prev attempt output"), 0644)

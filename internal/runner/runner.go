@@ -208,7 +208,7 @@ func (r *Runner) buildPhaseResults(failedPhase string) []state.PhaseResult {
 	// Build duration map: sum all timing entries per phase (loops may repeat a phase)
 	durations := make(map[string]float64)
 	if r.Timing != nil {
-		for _, e := range r.Timing.Entries {
+		for _, e := range r.Timing.Entries() {
 			if !e.End.IsZero() {
 				durations[e.Phase] += e.End.Sub(e.Start).Seconds()
 			}

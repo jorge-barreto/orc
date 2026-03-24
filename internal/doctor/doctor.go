@@ -210,7 +210,7 @@ func gatherTiming(dir string) string {
 		return ""
 	}
 	var parts []string
-	for _, e := range timing.Entries {
+	for _, e := range timing.Entries() {
 		if e.Duration != "" {
 			parts = append(parts, fmt.Sprintf("%s started %s, duration %s",
 				e.Phase, e.Start.Format("15:04:05"), e.Duration))

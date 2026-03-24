@@ -20,7 +20,21 @@ type TimingEntry struct {
 
 type Timing struct {
 	mu      sync.Mutex
-	Entries []TimingEntry `json:"entries"`
+	entries []TimingEntry
+}
+
+// NewTiming creates a Timing with the given entries.
+func NewTiming(entries []TimingEntry) *Timing {
+	return &Timing{entries: entries}
+}
+
+// Entries returns a snapshot of all timing entries under the lock.
+func (t *Timing) Entries() []TimingEntry {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	snapshot := make([]TimingEntry, len(t.entries))
+	copy(snapshot, t.entries)
+	return snapshot
 }
 
 func timingPath(artifactsDir string) string {
@@ -44,8 +58,34 @@ func LoadTiming(artifactsDir string) (*Timing, error) {
 	return &t, nil
 }
 
+// marshalJSON serializes without locking — caller must hold mu.
+func (t *Timing) marshalJSON() ([]byte, error) {
+	return json.MarshalIndent(struct {
+		Entries []TimingEntry `json:"entries"`
+	}{Entries: t.entries}, "", "  ")
+}
+
+// MarshalJSON implements json.Marshaler for external callers.
+func (t *Timing) MarshalJSON() ([]byte, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.marshalJSON()
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (t *Timing) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Entries []TimingEntry `json:"entries"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	t.entries = raw.Entries
+	return nil
+}
+
 func (t *Timing) save(artifactsDir string) error {
-	data, err := json.MarshalIndent(t, "", "  ")
+	data, err := t.marshalJSON()
 	if err != nil {
 		return err
 	}
@@ -56,7 +96,7 @@ func (t *Timing) save(artifactsDir string) error {
 func (t *Timing) AddStart(phaseName string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.Entries = append(t.Entries, TimingEntry{
+	t.entries = append(t.entries, TimingEntry{
 		Phase: phaseName,
 		Start: time.Now(),
 	})
@@ -66,7 +106,7 @@ func (t *Timing) AddStart(phaseName string) {
 func (t *Timing) AddStartAt(phaseName string, startTime time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.Entries = append(t.Entries, TimingEntry{
+	t.entries = append(t.entries, TimingEntry{
 		Phase: phaseName,
 		Start: startTime,
 	})
@@ -76,11 +116,11 @@ func (t *Timing) AddStartAt(phaseName string, startTime time.Time) {
 func (t *Timing) AddEnd(phaseName string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	for i := len(t.Entries) - 1; i >= 0; i-- {
-		if t.Entries[i].Phase == phaseName && t.Entries[i].End.IsZero() {
-			t.Entries[i].End = time.Now()
-			d := t.Entries[i].End.Sub(t.Entries[i].Start)
-			t.Entries[i].Duration = formatDuration(d)
+	for i := len(t.entries) - 1; i >= 0; i-- {
+		if t.entries[i].Phase == phaseName && t.entries[i].End.IsZero() {
+			t.entries[i].End = time.Now()
+			d := t.entries[i].End.Sub(t.entries[i].Start)
+			t.entries[i].Duration = formatDuration(d)
 			break
 		}
 	}
@@ -90,11 +130,11 @@ func (t *Timing) AddEnd(phaseName string) {
 func (t *Timing) AddEndAt(phaseName string, endTime time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	for i := len(t.Entries) - 1; i >= 0; i-- {
-		if t.Entries[i].Phase == phaseName && t.Entries[i].End.IsZero() {
-			t.Entries[i].End = endTime
-			d := t.Entries[i].End.Sub(t.Entries[i].Start)
-			t.Entries[i].Duration = formatDuration(d)
+	for i := len(t.entries) - 1; i >= 0; i-- {
+		if t.entries[i].Phase == phaseName && t.entries[i].End.IsZero() {
+			t.entries[i].End = endTime
+			d := t.entries[i].End.Sub(t.entries[i].Start)
+			t.entries[i].Duration = formatDuration(d)
 			break
 		}
 	}
@@ -112,7 +152,7 @@ func (t *Timing) TotalElapsed() time.Duration {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	var total time.Duration
-	for _, e := range t.Entries {
+	for _, e := range t.entries {
 		if !e.End.IsZero() {
 			total += e.End.Sub(e.Start)
 		}

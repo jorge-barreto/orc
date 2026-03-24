@@ -124,11 +124,11 @@ func TestRenderStatus(t *testing.T) {
 			st: &state.State{PhaseIndex: 3, Ticket: "PROJ-1", Status: state.StatusCompleted},
 			setupAudit: func(t *testing.T, dir string) {
 				now := time.Now()
-				writeTiming(t, dir, &state.Timing{Entries: []state.TimingEntry{
+				writeTiming(t, dir, state.NewTiming([]state.TimingEntry{
 					{Phase: "plan", Start: now, End: now.Add(72 * time.Second), Duration: "1m 12s"},
 					{Phase: "implement", Start: now, End: now.Add(120 * time.Second), Duration: "2m 00s"},
 					{Phase: "test", Start: now, End: now.Add(5 * time.Second), Duration: "5s"},
-				}})
+				}))
 				writeCosts(t, dir, &state.CostData{
 					Phases: []state.CostEntry{
 						{Name: "plan", CostUSD: 0.05, InputTokens: 1000, OutputTokens: 200, CacheReadInputTokens: 500, CacheCreationInputTokens: 300},
@@ -162,10 +162,10 @@ func TestRenderStatus(t *testing.T) {
 			st: &state.State{PhaseIndex: 1, Ticket: "TEST2", Status: state.StatusRunning},
 			setupAudit: func(t *testing.T, dir string) {
 				now := time.Now()
-				writeTiming(t, dir, &state.Timing{Entries: []state.TimingEntry{
+				writeTiming(t, dir, state.NewTiming([]state.TimingEntry{
 					{Phase: "plan", Start: now, End: now.Add(60 * time.Second), Duration: "1m 00s"},
 					{Phase: "implement", Start: now, End: now.Add(30 * time.Second), Duration: ""},
-				}})
+				}))
 			},
 			wantContains: []string{"TEST2", "2/3 (implement)", "running", "plan", "Remaining:", "test"},
 			customAssert: func(t *testing.T, out string) {
@@ -209,10 +209,10 @@ func TestRenderStatus(t *testing.T) {
 			},
 			setupArt: func(t *testing.T, dir string) {
 				now := time.Now()
-				writeTiming(t, dir, &state.Timing{Entries: []state.TimingEntry{
+				writeTiming(t, dir, state.NewTiming([]state.TimingEntry{
 					{Phase: "plan", Start: now, End: now.Add(60 * time.Second), Duration: "1m 00s"},
 					{Phase: "implement", Start: now, End: now.Add(90 * time.Second), Duration: "1m 30s"},
-				}})
+				}))
 			},
 			wantContains: []string{"plan", "implement", "#"},
 		},
@@ -225,12 +225,12 @@ func TestRenderStatus(t *testing.T) {
 			st: &state.State{PhaseIndex: 2, Ticket: "PROJ-6", Status: state.StatusCompleted},
 			setupAudit: func(t *testing.T, dir string) {
 				now := time.Now()
-				writeTiming(t, dir, &state.Timing{Entries: []state.TimingEntry{
+				writeTiming(t, dir, state.NewTiming([]state.TimingEntry{
 					{Phase: "implement", Start: now, End: now.Add(60 * time.Second), Duration: "1m 00s"},
 					{Phase: "implement", Start: now, End: now.Add(50 * time.Second), Duration: "50s"},
 					{Phase: "test", Start: now, End: now.Add(5 * time.Second), Duration: "5s"},
 					{Phase: "test", Start: now, End: now.Add(3 * time.Second), Duration: "3s"},
-				}})
+				}))
 				writeCosts(t, dir, &state.CostData{
 					Phases: []state.CostEntry{
 						{Name: "implement", CostUSD: 0.05},
@@ -259,9 +259,9 @@ func TestRenderStatus(t *testing.T) {
 			st: &state.State{PhaseIndex: 1, Ticket: "PROJ-7", Status: state.StatusCompleted},
 			setupAudit: func(t *testing.T, dir string) {
 				now := time.Now()
-				writeTiming(t, dir, &state.Timing{Entries: []state.TimingEntry{
+				writeTiming(t, dir, state.NewTiming([]state.TimingEntry{
 					{Phase: "plan", Start: now, End: now.Add(60 * time.Second), Duration: "1m 00s"},
-				}})
+				}))
 				if err := os.WriteFile(filepath.Join(dir, "costs.json"), []byte("{invalid"), 0644); err != nil {
 					t.Fatal(err)
 				}
@@ -282,9 +282,9 @@ func TestRenderStatus(t *testing.T) {
 			st: &state.State{PhaseIndex: 1, Ticket: "PROJ-8", Status: state.StatusCompleted},
 			setupAudit: func(t *testing.T, dir string) {
 				now := time.Now()
-				writeTiming(t, dir, &state.Timing{Entries: []state.TimingEntry{
+				writeTiming(t, dir, state.NewTiming([]state.TimingEntry{
 					{Phase: "plan", Start: now, End: now.Add(60 * time.Second), Duration: "1m 00s"},
-				}})
+				}))
 			},
 			setupArt: func(t *testing.T, dir string) {
 				feedbackDir := filepath.Join(dir, "feedback")
@@ -308,9 +308,9 @@ func TestRenderStatus(t *testing.T) {
 			st: &state.State{PhaseIndex: 1, Ticket: "PROJ-9", Status: state.StatusCompleted},
 			setupAudit: func(t *testing.T, dir string) {
 				now := time.Now()
-				writeTiming(t, dir, &state.Timing{Entries: []state.TimingEntry{
+				writeTiming(t, dir, state.NewTiming([]state.TimingEntry{
 					{Phase: "plan", Start: now, End: now.Add(60 * time.Second), Duration: "1m 00s"},
-				}})
+				}))
 			},
 			setupArt: func(t *testing.T, dir string) {
 				logsDir := filepath.Join(dir, "logs")
@@ -348,10 +348,10 @@ func TestRenderStatus(t *testing.T) {
 			}},
 			st: &state.State{PhaseIndex: 1, Ticket: "RUN-1", Status: state.StatusRunning},
 			setupAudit: func(t *testing.T, dir string) {
-				writeTiming(t, dir, &state.Timing{Entries: []state.TimingEntry{
+				writeTiming(t, dir, state.NewTiming([]state.TimingEntry{
 					{Phase: "plan", Start: time.Now().Add(-120 * time.Second), End: time.Now().Add(-60 * time.Second), Duration: "1m 00s"},
 					{Phase: "implement", Start: time.Now().Add(-30 * time.Second)}, // no End — currently running
-				}})
+				}))
 			},
 			wantContains: []string{"Running:", "implement"},
 			customAssert: func(t *testing.T, out string) {
@@ -368,9 +368,9 @@ func TestRenderStatus(t *testing.T) {
 			st: &state.State{PhaseIndex: 1, Ticket: "PROJ-10", Status: state.StatusCompleted},
 			setupAudit: func(t *testing.T, dir string) {
 				now := time.Now()
-				writeTiming(t, dir, &state.Timing{Entries: []state.TimingEntry{
+				writeTiming(t, dir, state.NewTiming([]state.TimingEntry{
 					{Phase: "plan", Start: now, End: now.Add(60 * time.Second), Duration: "1m 00s"},
-				}})
+				}))
 			},
 			artDirOverride:  filepath.Join(t.TempDir(), "nonexistent"),
 			wantContains:    []string{"(none)"},
@@ -396,10 +396,10 @@ func TestRenderStatus(t *testing.T) {
 			st: &state.State{PhaseIndex: 2, Ticket: "DONE-1", Status: state.StatusCompleted},
 			setupAudit: func(t *testing.T, dir string) {
 				now := time.Now()
-				writeTiming(t, dir, &state.Timing{Entries: []state.TimingEntry{
+				writeTiming(t, dir, state.NewTiming([]state.TimingEntry{
 					{Phase: "plan", Start: now, End: now.Add(60 * time.Second), Duration: "1m 00s"},
 					{Phase: "implement", Start: now, End: now.Add(90 * time.Second), Duration: "1m 30s"},
-				}})
+				}))
 			},
 			wantContains:    []string{"Progress:", "100%"},
 			wantNotContains: []string{"░"},

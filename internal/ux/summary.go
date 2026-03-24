@@ -34,7 +34,7 @@ func countRuns(timing *state.Timing, phaseName string) int {
 		return 0
 	}
 	count := 0
-	for _, e := range timing.Entries {
+	for _, e := range timing.Entries() {
 		if e.Phase == phaseName {
 			count++
 		}
@@ -46,8 +46,9 @@ func lastDuration(timing *state.Timing, phaseName string) time.Duration {
 	if timing == nil {
 		return 0
 	}
-	for i := len(timing.Entries) - 1; i >= 0; i-- {
-		e := timing.Entries[i]
+	entries := timing.Entries()
+	for i := len(entries) - 1; i >= 0; i-- {
+		e := entries[i]
 		if e.Phase == phaseName && !e.End.IsZero() {
 			return e.End.Sub(e.Start)
 		}

@@ -13,7 +13,7 @@ import (
 )
 
 func makeTiming(entries []state.TimingEntry) *state.Timing {
-	return &state.Timing{Entries: entries}
+	return state.NewTiming(entries)
 }
 
 func captureOutput(fn func()) string {

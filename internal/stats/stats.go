@@ -100,12 +100,15 @@ func loadRunData(dir string) (RunData, bool) {
 
 	// Timing: start time + per-phase durations + total duration
 	timing, err := state.LoadTiming(dir)
-	if err == nil && len(timing.Entries) > 0 {
-		rd.StartTime = timing.Entries[0].Start
-		rd.Duration = timing.TotalElapsed()
-		for _, e := range timing.Entries {
-			if !e.End.IsZero() {
-				rd.PhaseDurations[e.Phase] += e.End.Sub(e.Start)
+	if err == nil {
+		te := timing.Entries()
+		if len(te) > 0 {
+			rd.StartTime = te[0].Start
+			rd.Duration = timing.TotalElapsed()
+			for _, e := range te {
+				if !e.End.IsZero() {
+					rd.PhaseDurations[e.Phase] += e.End.Sub(e.Start)
+				}
 			}
 		}
 	}

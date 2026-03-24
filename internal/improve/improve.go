@@ -96,8 +96,10 @@ func readAuditSummary(projectRoot string) string {
 		if isTicketAuditDir(dir) {
 			t, tErr := state.LoadTiming(dir)
 			var start time.Time
-			if tErr == nil && len(t.Entries) > 0 {
-				start = t.Entries[0].Start
+			if tErr == nil {
+				if te := t.Entries(); len(te) > 0 {
+					start = te[0].Start
+				}
 			}
 			if start.IsZero() {
 				if info, iErr := e.Info(); iErr == nil {
@@ -123,8 +125,10 @@ func readAuditSummary(projectRoot string) string {
 			}
 			t, tErr := state.LoadTiming(ticketDir)
 			var start time.Time
-			if tErr == nil && len(t.Entries) > 0 {
-				start = t.Entries[0].Start
+			if tErr == nil {
+				if te := t.Entries(); len(te) > 0 {
+					start = te[0].Start
+				}
 			}
 			if start.IsZero() {
 				if info, iErr := se.Info(); iErr == nil {
@@ -167,9 +171,9 @@ func readAuditSummary(projectRoot string) string {
 		}
 
 		timing, err := state.LoadTiming(auditDir)
-		if err == nil && len(timing.Entries) > 0 {
+		if err == nil {
 			var timingParts []string
-			for _, t := range timing.Entries {
+			for _, t := range timing.Entries() {
 				if t.Duration != "" {
 					timingParts = append(timingParts, fmt.Sprintf("%s (%s)", t.Phase, t.Duration))
 				}
