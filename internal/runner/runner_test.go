@@ -3906,6 +3906,16 @@ func TestRun_RunResultOnSuccess(t *testing.T) {
 	if auditResult.Status != state.StatusCompleted {
 		t.Fatalf("audit status = %q, want completed", auditResult.Status)
 	}
+	// Verify artifacts and audit copies are identical (cached result reused, not rebuilt)
+	if result.ExitCode != auditResult.ExitCode {
+		t.Errorf("exit_code mismatch: artifacts=%d audit=%d", result.ExitCode, auditResult.ExitCode)
+	}
+	if result.PhasesCompleted != auditResult.PhasesCompleted {
+		t.Errorf("phases_completed mismatch: artifacts=%d audit=%d", result.PhasesCompleted, auditResult.PhasesCompleted)
+	}
+	if result.PhasesTotal != auditResult.PhasesTotal {
+		t.Errorf("phases_total mismatch: artifacts=%d audit=%d", result.PhasesTotal, auditResult.PhasesTotal)
+	}
 }
 
 func TestRun_RunResultOnFailure(t *testing.T) {

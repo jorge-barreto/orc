@@ -151,9 +151,8 @@ func captureBaseCommit(projectRoot string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// writeRunResult writes run-result.json to the audit and artifacts directories.
-// Errors are logged as warnings — run result should not break the run.
-func (r *Runner) writeRunResult(exitCode int, failedPhase string) {
+// buildRunResult constructs the RunResult struct, including collecting commits via git log.
+func (r *Runner) buildRunResult(exitCode int, failedPhase string) *state.RunResult {
 	var failedPhasePtr *string
 	if failedPhase != "" {
 		failedPhasePtr = &failedPhase
@@ -183,7 +182,13 @@ func (r *Runner) writeRunResult(exitCode int, failedPhase string) {
 		ArtifactsDir:         r.Env.ArtifactsDir,
 	}
 	result.Phases = r.buildPhaseResults(failedPhase)
+	return result
+}
 
+// writeRunResult builds and writes run-result.json to the audit and artifacts directories.
+// Returns the built result for optional reuse (e.g., restoring after archive).
+func (r *Runner) writeRunResult(exitCode int, failedPhase string) *state.RunResult {
+	result := r.buildRunResult(exitCode, failedPhase)
 	if r.auditDir != "" {
 		if err := state.WriteRunResult(r.auditDir, result); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to write run-result.json to audit: %v\n", err)
@@ -192,6 +197,7 @@ func (r *Runner) writeRunResult(exitCode int, failedPhase string) {
 	if err := state.WriteRunResult(r.Env.ArtifactsDir, result); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to write run-result.json: %v\n", err)
 	}
+	return result
 }
 
 // buildPhaseResults assembles per-phase results from timing, cost, and status data.
@@ -640,7 +646,7 @@ mainLoop:
 	if flushErr := r.Costs.Flush(r.Env.ArtifactsDir); flushErr != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to flush costs to artifacts: %v\n", flushErr)
 	}
-	r.writeRunResult(ExitSuccess, "")
+	runResult := r.writeRunResult(ExitSuccess, "")
 	r.printRunSummary(-1)
 	// Archive run to history
 	if runID, archiveErr := state.ArchiveRun(r.Env.ArtifactsDir); archiveErr != nil {
@@ -648,8 +654,11 @@ mainLoop:
 	} else if !ux.QuietMode {
 		fmt.Printf("  %sRun archived:%s %s\n", ux.Dim, ux.Reset, runID)
 	}
-	// Re-write run-result.json after archive so it remains accessible in the current artifacts dir.
-	r.writeRunResult(ExitSuccess, "")
+	// Restore run-result.json after archive so it remains accessible in the current artifacts dir.
+	// Reuse the cached result — no need to re-collect commits or write to audit dir again.
+	if err := state.WriteRunResult(r.Env.ArtifactsDir, runResult); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to restore run-result.json: %v\n", err)
+	}
 	if pruneErr := state.PruneHistory(r.Env.ArtifactsDir, r.HistoryLimit); pruneErr != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to prune history: %v\n", pruneErr)
 	}
