@@ -7,8 +7,9 @@ if [[ "$RUN_MODE" == "wave" ]]; then
   # Wave mode: check for remaining children of this wave
   TOTAL=$(bd ready "$TICKET" --json 2>/dev/null | jq -r '.total // 0')
 else
-  # Single-ticket mode: check global backlog
-  TOTAL=$(bd ready --json 2>/dev/null | jq -r '.total // 0')
+  # Single-ticket mode: one ticket, no backlog loop
+  echo "Single-ticket mode — done"
+  exit 0
 fi
 
 if [[ "$TOTAL" -gt 0 ]]; then

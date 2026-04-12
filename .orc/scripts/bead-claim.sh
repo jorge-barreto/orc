@@ -59,13 +59,17 @@ if [[ "$WAVE_MODE" == "true" ]]; then
   echo "Wave mode: claimed $BEAD_ID"
 else
   # Single-ticket mode: $TICKET is the work item itself
-  BEAD_ID=$(bd search "$TICKET" 2>/dev/null | grep -oP '^orc-\S+' | head -1 || true)
+  BEAD_ID=$(bd search "$TICKET" 2>/dev/null | awk '{print $2}' | head -1 || true)
 
-  if [[ -n "$BEAD_ID" ]]; then
-    bd update "$BEAD_ID" --status=in_progress
-    echo "$BEAD_ID" > "$ORC_ARTIFACTS_DIR/epic-id.txt"
+  if [[ -z "$BEAD_ID" ]]; then
+    echo "No bead found for ticket '$TICKET'. Create one first:"
+    echo "  bd create --title=\"$TICKET\" --type=task -d \"...\""
+    exit 1
   fi
 
+  bd update "$BEAD_ID" --status=in_progress
+  echo "$BEAD_ID" > "$ORC_ARTIFACTS_DIR/epic-id.txt"
+
   echo "$TICKET" > "$ORC_ARTIFACTS_DIR/current-ticket.txt"
-  echo "Single-ticket mode: working on $TICKET"
+  echo "Single-ticket mode: working on $TICKET (bead $BEAD_ID)"
 fi

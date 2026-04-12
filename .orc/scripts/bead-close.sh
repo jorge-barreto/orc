@@ -10,7 +10,7 @@ if [[ -z "$BEAD_ID" ]]; then
   if [[ "$TICKET" == orc-* ]]; then
     BEAD_ID="$TICKET"
   else
-    BEAD_ID=$(bd search "$TICKET" | grep " - $TICKET:" | head -1 | cut -d' ' -f1)
+    BEAD_ID=$(bd search "$TICKET" 2>/dev/null | awk '{print $2}' | head -1 || true)
   fi
 fi
 
