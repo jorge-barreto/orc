@@ -4318,3 +4318,180 @@ func TestRun_RunResultSurvivesArchive(t *testing.T) {
 		t.Fatalf("archived status = %q, want completed", archResult.Status)
 	}
 }
+
+func TestRun_RateLimitWait_AutoMode(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet"},
+		},
+	}
+	callCount := 0
+	var mu sync.Mutex
+	customMock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		mu.Lock()
+		callCount++
+		n := callCount
+		mu.Unlock()
+		if n == 1 {
+			return &dispatch.Result{
+				ExitCode:         1,
+				RateLimited:      true,
+				RateLimitResetAt: time.Now().Unix() + 1,
+				SessionID:        "rate-limited-session",
+			}, nil
+		}
+		return &dispatch.Result{ExitCode: 0, SessionID: "resumed-session"}, nil
+	}}
+
+	r := newTestRunner(t, cfg, customMock)
+	r.Env.AutoMode = true
+	sleepCalled := false
+	r.sleepFn = func(d time.Duration) { sleepCalled = true }
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatalf("expected success after retry, got %v", err)
+	}
+	if !sleepCalled {
+		t.Fatal("sleepFn was not called — wait logic did not execute")
+	}
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q, want completed", r.State.GetStatus())
+	}
+}
+
+func TestRun_RateLimitNoWait_InteractiveMode(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet"},
+		},
+	}
+	customMock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		return &dispatch.Result{
+			ExitCode:         1,
+			RateLimited:      true,
+			RateLimitResetAt: time.Now().Unix() + 3600,
+			SessionID:        "sess-1",
+		}, nil
+	}}
+	r := newTestRunner(t, cfg, customMock)
+	r.Env.AutoMode = false
+
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected error in interactive mode")
+	}
+	assertExitCode(t, err, ExitPhaseFailure)
+	if r.State.GetFailureCategory() != state.FailCategoryRateLimit {
+		t.Fatalf("FailureCategory = %q, want %q", r.State.GetFailureCategory(), state.FailCategoryRateLimit)
+	}
+}
+
+func TestRun_RateLimitOverBudget_NoWait(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet", MaxCost: 1.0},
+		},
+	}
+	customMock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		return &dispatch.Result{
+			ExitCode:         1,
+			CostUSD:          1.5,
+			RateLimited:      true,
+			RateLimitResetAt: time.Now().Unix() + 3600,
+		}, nil
+	}}
+	r := newTestRunner(t, cfg, customMock)
+	r.Env.AutoMode = true
+	r.sleepFn = func(d time.Duration) { t.Fatal("should not sleep when over budget") }
+
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected error when over budget")
+	}
+	assertExitCode(t, err, ExitCostLimit)
+}
+
+func TestRun_RateLimitInterrupted(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet"},
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	customMock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		return &dispatch.Result{
+			ExitCode:         1,
+			RateLimited:      true,
+			RateLimitResetAt: time.Now().Unix() + 3600,
+			SessionID:        "sess-1",
+		}, nil
+	}}
+	r := newTestRunner(t, cfg, customMock)
+	r.Env.AutoMode = true
+	r.sleepFn = func(d time.Duration) {
+		cancel()
+	}
+
+	err := r.Run(ctx)
+	if err == nil {
+		t.Fatal("expected error on interrupt")
+	}
+	assertExitCode(t, err, ExitInterrupted)
+}
+
+func TestRun_RateLimitTimingExcludesWait(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet"},
+		},
+	}
+	callCount := 0
+	var mu sync.Mutex
+	customMock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		mu.Lock()
+		callCount++
+		n := callCount
+		mu.Unlock()
+		if n == 1 {
+			return &dispatch.Result{
+				ExitCode:         1,
+				RateLimited:      true,
+				RateLimitResetAt: time.Now().Unix() + 1,
+				SessionID:        "sess-1",
+			}, nil
+		}
+		return &dispatch.Result{ExitCode: 0, SessionID: "sess-2"}, nil
+	}}
+	r := newTestRunner(t, cfg, customMock)
+	r.Env.AutoMode = true
+	r.sleepFn = func(d time.Duration) {}
+
+	err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := r.Timing.Entries()
+	var aEntries []state.TimingEntry
+	for _, e := range entries {
+		if e.Phase == "a" {
+			aEntries = append(aEntries, e)
+		}
+	}
+	if len(aEntries) != 2 {
+		t.Fatalf("expected exactly 2 timing entries for phase a, got %d", len(aEntries))
+	}
+	for idx, e := range aEntries {
+		if e.End.IsZero() {
+			t.Fatalf("timing entry %d for phase a has zero End time — orphaned open entry", idx)
+		}
+		if e.End.Before(e.Start) {
+			t.Fatalf("timing entry %d for phase a: End before Start", idx)
+		}
+	}
+}

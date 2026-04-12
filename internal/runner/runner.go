@@ -39,7 +39,8 @@ type Runner struct {
 	skipped      map[string]bool
 	auditDir     string
 	baseCommit   string
-	attemptCount map[int]int // tracks phase attempts (includes pre-run hook failures where dispatch was skipped)
+	attemptCount map[int]int         // tracks phase attempts (includes pre-run hook failures where dispatch was skipped)
+	sleepFn      func(time.Duration) // injectable for testing; defaults to time.Sleep
 }
 
 // appendPhaseLog appends a message to the phase log file.
@@ -51,6 +52,14 @@ func appendPhaseLog(artifactsDir string, phaseIdx int, msg string) {
 	}
 	defer f.Close()
 	fmt.Fprint(f, msg)
+}
+
+func (r *Runner) sleep(d time.Duration) {
+	if r.sleepFn != nil {
+		r.sleepFn(d)
+		return
+	}
+	time.Sleep(d)
 }
 
 // writePhaseMetadata writes structured metadata for a completed phase.
@@ -358,6 +367,64 @@ mainLoop:
 
 		// Clear resume session ID after first dispatch (don't resume again on loop iterations)
 		r.Env.ResumeSessionID = ""
+
+		// Handle rate-limit: wait-and-retry in auto mode, fail-with-hint in interactive
+		if result != nil && result.RateLimited {
+			if !r.Env.AutoMode {
+				// Interactive mode: fail immediately with hint
+				r.Timing.AddEnd(phase.Name)
+				resetTime := time.Unix(result.RateLimitResetAt, 0)
+				ux.RateLimitHint(resetTime)
+				r.printRunSummary(i)
+				return r.failWithCategory(state.StatusFailed, ExitPhaseFailure, state.FailCategoryRateLimit,
+					fmt.Sprintf("usage limit reached, resets at %s", resetTime.Format("15:04")),
+					fmt.Errorf("phase %q: rate limited", phase.Name))
+			}
+
+			// Auto mode: record cost first, then check budget (matches pattern at lines 381-401)
+			if phase.Type == "agent" && result != nil {
+				r.Costs.Record(phase.Name, i, result.CostUSD, result.InputTokens, result.OutputTokens, result.CacheCreationInputTokens, result.CacheReadInputTokens, result.Turns)
+				if flushErr := r.Costs.Flush(r.auditDir); flushErr != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to flush costs: %v\n", flushErr)
+				}
+			}
+
+			// Check phase cost budget AFTER recording (so PhaseCost includes this attempt)
+			if phase.MaxCost > 0 && r.Costs != nil {
+				phaseCost := r.Costs.PhaseCost(phase.Name)
+				if phaseCost > phase.MaxCost {
+					r.Timing.AddEnd(phase.Name)
+					r.printRunSummary(i)
+					return r.failWithCategory(state.StatusFailed, ExitCostLimit, state.FailCategoryCostOverrun,
+						fmt.Sprintf("phase %q cost $%.2f exceeded limit $%.2f (rate-limited, not waiting)", phase.Name, phaseCost, phase.MaxCost),
+						fmt.Errorf("phase %q exceeded cost limit while rate-limited: $%.2f > $%.2f", phase.Name, phaseCost, phase.MaxCost))
+				}
+			}
+
+			// Validate resetsAt before waiting
+			if result.RateLimitResetAt <= 0 {
+				r.Timing.AddEnd(phase.Name)
+				r.printRunSummary(i)
+				return r.failWithCategory(state.StatusFailed, ExitPhaseFailure, state.FailCategoryRateLimit,
+					"rate limited but resetsAt missing or invalid — cannot wait",
+					fmt.Errorf("phase %q: rate limited with invalid resetsAt", phase.Name))
+			}
+
+			// Wait for rate limit to reset
+			if waitErr := r.waitForRateLimit(ctx, phase.Name, result.RateLimitResetAt); waitErr != nil {
+				r.printRunSummary(i)
+				return r.failWithCategory(state.StatusInterrupted, ExitInterrupted, state.FailCategoryInterrupted, waitErr.Error(), waitErr)
+			}
+
+			// Set up resume with the session ID from the rate-limited run
+			r.Env.ResumeSessionID = result.SessionID
+
+			// continue re-enters the loop at the same phase index.
+			// The main loop's r.Timing.AddStartAt at line 344 handles timing resume.
+			// Metadata write and audit archiving are skipped for this attempt —
+			// only the successful retry appears in the audit trail.
+			continue
+		}
 
 		// Write structured metadata before archiving
 		end := time.Now()
@@ -775,6 +842,51 @@ func (r *Runner) handleLoopFailure(i int, phase config.Phase, loopCounts map[str
 		return false, r.failAndHint(state.StatusFailed, ExitPhaseFailure, fmt.Errorf("saving state after loop-back: %w", err))
 	}
 	return true, nil
+}
+
+// waitForRateLimit blocks until the rate limit resets (+ 60s buffer), printing
+// heartbeat messages every 60s. Returns nil on successful wait, or ctx.Err()
+// if the context is cancelled during the wait. Timing for the phase is paused
+// (AddEnd called here; the main loop's AddStartAt at re-entry handles resume).
+func (r *Runner) waitForRateLimit(ctx context.Context, phaseName string, resetAt int64) error {
+	resetTime := time.Unix(resetAt, 0)
+	waitUntil := resetTime.Add(60 * time.Second)
+	ux.RateLimitWait(resetTime)
+
+	// Pause phase timing during the wait.
+	// Do NOT call AddStartAt at the end — the main loop adds a fresh start
+	// entry at line 344 when it re-enters on continue.
+	r.Timing.AddEnd(phaseName)
+	if flushErr := r.Timing.Flush(r.auditDir); flushErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to flush timing: %v\n", flushErr)
+	}
+
+	const heartbeatInterval = 60 * time.Second
+
+	remaining := time.Until(waitUntil)
+	for remaining > 0 {
+		sleepDur := heartbeatInterval
+		if remaining < sleepDur {
+			sleepDur = remaining
+		}
+
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		r.sleep(sleepDur)
+
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		remaining -= sleepDur
+		if remaining > 0 {
+			ux.RateLimitHeartbeat(remaining)
+		}
+	}
+
+	return nil
 }
 
 // runLoopCheck executes the loop.check command and returns the exit code and captured output.
