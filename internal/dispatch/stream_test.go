@@ -599,6 +599,58 @@ func TestProcessStream_ToolsUsedExcludesAskUserQuestion(t *testing.T) {
 	}
 }
 
+func TestProcessStream_RateLimitEvent(t *testing.T) {
+	input := streamLines(
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"working..."}}}`,
+		`{"type":"rate_limit_event","event":{"rate_limit_info":{"status":"rejected","resetsAt":1712900000}}}`,
+		`{"type":"result","total_cost_usd":0,"session_id":"s1","is_error":true,"usage":{"input_tokens":100,"output_tokens":50},"permission_denials":[]}`,
+	)
+
+	result, err := ProcessStream(context.Background(), input, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.RateLimited {
+		t.Fatal("RateLimited = false, want true")
+	}
+	if result.RateLimitResetAt != 1712900000 {
+		t.Fatalf("RateLimitResetAt = %d, want 1712900000", result.RateLimitResetAt)
+	}
+}
+
+func TestProcessStream_RateLimitEventNotRejected(t *testing.T) {
+	input := streamLines(
+		`{"type":"rate_limit_event","event":{"rate_limit_info":{"status":"allowed","resetsAt":1712900000}}}`,
+		`{"type":"result","total_cost_usd":0.01,"session_id":"s1","usage":{"input_tokens":100,"output_tokens":50},"permission_denials":[]}`,
+	)
+
+	result, err := ProcessStream(context.Background(), input, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.RateLimited {
+		t.Fatal("RateLimited = true, want false for non-rejected status")
+	}
+}
+
+func TestProcessStream_RateLimitEventMissingResetAt(t *testing.T) {
+	input := streamLines(
+		`{"type":"rate_limit_event","event":{"rate_limit_info":{"status":"rejected"}}}`,
+		`{"type":"result","total_cost_usd":0,"session_id":"s1","usage":{"input_tokens":0,"output_tokens":0},"permission_denials":[]}`,
+	)
+
+	result, err := ProcessStream(context.Background(), input, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.RateLimited {
+		t.Fatal("RateLimited = false, want true")
+	}
+	if result.RateLimitResetAt != 0 {
+		t.Fatalf("RateLimitResetAt = %d, want 0", result.RateLimitResetAt)
+	}
+}
+
 func TestWarnWriter(t *testing.T) {
 	var buf bytes.Buffer
 	ww := &warnWriter{w: &buf}

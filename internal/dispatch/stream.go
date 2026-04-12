@@ -44,6 +44,8 @@ type StreamResult struct {
 	OutputTokens             int
 	CacheCreationInputTokens int
 	CacheReadInputTokens     int
+	RateLimited              bool
+	RateLimitResetAt         int64 // Unix timestamp from rate_limit_event
 }
 
 // streamState tracks tool use accumulation across stream events.
@@ -118,6 +120,9 @@ func ProcessStream(ctx context.Context, stdout io.Reader, display io.Writer, log
 
 		case "result":
 			handleResultEvent(&event, &result)
+
+		case "rate_limit_event":
+			handleRateLimitEvent(&event, &result)
 		}
 	}
 
@@ -183,6 +188,17 @@ type resultUsage struct {
 type permDenialEntry struct {
 	ToolName string `json:"tool_name"`
 	Input    string `json:"input"`
+}
+
+// rateLimitInfo holds the parsed rate_limit_info from a rate_limit_event.
+type rateLimitInfo struct {
+	Status  string `json:"status"`
+	ResetAt int64  `json:"resetsAt"`
+}
+
+// rateLimitEvent is the structure for type=="rate_limit_event" messages.
+type rateLimitEvent struct {
+	RateLimitInfo rateLimitInfo `json:"rate_limit_info"`
 }
 
 func handleStreamEvent(event *streamEvent, textBuf *strings.Builder, ss *streamState, display io.Writer, logFile io.Writer) {
@@ -337,5 +353,23 @@ func handleResultEvent(event *streamEvent, result *StreamResult) {
 	}
 	if event.SessionID != "" {
 		result.SessionID = event.SessionID
+	}
+}
+
+// handleRateLimitEvent extracts rate limit status and reset time from a rate_limit_event.
+// Only "rejected" status is treated as a rate limit — other statuses (e.g., "allowed") are ignored.
+func handleRateLimitEvent(event *streamEvent, result *StreamResult) {
+	if event.Event == nil {
+		return
+	}
+	var rle rateLimitEvent
+	if err := json.Unmarshal(event.Event, &rle); err != nil {
+		return
+	}
+	if rle.RateLimitInfo.Status == "rejected" {
+		result.RateLimited = true
+		if rle.RateLimitInfo.ResetAt > 0 {
+			result.RateLimitResetAt = rle.RateLimitInfo.ResetAt
+		}
 	}
 }
