@@ -245,3 +245,44 @@ func AgentQuestion(question string, options []string) {
 		fmt.Printf("  %s│%s [type your answer]: ", BoldCyan, Reset)
 	}
 }
+
+// RateLimitWait prints a rate-limit wait message with the expected reset time.
+func RateLimitWait(resetTime time.Time) {
+	if QuietMode {
+		QuietPhaseEvent("", "rate_limit_wait", map[string]interface{}{
+			"resets_at": resetTime.Format(time.RFC3339),
+		})
+		return
+	}
+	fmt.Printf("%s[%s]%s  %s⏱ Usage limit reached — waiting until %s (+ 60s buffer)%s\n",
+		Dim, timestamp(), Reset, Yellow, resetTime.Format("15:04"), Reset)
+}
+
+// RateLimitHeartbeat prints a periodic heartbeat during rate-limit wait.
+func RateLimitHeartbeat(remaining time.Duration) {
+	if QuietMode {
+		return
+	}
+	fmt.Printf("%s[%s]%s  %s⏱ Waiting for rate limit reset (%s remaining)%s\n",
+		Dim, timestamp(), Reset, Dim, FormatWaitDuration(remaining), Reset)
+}
+
+// FormatWaitDuration formats a duration for human display in wait messages.
+// Outputs "Xm YYs" for durations >= 1 minute, or "Xs" for shorter durations.
+func FormatWaitDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	m := int(d.Minutes())
+	s := int(d.Seconds()) % 60
+	return fmt.Sprintf("%dm %02ds", m, s)
+}
+
+// RateLimitHint prints a rate-limit failure hint with the reset time for interactive mode.
+func RateLimitHint(resetTime time.Time) {
+	if QuietMode {
+		return
+	}
+	fmt.Printf("  %shint: usage limit reached, resets at %s — use --resume to continue later%s\n",
+		Yellow, resetTime.Format("15:04"), Reset)
+}
