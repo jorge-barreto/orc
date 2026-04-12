@@ -101,6 +101,8 @@ type Result struct {
 	SessionID                string // agent session ID for --resume
 	ToolsUsed                []string
 	ToolsDenied              []string
+	RateLimited              bool
+	RateLimitResetAt         int64 // Unix timestamp — when the rate limit resets
 }
 
 // BuildEnv returns the environment variables for child processes.

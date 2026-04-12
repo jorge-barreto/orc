@@ -265,6 +265,8 @@ func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 			denied = append(denied, d.Tool)
 		}
 		res.ToolsDenied = denied
+		res.RateLimited = tr.Stream.RateLimited
+		res.RateLimitResetAt = tr.Stream.RateLimitResetAt
 	}
 	return res, nil
 }
@@ -319,6 +321,8 @@ func RunAgentWithPrompt(ctx context.Context, phase config.Phase, env *Environmen
 			denied = append(denied, d.Tool)
 		}
 		res.ToolsDenied = denied
+		res.RateLimited = tr.Stream.RateLimited
+		res.RateLimitResetAt = tr.Stream.RateLimitResetAt
 	}
 	return res, nil
 }
@@ -474,6 +478,12 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 	if lastTurn != nil {
 		exitCode = lastTurn.ExitCode
 	}
+	var rateLimited bool
+	var rateLimitResetAt int64
+	if lastTurn != nil && lastTurn.Stream != nil {
+		rateLimited = lastTurn.Stream.RateLimited
+		rateLimitResetAt = lastTurn.Stream.RateLimitResetAt
+	}
 	return &Result{
 		ExitCode:                 exitCode,
 		Output:                   output,
@@ -487,6 +497,8 @@ func RunAgentAttended(ctx context.Context, phase config.Phase, env *Environment)
 		SessionID:                sessionID,
 		ToolsUsed:                allToolsUsed,
 		ToolsDenied:              allToolsDenied,
+		RateLimited:              rateLimited,
+		RateLimitResetAt:         rateLimitResetAt,
 	}, nil
 }
 
