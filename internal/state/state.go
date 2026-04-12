@@ -27,6 +27,7 @@ const (
 	FailCategoryAgentError     = "agent_error"
 	FailCategoryTimeout        = "timeout"
 	FailCategoryStateSave      = "state_save"
+	FailCategoryRateLimit      = "rate_limit"
 )
 
 type State struct {
