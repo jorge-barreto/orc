@@ -1,0 +1,36 @@
+# Dockerfile.e2e — runs orc e2e tests inside a container.
+#
+# This exists so agents working on this repo (which may be running inside a
+# Claude Code session, where CLAUDECODE is set and orc refuses to run) can
+# execute e2e tests that invoke `claude -p`. The host-side `make e2e` works
+# for script-phase-only tests; agent-phase tests (orc-gge.2+) need this image.
+#
+# Usage:
+#   cp .env.example .env   # then edit .env and set CLAUDE_CODE_OAUTH_TOKEN
+#   make e2e-docker        # Makefile sources .env and forwards the token
+
+FROM golang:1.22-bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        bash curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install the Claude CLI via its official npm distribution.
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g @anthropic-ai/claude-code \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+# CLAUDECODE must NOT be set inside the container — the binary refuses to run
+# if it is. Docker does not inherit host env unless -e is passed, so we're
+# normally safe, but unset defensively.
+ENV CLAUDECODE=
+
+CMD ["go", "test", "-tags=e2e", "./e2e/", "-count=1", "-v"]

@@ -1,0 +1,11 @@
+.git
+.orc/artifacts
+.orc/audit
+.orc-roadmap
+orc
+*.log
+reviews
+.beads
+.claude
+node_modules
+.env
