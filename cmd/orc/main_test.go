@@ -278,6 +278,77 @@ func TestResolveWorkflow_FlagWithNoWorkflowsDir(t *testing.T) {
 	}
 }
 
+func TestDiscoverWorkflows_YmlExtension(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".orc", "workflows", "bugfix.yml"), []byte("phases: []"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".orc", "workflows", "refactor.yaml"), []byte("phases: []"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := discoverWorkflows(dir)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 workflows, got %d: %v", len(got), got)
+	}
+	found := map[string]bool{"bugfix": false, "refactor": false}
+	for _, name := range got {
+		found[name] = true
+	}
+	for name, ok := range found {
+		if !ok {
+			t.Fatalf("expected workflow %q in results, got %v", name, got)
+		}
+	}
+}
+
+func TestResolveWorkflow_ExplicitFlag_YmlFallback(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	wfPath := filepath.Join(dir, ".orc", "workflows", "bugfix.yml")
+	if err := os.WriteFile(wfPath, []byte("phases: []"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	name, path, err := resolveWorkflow(dir, "bugfix")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != "bugfix" {
+		t.Fatalf("expected workflowName %q, got %q", "bugfix", name)
+	}
+	if path != wfPath {
+		t.Fatalf("expected %q, got %q", wfPath, path)
+	}
+}
+
+func TestResolveWorkflow_SoleWorkflow_YmlFallback(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	wfPath := filepath.Join(dir, ".orc", "workflows", "bugfix.yml")
+	if err := os.WriteFile(wfPath, []byte("phases: []"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	name, path, err := resolveWorkflow(dir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != "bugfix" {
+		t.Fatalf("expected workflowName %q, got %q", "bugfix", name)
+	}
+	if path != wfPath {
+		t.Fatalf("expected %q, got %q", wfPath, path)
+	}
+}
+
 func TestShouldArchiveStale(t *testing.T) {
 	// shouldArchiveStale is unconditionally true for all statuses.
 	if !shouldArchiveStale("anything") {
