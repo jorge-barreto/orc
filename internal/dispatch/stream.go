@@ -175,6 +175,10 @@ type streamEvent struct {
 	// Fields for "user"/"assistant" message types
 	Content []contentBlock `json:"content"`
 	IsError bool           `json:"is_error"`
+
+	// Fields for "rate_limit_event" type (emitted at the top level by claude,
+	// not nested inside the "event" field).
+	RateLimitInfo *rateLimitInfo `json:"rate_limit_info"`
 }
 
 // contentBlock represents a content item in assistant/user messages.
@@ -405,18 +409,27 @@ func handleResultEvent(event *streamEvent, result *StreamResult) {
 
 // handleRateLimitEvent extracts rate limit status and reset time from a rate_limit_event.
 // Only "rejected" status is treated as a rate limit — other statuses (e.g., "allowed") are ignored.
+//
+// Production claude emits rate_limit_info at the top level of the stream event.
+// Some older fixtures/mocks nest it inside a legacy "event" wrapper; both shapes
+// are handled.
 func handleRateLimitEvent(event *streamEvent, result *StreamResult) {
-	if event.Event == nil {
+	var info *rateLimitInfo
+	if event.RateLimitInfo != nil {
+		info = event.RateLimitInfo
+	} else if event.Event != nil {
+		var rle rateLimitEvent
+		if err := json.Unmarshal(event.Event, &rle); err == nil {
+			info = &rle.RateLimitInfo
+		}
+	}
+	if info == nil {
 		return
 	}
-	var rle rateLimitEvent
-	if err := json.Unmarshal(event.Event, &rle); err != nil {
-		return
-	}
-	if rle.RateLimitInfo.Status == "rejected" {
+	if info.Status == "rejected" {
 		result.RateLimited = true
-		if rle.RateLimitInfo.ResetAt > 0 {
-			result.RateLimitResetAt = rle.RateLimitInfo.ResetAt
+		if info.ResetAt > 0 {
+			result.RateLimitResetAt = info.ResetAt
 		}
 	}
 }

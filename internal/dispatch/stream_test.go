@@ -599,6 +599,29 @@ func TestProcessStream_ToolsUsedExcludesAskUserQuestion(t *testing.T) {
 	}
 }
 
+// TestProcessStream_RateLimitEvent_RealWireFormat uses the actual JSON shape
+// emitted by production claude — rate_limit_info at the TOP LEVEL of the event,
+// not wrapped inside a nested "event" field. This guards against the bug where
+// every previous fixture had it nested and the parser never worked against
+// real traffic.
+func TestProcessStream_RateLimitEvent_RealWireFormat(t *testing.T) {
+	input := streamLines(
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"working..."}}}`,
+		`{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":1712900000,"rateLimitType":"five_hour","overageStatus":"rejected","overageDisabledReason":"org_level_disabled","isUsingOverage":false},"uuid":"u1","session_id":"s1"}`,
+		`{"type":"result","total_cost_usd":0,"session_id":"s1","is_error":true,"api_error_status":429,"usage":{"input_tokens":100,"output_tokens":50},"permission_denials":[]}`,
+	)
+	result, err := ProcessStream(context.Background(), input, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.RateLimited {
+		t.Fatal("RateLimited = false, want true (real-wire rate_limit_info at top level)")
+	}
+	if result.RateLimitResetAt != 1712900000 {
+		t.Fatalf("RateLimitResetAt = %d, want 1712900000", result.RateLimitResetAt)
+	}
+}
+
 func TestProcessStream_RateLimitEvent(t *testing.T) {
 	input := streamLines(
 		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"working..."}}}`,
