@@ -350,6 +350,46 @@ func TestResolveWorkflow_SoleWorkflow_YmlFallback(t *testing.T) {
 	}
 }
 
+func TestRunCmd_ResumeNoSession_ExitResumeFailure(t *testing.T) {
+	uxtest.SaveState(t)
+	dir := t.TempDir()
+	orcDir := filepath.Join(dir, ".orc")
+	if err := os.MkdirAll(orcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(orcDir, "config.yaml"),
+		[]byte("name: test\nphases:\n  - name: a\n    type: script\n    run: echo ok\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(origWd) //nolint:errcheck
+
+	t.Setenv("CLAUDECODE", "")
+
+	app := &cli.Command{
+		Name:     "orc",
+		Commands: []*cli.Command{runCmd()},
+	}
+	err := app.Run(context.Background(), []string{"orc", "run", "TEST-1", "--resume"})
+	if err == nil {
+		t.Fatal("expected error when --resume is passed without a saved session")
+	}
+	var exitErr *runner.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected *runner.ExitError, got %T: %v", err, err)
+	}
+	if exitErr.Code != runner.ExitResumeFailure {
+		t.Fatalf("exit code = %d, want ExitResumeFailure (%d)", exitErr.Code, runner.ExitResumeFailure)
+	}
+	if !strings.Contains(err.Error(), "no interrupted agent session") {
+		t.Fatalf("expected 'no interrupted agent session' in error, got: %v", err)
+	}
+}
+
 func TestShouldArchiveStale(t *testing.T) {
 	// shouldArchiveStale is unconditionally true for all statuses.
 	if !shouldArchiveStale("anything") {
