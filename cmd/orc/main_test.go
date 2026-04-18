@@ -752,6 +752,47 @@ func TestNoColorEnvVars(t *testing.T) {
 	}
 }
 
+func TestRunCmd_PositionalDisambiguationHint_HeadlessSuppressed(t *testing.T) {
+	uxtest.SaveState(t)
+	dir := t.TempDir()
+
+	if err := os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	yaml := "name: bugfix\nphases:\n  - name: plan\n    type: script\n    run: echo ok\n"
+	if err := os.WriteFile(filepath.Join(dir, ".orc", "workflows", "bugfix.yaml"), []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(orig) //nolint:errcheck
+
+	t.Setenv("CLAUDECODE", "")
+
+	r, w, _ := os.Pipe()
+	oldStderr := os.Stderr
+	os.Stderr = w
+
+	app := &cli.Command{
+		Name:     "orc",
+		Commands: []*cli.Command{runCmd()},
+	}
+	_ = app.Run(context.Background(), []string{"orc", "run", "--headless", "bugfix", "TICKET-1"})
+
+	w.Close()
+	os.Stderr = oldStderr
+	var buf bytes.Buffer
+	io.Copy(&buf, r) //nolint:errcheck
+
+	got := buf.String()
+	if strings.Contains(got, "hint: treating") {
+		t.Errorf("expected no disambiguation hint in headless mode, got stderr: %q", got)
+	}
+}
+
 func TestRunCmd_PositionalDisambiguationHint(t *testing.T) {
 	uxtest.SaveState(t)
 	dir := t.TempDir()

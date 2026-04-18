@@ -111,8 +111,10 @@ func runCmd() *cli.Command {
 				if matchedPath, found := resolveWorkflowByName(projectRoot, args[0]); found {
 					flagWorkflow = args[0]
 					ticket = args[1]
-					rel, _ := filepath.Rel(projectRoot, matchedPath)
-					fmt.Fprintf(os.Stderr, "hint: treating %q as workflow name (matched %s); use -w to be explicit\n", args[0], rel)
+					if !headless {
+						rel, _ := filepath.Rel(projectRoot, matchedPath)
+						fmt.Fprintf(os.Stderr, "hint: treating %q as workflow name (matched %s); use -w to be explicit\n", args[0], rel)
+					}
 				} else {
 					ticket = args[0]
 				}
