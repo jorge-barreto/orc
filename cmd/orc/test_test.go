@@ -337,6 +337,69 @@ func TestOrcTest_HooksNotRun(t *testing.T) {
 	}
 }
 
+func TestTestCmd_HeadlessFlagActivatesQuietMode(t *testing.T) {
+	uxtest.SaveState(t)
+	dir := t.TempDir()
+	orcDir := filepath.Join(dir, ".orc")
+	if err := os.MkdirAll(orcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(orcDir, "config.yaml"), []byte("name: test\nphases:\n  - name: a\n    type: script\n    run: echo ok\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(orig) //nolint:errcheck
+
+	t.Setenv("CLAUDECODE", "")
+
+	app := &cli.Command{
+		Name:     "orc",
+		Commands: []*cli.Command{testCmd()},
+	}
+	// Command may succeed or fail during dispatch — we only care that
+	// --headless flipped ux.QuietMode before anything else ran.
+	_ = app.Run(context.Background(), []string{"orc", "test", "--headless", "a", "TEST-1"})
+
+	if !ux.QuietMode {
+		t.Fatal("expected ux.QuietMode to be true when orc test --headless is passed")
+	}
+}
+
+func TestTestCmd_OrcHeadlessEnvActivatesQuietMode(t *testing.T) {
+	uxtest.SaveState(t)
+	dir := t.TempDir()
+	orcDir := filepath.Join(dir, ".orc")
+	if err := os.MkdirAll(orcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(orcDir, "config.yaml"), []byte("name: test\nphases:\n  - name: a\n    type: script\n    run: echo ok\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(orig) //nolint:errcheck
+
+	t.Setenv("CLAUDECODE", "")
+	t.Setenv("ORC_HEADLESS", "1")
+
+	app := &cli.Command{
+		Name:     "orc",
+		Commands: []*cli.Command{testCmd()},
+	}
+	_ = app.Run(context.Background(), []string{"orc", "test", "a", "TEST-1"})
+
+	if !ux.QuietMode {
+		t.Fatal("expected ux.QuietMode to be true when ORC_HEADLESS=1 is set for orc test")
+	}
+}
+
 func TestTestCmd_PositionalDisambiguationHint(t *testing.T) {
 	uxtest.SaveState(t)
 	dir := t.TempDir()
