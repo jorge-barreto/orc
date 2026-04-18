@@ -46,6 +46,7 @@ type StreamResult struct {
 	CacheReadInputTokens     int
 	RateLimited              bool
 	RateLimitResetAt         int64 // Unix timestamp from rate_limit_event
+	CostOverrun              bool  // true if in-flight cost monitor tripped
 }
 
 // streamState tracks tool use accumulation across stream events.
@@ -81,6 +82,15 @@ func (ww *warnWriter) Write(p []byte) (int, error) {
 // ProcessStream reads stream-json lines from stdout, routes text to display+log,
 // tracks tool use for inline display, and extracts the final result.
 func ProcessStream(ctx context.Context, stdout io.Reader, display io.Writer, logFile io.Writer, rawLog io.Writer) (*StreamResult, error) {
+	return ProcessStreamWithMonitor(ctx, stdout, display, logFile, rawLog, nil, nil)
+}
+
+// ProcessStreamWithMonitor is ProcessStream with an optional cost monitor
+// and an optional cancel callback. When the monitor's running cost
+// estimate exceeds its cap, cancel() is invoked (typically cancels the
+// subprocess context, which SIGTERMs claude) and the stream loop exits
+// with ErrCostOverrun.
+func ProcessStreamWithMonitor(ctx context.Context, stdout io.Reader, display io.Writer, logFile io.Writer, rawLog io.Writer, monitor *costMonitor, cancel func()) (*StreamResult, error) {
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
 
@@ -93,6 +103,8 @@ func ProcessStream(ctx context.Context, stdout io.Reader, display io.Writer, log
 	if rawLog != nil {
 		safeRawLog = &warnWriter{w: rawLog}
 	}
+
+	var overBudget bool
 
 	for scanner.Scan() {
 		if ctx.Err() != nil {
@@ -116,7 +128,7 @@ func ProcessStream(ctx context.Context, stdout io.Reader, display io.Writer, log
 
 		switch event.Type {
 		case "stream_event":
-			handleStreamEvent(&event, &textBuf, &ss, display, logFile)
+			handleStreamEventWithMonitor(&event, &textBuf, &ss, display, logFile, monitor)
 
 		case "result":
 			handleResultEvent(&event, &result)
@@ -124,15 +136,26 @@ func ProcessStream(ctx context.Context, stdout io.Reader, display io.Writer, log
 		case "rate_limit_event":
 			handleRateLimitEvent(&event, &result)
 		}
+
+		if monitor != nil && monitor.overBudget() {
+			overBudget = true
+			if cancel != nil {
+				cancel()
+			}
+			break
+		}
 	}
 
-	if err := scanner.Err(); err != nil {
+	if err := scanner.Err(); err != nil && !overBudget {
 		return &result, fmt.Errorf("reading agent output stream: %w", err)
 	}
 
 	result.Text = textBuf.String()
 	result.UserQuestions = ss.userQuestions
 	result.ToolsUsed = ss.toolsUsed
+	if overBudget {
+		result.CostOverrun = true
+	}
 	return &result, nil
 }
 
@@ -165,9 +188,17 @@ type contentBlock struct {
 
 // nestedEvent is the inner event from stream_event messages.
 type nestedEvent struct {
-	Type         string        `json:"type"`
-	ContentBlock *contentBlock `json:"content_block"`
-	Delta        *deltaBlock   `json:"delta"`
+	Type         string           `json:"type"`
+	ContentBlock *contentBlock    `json:"content_block"`
+	Delta        *deltaBlock      `json:"delta"`
+	Message      *messageStartMsg `json:"message"`
+}
+
+// messageStartMsg holds the message field of a message_start stream event —
+// the first point at which baseline input/cache token counts are known.
+type messageStartMsg struct {
+	Model string       `json:"model"`
+	Usage *resultUsage `json:"usage"`
 }
 
 // deltaBlock holds the delta in content_block_delta events.
@@ -202,6 +233,10 @@ type rateLimitEvent struct {
 }
 
 func handleStreamEvent(event *streamEvent, textBuf *strings.Builder, ss *streamState, display io.Writer, logFile io.Writer) {
+	handleStreamEventWithMonitor(event, textBuf, ss, display, logFile, nil)
+}
+
+func handleStreamEventWithMonitor(event *streamEvent, textBuf *strings.Builder, ss *streamState, display io.Writer, logFile io.Writer, monitor *costMonitor) {
 	if event.Event == nil {
 		return
 	}
@@ -212,6 +247,15 @@ func handleStreamEvent(event *streamEvent, textBuf *strings.Builder, ss *streamS
 	}
 
 	switch nested.Type {
+	case "message_start":
+		if monitor != nil && nested.Message != nil && nested.Message.Usage != nil {
+			monitor.setBaseline(
+				nested.Message.Usage.InputTokens,
+				nested.Message.Usage.CacheCreationInputTokens,
+				nested.Message.Usage.CacheReadInputTokens,
+			)
+		}
+
 	case "content_block_start":
 		if nested.ContentBlock != nil && nested.ContentBlock.Type == "tool_use" {
 			ss.toolName = nested.ContentBlock.Name
@@ -233,6 +277,9 @@ func handleStreamEvent(event *streamEvent, textBuf *strings.Builder, ss *streamS
 				fmt.Fprint(logFile, text)
 			}
 			ss.hadText = true
+			if monitor != nil {
+				monitor.addOutputText(text)
+			}
 		case "input_json_delta":
 			ss.inputBuf.WriteString(nested.Delta.PartialJSON)
 		}

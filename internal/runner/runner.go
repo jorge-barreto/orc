@@ -447,14 +447,27 @@ mainLoop:
 		// Record cost data for agent phases (cost is incurred regardless of success/failure)
 		if phase.Type == "agent" && result != nil {
 			r.Costs.Record(phase.Name, i, result.CostUSD, result.InputTokens, result.OutputTokens, result.CacheCreationInputTokens, result.CacheReadInputTokens, result.Turns)
-			// Warn if agent completed but reported no token counts (best-effort tracking)
-			if result.InputTokens == 0 && result.OutputTokens == 0 {
+			// Warn if agent completed but reported no token counts (best-effort tracking).
+			// Skip this warning on cost-overrun kill — the result event never arrives
+			// when we terminate the stream early.
+			if result.InputTokens == 0 && result.OutputTokens == 0 && !result.CostOverrun {
 				fmt.Fprintf(os.Stderr, "  note: no token counts in stream output for phase %q (token tracking is best-effort)\n", phase.Name)
 			}
 			if flushErr := r.Costs.Flush(r.auditDir); flushErr != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to flush costs: %v\n", flushErr)
 			}
-			// Check phase-level cost limit
+			// In-flight cost monitor tripped: subprocess was killed mid-stream.
+			// Fail fast — after a kill the result event may never arrive, so
+			// the recorded cost could be zero and the post-hoc check below
+			// would miss the overrun.
+			if result.CostOverrun {
+				r.Timing.AddEnd(phase.Name)
+				r.printRunSummary(i)
+				return r.failWithCategory(state.StatusFailed, ExitCostLimit, state.FailCategoryCostOverrun,
+					fmt.Sprintf("phase %q killed mid-stream — cost estimate exceeded limit $%.4f", phase.Name, phase.MaxCost),
+					fmt.Errorf("phase %q cost estimate exceeded limit $%.4f (killed mid-stream)", phase.Name, phase.MaxCost))
+			}
+			// Check phase-level cost limit (post-hoc safety net)
 			if phase.MaxCost > 0 {
 				phaseCost := r.Costs.PhaseCost(phase.Name)
 				if phaseCost > phase.MaxCost {

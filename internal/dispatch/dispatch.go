@@ -92,6 +92,7 @@ type Result struct {
 	ExitCode                 int
 	Output                   string
 	TimedOut                 bool // true if killed by orc's phase timeout
+	CostOverrun              bool // true if killed mid-stream by in-flight cost monitor
 	CostUSD                  float64
 	InputTokens              int
 	OutputTokens             int

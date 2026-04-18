@@ -79,7 +79,14 @@ type turnResult struct {
 func runAgentTurn(ctx context.Context, phase config.Phase, env *Environment, prompt, sessionID string, isFirst bool, logFile io.Writer, rawLog io.Writer, extraTools []string) (*turnResult, error) {
 	args := buildAgentArgs(phase, env, sessionID, isFirst, extraTools)
 
-	cmd := exec.CommandContext(ctx, "claude", args...)
+	// Derive a cancellable subcontext so the in-flight cost monitor can
+	// terminate the subprocess when the cap is exceeded — without tearing
+	// down the parent phase's context (which would prevent post-mortem
+	// bookkeeping like cost flush and state save).
+	cmdCtx, cancelCmd := context.WithCancel(ctx)
+	defer cancelCmd()
+
+	cmd := exec.CommandContext(cmdCtx, "claude", args...)
 	cmd.Dir = PhaseWorkDir(phase, env)
 	cmd.Env = BuildEnv(env)
 	cmd.Stdin = strings.NewReader(prompt)
@@ -99,13 +106,17 @@ func runAgentTurn(ctx context.Context, phase config.Phase, env *Environment, pro
 		return nil, fmt.Errorf("starting claude: %w", err)
 	}
 
-	streamResult, streamErr := ProcessStream(ctx, stdout, os.Stdout, logFile, rawLog)
+	monitor := newCostMonitor(phase.MaxCost, phase.Model)
+	streamResult, streamErr := ProcessStreamWithMonitor(cmdCtx, stdout, os.Stdout, logFile, rawLog, monitor, cancelCmd)
 
 	code, waitErr := exitCode(cmd.Wait())
 	if waitErr != nil {
 		return nil, waitErr
 	}
-	if streamErr != nil && ctx.Err() == nil {
+	// If we killed the process because of cost overrun, the subprocess
+	// exits non-zero (SIGTERM). Don't propagate the context error — the
+	// CostOverrun flag on the result tells the caller what happened.
+	if streamErr != nil && ctx.Err() == nil && !(streamResult != nil && streamResult.CostOverrun) {
 		return nil, streamErr
 	}
 
@@ -267,6 +278,7 @@ func RunAgent(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 		res.ToolsDenied = denied
 		res.RateLimited = tr.Stream.RateLimited
 		res.RateLimitResetAt = tr.Stream.RateLimitResetAt
+		res.CostOverrun = tr.Stream.CostOverrun
 	}
 	return res, nil
 }
