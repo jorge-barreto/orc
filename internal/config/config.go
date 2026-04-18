@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -43,26 +44,30 @@ type Loop struct {
 }
 
 type Phase struct {
-	Name         string   `yaml:"name"`
-	Type         string   `yaml:"type"`
-	Description  string   `yaml:"description"`
-	Prompt       string   `yaml:"prompt"`
-	Run          string   `yaml:"run"`
-	Model        string   `yaml:"model"`
-	Effort       string   `yaml:"effort"`
-	Timeout      int      `yaml:"timeout"`
-	MaxCost      float64  `yaml:"max-cost"`
-	Outputs      []string `yaml:"outputs"`
-	AllowTools   []string `yaml:"allow-tools"`
-	MCPConfig    string   `yaml:"mcp-config"`
-	Condition    string   `yaml:"condition"`
-	ParallelWith string   `yaml:"parallel-with"`
-	OnFail       *OnFail  `yaml:"on-fail"`
-	Loop         *Loop    `yaml:"loop"`
-	Cwd          string   `yaml:"cwd"`
-	PreRun       string   `yaml:"pre-run"`
-	PostRun      string   `yaml:"post-run"`
-	OnRateLimit  string   `yaml:"on-rate-limit"` // "" (inherit from Config), "wait", or "exit"
+	Name         string            `yaml:"name"`
+	Type         string            `yaml:"type"`
+	Description  string            `yaml:"description"`
+	Prompt       string            `yaml:"prompt"`
+	Run          string            `yaml:"run"`
+	Model        string            `yaml:"model"`
+	Effort       string            `yaml:"effort"`
+	Timeout      int               `yaml:"timeout"`
+	MaxCost      float64           `yaml:"max-cost"`
+	Outputs      []string          `yaml:"outputs"`
+	AllowTools   []string          `yaml:"allow-tools"`
+	MCPConfig    string            `yaml:"mcp-config"`
+	Condition    string            `yaml:"condition"`
+	ParallelWith string            `yaml:"parallel-with"`
+	OnFail       *OnFail           `yaml:"on-fail"`
+	Loop         *Loop             `yaml:"loop"`
+	Cwd          string            `yaml:"cwd"`
+	PreRun       string            `yaml:"pre-run"`
+	PostRun      string            `yaml:"post-run"`
+	OnRateLimit  string            `yaml:"on-rate-limit"`      // "" (inherit from Config), "wait", or "exit"
+	WorkflowRef  string            `yaml:"workflow,omitempty"` // workflow/branch: name of a workflow in .orc/workflows/
+	Check        string            `yaml:"check,omitempty"`    // branch: shell cmd whose stdout selects a branch key
+	Branches     map[string]string `yaml:"branches,omitempty"` // branch: key → workflow name
+	Default      string            `yaml:"default,omitempty"`  // branch: fallback workflow if key unmatched
 }
 
 // VarEntry holds a single key-value pair from the vars map.
@@ -124,6 +129,29 @@ func Load(path, projectRoot string) (*Config, error) {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// LoadWorkflow loads a named workflow config from .orc/workflows/<name>.yaml (or .yml).
+func LoadWorkflow(projectRoot, name string) (*Config, error) {
+	path := filepath.Join(projectRoot, ".orc", "workflows", name+".yaml")
+	if _, err := os.Stat(path); err != nil {
+		path = filepath.Join(projectRoot, ".orc", "workflows", name+".yml")
+		if _, err := os.Stat(path); err != nil {
+			return nil, fmt.Errorf("workflow %q not found in .orc/workflows/", name)
+		}
+	}
+	return Load(path, projectRoot)
+}
+
+// WorkflowExists checks whether a named workflow config exists on disk.
+func WorkflowExists(projectRoot, name string) bool {
+	path := filepath.Join(projectRoot, ".orc", "workflows", name+".yaml")
+	if _, err := os.Stat(path); err == nil {
+		return true
+	}
+	path = filepath.Join(projectRoot, ".orc", "workflows", name+".yml")
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // PhaseIndex returns the index of the named phase, or -1 if not found.

@@ -29,12 +29,12 @@ Five internal packages, each with a single responsibility:
 cmd/orc/main.go           CLI entrypoint (urfave/cli/v3)
 internal/config/           Config + Phase structs, YAML loading, validation
 internal/state/            State persistence (JSON), timing, artifacts dir, atomic writes
-internal/dispatch/         Phase executors: script (bash), agent (claude -p), gate (human y/n)
+internal/dispatch/         Phase executors: script (bash), agent (claude -p), gate (human y/n); workflow/branch dispatched by runner
 internal/runner/           Main state machine loop — drives the workflow
 internal/ux/               ANSI-colored terminal output, phase headers, status rendering
 ```
 
-**Data flow:** `main.go` loads config, creates state, builds a `Runner`, and calls `runner.Run()`. The runner iterates phases, calling `dispatch.Dispatch()` for each. Dispatch routes to `RunScript`, `RunAgent`, or `RunGate` based on phase type. State is persisted to `.orc/artifacts/` after each phase.
+**Data flow:** `main.go` loads config, creates state, builds a `Runner`, and calls `runner.Run()`. The runner iterates phases, calling `dispatch.Dispatch()` for each. Dispatch routes to `RunScript`, `RunAgent`, or `RunGate` based on phase type. `workflow` and `branch` phases are handled directly by the runner via inline child `Runner.Run()` calls. State is persisted to `.orc/artifacts/` after each phase.
 
 **Key interfaces:** `dispatch.Dispatcher` is the only interface — the runner depends on it, and tests substitute a `mockDispatcher`.
 
@@ -43,6 +43,8 @@ internal/ux/               ANSI-colored terminal output, phase headers, status r
 - **script** — Executes a bash command via `exec.CommandContext("bash", "-c", run)`. Requires `run` field.
 - **agent** — Reads a prompt template file, expands variables (`$TICKET`, `$ARTIFACTS_DIR`, `$WORK_DIR`, `$PROJECT_ROOT`), invokes `claude -p` with the rendered prompt. Requires `prompt` field pointing to an existing file.
 - **gate** — Prompts human for y/n approval. Auto-skipped with `--auto`.
+- **workflow** — Runs a named sub-workflow inline via a child `Runner.Run()` call. Requires `workflow` field referencing a config in `.orc/workflows/`. Child gets its own state and artifacts dir; costs merge into parent.
+- **branch** — N-way dispatch: runs a `check` script, matches stdout to `branches` keys, runs the corresponding workflow. Requires `check` and `branches` fields. Optional `default` fallback.
 
 ### Runner State Machine
 
@@ -50,7 +52,7 @@ The runner loop handles: condition checks (skip phase if shell command exits non
 
 ### Config Validation Rules
 
-Validation (`internal/config/validate.go`) enforces: unique phase names, `loop.goto` must reference an earlier phase, `parallel-with` must reference an existing phase, `parallel-with` and `loop` cannot be combined, agent phases need a `prompt` file that exists on disk, model must be `opus`/`sonnet`/`haiku`/empty, and ticket patterns are anchored for full-match semantics. The deprecated `on-fail` field is rejected with a migration hint.
+Validation (`internal/config/validate.go`) enforces: unique phase names, `loop.goto` must reference an earlier phase, `parallel-with` must reference an existing phase, `parallel-with` and `loop` cannot be combined, agent phases need a `prompt` file that exists on disk, model must be `opus`/`sonnet`/`haiku`/empty, ticket patterns are anchored for full-match semantics, workflow/branch phases must reference existing workflows in `.orc/workflows/`, and cross-workflow circular references are detected via DFS at load time. The deprecated `on-fail` field is rejected with a migration hint.
 
 ## Conventions
 

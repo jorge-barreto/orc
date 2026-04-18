@@ -183,6 +183,18 @@ func printConfigSummary(w io.Writer, cfg *config.Config, projectRoot string) {
 			fmt.Fprintf(w, "  script  timeout=%dm  run: %s\n", p.Timeout, cmd)
 		case "gate":
 			fmt.Fprintf(w, "  gate\n")
+		case "workflow":
+			fmt.Fprintf(w, "  workflow  ref=%s\n", p.WorkflowRef)
+		case "branch":
+			keys := make([]string, 0, len(p.Branches))
+			for k := range p.Branches {
+				keys = append(keys, k)
+			}
+			fmt.Fprintf(w, "  branch  check=%s branches=[%s]", p.Check, strings.Join(keys, ","))
+			if p.Default != "" {
+				fmt.Fprintf(w, " default=%s", p.Default)
+			}
+			fmt.Fprintln(w)
 		}
 
 		// Sub-lines

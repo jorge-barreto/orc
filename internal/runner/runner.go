@@ -353,7 +353,16 @@ mainLoop:
 		r.Timing.AddStartAt(phase.Name, start)
 
 		r.Env.PhaseIndex = i
-		result, err := r.dispatchWithHooks(ctx, phase, r.Env)
+		var result *dispatch.Result
+		var err error
+		switch phase.Type {
+		case "workflow":
+			result, err = dispatch.DispatchWithHooks(ctx, phase, r.Env, r.dispatchWorkflow)
+		case "branch":
+			result, err = dispatch.DispatchWithHooks(ctx, phase, r.Env, r.dispatchBranch)
+		default:
+			result, err = r.dispatchWithHooks(ctx, phase, r.Env)
+		}
 
 		// Persist session ID immediately so it survives interruption.
 		// Must happen before any error handling — if the process dies
@@ -460,8 +469,8 @@ mainLoop:
 			return r.failWithCategory(state.StatusInterrupted, ExitInterrupted, state.FailCategoryInterrupted, ctx.Err().Error(), ctx.Err())
 		}
 
-		// Record cost data for agent phases (cost is incurred regardless of success/failure)
-		if phase.Type == "agent" && result != nil {
+		// Record cost data for agent/workflow/branch phases (cost is incurred regardless of success/failure)
+		if (phase.Type == "agent" || phase.Type == "workflow" || phase.Type == "branch") && result != nil {
 			r.Costs.Record(phase.Name, i, result.CostUSD, result.InputTokens, result.OutputTokens, result.CacheCreationInputTokens, result.CacheReadInputTokens, result.Turns)
 			// Warn if agent completed but reported no token counts (best-effort tracking).
 			// Skip this warning on cost-overrun kill — the result event never arrives
@@ -538,6 +547,8 @@ mainLoop:
 				category = state.FailCategoryAgentError
 			} else if phase.Type == "gate" {
 				category = state.FailCategoryGateRejection
+			} else if phase.Type == "workflow" || phase.Type == "branch" {
+				category = state.FailCategoryWorkflowError
 			}
 			r.printRunSummary(i)
 			return r.failWithCategory(state.StatusFailed, exitCode, category, errMsg, fmt.Errorf("phase %q failed", phase.Name))
@@ -1256,4 +1267,116 @@ func evalCondition(ctx context.Context, phase config.Phase, env *dispatch.Enviro
 
 func (r *Runner) dispatchWithHooks(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
 	return dispatch.DispatchWithHooks(ctx, phase, env, r.Dispatcher.Dispatch)
+}
+
+// dispatchWorkflow is a DispatchFunc that runs a child workflow inline.
+func (r *Runner) dispatchWorkflow(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+	return r.runSubWorkflow(ctx, phase.WorkflowRef)
+}
+
+// dispatchBranch is a DispatchFunc that runs a check script, matches the output
+// to a branch key, and runs the corresponding child workflow.
+func (r *Runner) dispatchBranch(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+	stdout, exitCode, err := evalCheckOutput(ctx, phase.Check, phase, env)
+	if err != nil {
+		return nil, fmt.Errorf("branch %q: check command error: %w", phase.Name, err)
+	}
+	if exitCode != 0 {
+		return &dispatch.Result{ExitCode: exitCode, Output: stdout}, nil
+	}
+
+	key := strings.TrimSpace(stdout)
+	workflow, ok := phase.Branches[key]
+	if !ok {
+		if phase.Default != "" {
+			workflow = phase.Default
+		} else {
+			return &dispatch.Result{
+				ExitCode: 1,
+				Output:   fmt.Sprintf("check returned %q — no matching branch and no default", key),
+			}, nil
+		}
+	}
+	ux.BranchSelected(phase.Name, key, workflow)
+	return r.runSubWorkflow(ctx, workflow)
+}
+
+// runSubWorkflow loads and runs a child workflow inline, merging costs back into the parent.
+func (r *Runner) runSubWorkflow(ctx context.Context, workflowName string) (*dispatch.Result, error) {
+	childCfg, err := config.LoadWorkflow(r.Env.ProjectRoot, workflowName)
+	if err != nil {
+		return nil, fmt.Errorf("loading workflow %q: %w", workflowName, err)
+	}
+
+	childArtifacts := state.ArtifactsDirForWorkflow(r.Env.ProjectRoot, workflowName, r.Env.Ticket)
+	childState, err := state.Load(childArtifacts)
+	if err != nil {
+		return nil, fmt.Errorf("loading state for workflow %q: %w", workflowName, err)
+	}
+	childState.SetTicket(r.Env.Ticket)
+	childState.SetWorkflow(workflowName)
+
+	childEnv := r.Env.Clone()
+	childEnv.ArtifactsDir = childArtifacts
+	childEnv.Workflow = workflowName
+	childEnv.PhaseCount = len(childCfg.Phases)
+	childEnv.ResumeSessionID = ""
+	// Merge parent custom vars with child config vars (child vars win on conflict).
+	if len(childCfg.Vars) > 0 {
+		builtins := childEnv.Vars()
+		childEnv.CustomVars = dispatch.ExpandConfigVars(childCfg.Vars, builtins)
+	}
+
+	ux.SubWorkflowStart(workflowName)
+
+	child := &Runner{
+		Config:       childCfg,
+		State:        childState,
+		Env:          childEnv,
+		Dispatcher:   r.Dispatcher,
+		StepMode:     r.StepMode,
+		HistoryLimit: childCfg.HistoryLimit,
+	}
+
+	childErr := child.Run(ctx)
+
+	// Merge child costs into parent.
+	if r.Costs != nil && child.Costs != nil {
+		r.Costs.Merge(child.Costs, workflowName)
+	}
+
+	ux.SubWorkflowEnd(workflowName)
+
+	// Synthesize a Result for the parent's phase handling.
+	result := &dispatch.Result{ExitCode: 0}
+	if child.Costs != nil {
+		result.CostUSD = child.Costs.TotalCost()
+	}
+	if childErr != nil {
+		result.ExitCode = 1
+		result.Output = childErr.Error()
+	}
+	return result, nil
+}
+
+// evalCheckOutput runs a shell command and returns its stdout, exit code, and any exec error.
+// Modeled on runLoopCheck but separates stdout from stderr.
+func evalCheckOutput(ctx context.Context, check string, phase config.Phase, env *dispatch.Environment) (string, int, error) {
+	cmd := exec.CommandContext(ctx, "bash", "-c", check)
+	cmd.Dir = dispatch.PhaseWorkDir(phase, env)
+	cmd.Env = dispatch.BuildEnv(env)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return stdout.String(), exitErr.ExitCode(), nil
+		}
+		return "", 1, err
+	}
+	return stdout.String(), 0, nil
 }

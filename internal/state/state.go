@@ -28,6 +28,7 @@ const (
 	FailCategoryTimeout        = "timeout"
 	FailCategoryStateSave      = "state_save"
 	FailCategoryRateLimit      = "rate_limit"
+	FailCategoryWorkflowError  = "workflow_error"
 )
 
 type State struct {

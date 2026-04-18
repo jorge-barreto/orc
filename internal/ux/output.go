@@ -286,3 +286,27 @@ func RateLimitHint(resetTime time.Time) {
 	fmt.Printf("  %shint: usage limit reached, resets at %s — use --resume to continue later%s\n",
 		Yellow, resetTime.Format("15:04"), Reset)
 }
+
+// SubWorkflowStart announces entering a sub-workflow.
+func SubWorkflowStart(workflowName string) {
+	if QuietMode {
+		return
+	}
+	fmt.Printf("  %s→ entering workflow %s%s%s\n", Dim, Bold, workflowName, Reset)
+}
+
+// SubWorkflowEnd announces leaving a sub-workflow.
+func SubWorkflowEnd(workflowName string) {
+	if QuietMode {
+		return
+	}
+	fmt.Printf("  %s← leaving workflow %s%s%s\n", Dim, Bold, workflowName, Reset)
+}
+
+// BranchSelected announces which branch was chosen.
+func BranchSelected(phaseName, key, workflow string) {
+	if QuietMode {
+		return
+	}
+	fmt.Printf("  %sbranch %q → %s (%s)%s\n", Dim, key, workflow, phaseName, Reset)
+}

@@ -1331,3 +1331,202 @@ func TestValidate_HistoryLimit(t *testing.T) {
 		}
 	})
 }
+
+// writeWorkflowFile creates a minimal workflow config file in projectRoot/.orc/workflows/<name>.yaml.
+func writeWorkflowFile(t *testing.T, projectRoot, name string) {
+	t.Helper()
+	dir := filepath.Join(projectRoot, ".orc", "workflows")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "name: " + name + "\nphases:\n  - name: s\n    type: script\n    run: echo ok\n"
+	if err := os.WriteFile(filepath.Join(dir, name+".yaml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidate_WorkflowRequiresWorkflow(t *testing.T) {
+	root := t.TempDir()
+	cfg := minimalConfig(Phase{Name: "w", Type: "workflow"})
+	if err := Validate(cfg, root); err == nil || !strings.Contains(err.Error(), "'workflow' is required") {
+		t.Fatalf("expected workflow required error, got %v", err)
+	}
+}
+
+func TestValidate_WorkflowRefNotFound(t *testing.T) {
+	root := t.TempDir()
+	cfg := minimalConfig(Phase{Name: "w", Type: "workflow", WorkflowRef: "missing"})
+	if err := Validate(cfg, root); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected not found error, got %v", err)
+	}
+}
+
+func TestValidate_WorkflowRefExists(t *testing.T) {
+	root := t.TempDir()
+	writeWorkflowFile(t, root, "child")
+	cfg := minimalConfig(Phase{Name: "w", Type: "workflow", WorkflowRef: "child"})
+	if err := Validate(cfg, root); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_WorkflowDisallowsPrompt(t *testing.T) {
+	root := t.TempDir()
+	writeWorkflowFile(t, root, "child")
+	cfg := minimalConfig(Phase{Name: "w", Type: "workflow", WorkflowRef: "child", Prompt: "foo.md"})
+	if err := Validate(cfg, root); err == nil || !strings.Contains(err.Error(), "'prompt' is not valid") {
+		t.Fatalf("expected prompt error, got %v", err)
+	}
+}
+
+func TestValidate_WorkflowDisallowsRun(t *testing.T) {
+	root := t.TempDir()
+	writeWorkflowFile(t, root, "child")
+	cfg := minimalConfig(Phase{Name: "w", Type: "workflow", WorkflowRef: "child", Run: "echo"})
+	if err := Validate(cfg, root); err == nil || !strings.Contains(err.Error(), "'run' is not valid") {
+		t.Fatalf("expected run error, got %v", err)
+	}
+}
+
+func TestValidate_WorkflowDisallowsParallelWith(t *testing.T) {
+	root := t.TempDir()
+	writeWorkflowFile(t, root, "child")
+	cfg := minimalConfig(scriptPhase("a"), Phase{Name: "w", Type: "workflow", WorkflowRef: "child", ParallelWith: "a"})
+	if err := Validate(cfg, root); err == nil || !strings.Contains(err.Error(), "'parallel-with' is not valid") {
+		t.Fatalf("expected parallel-with error, got %v", err)
+	}
+}
+
+func TestValidate_WorkflowWithLoop(t *testing.T) {
+	root := t.TempDir()
+	writeWorkflowFile(t, root, "child")
+	cfg := minimalConfig(
+		scriptPhase("a"),
+		Phase{Name: "w", Type: "workflow", WorkflowRef: "child", Loop: &Loop{Goto: "a", Min: 1, Max: 3}},
+	)
+	if err := Validate(cfg, root); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_BranchRequiresCheck(t *testing.T) {
+	root := t.TempDir()
+	writeWorkflowFile(t, root, "wf")
+	cfg := minimalConfig(Phase{Name: "b", Type: "branch", Branches: map[string]string{"a": "wf"}})
+	if err := Validate(cfg, root); err == nil || !strings.Contains(err.Error(), "'check' is required") {
+		t.Fatalf("expected check required error, got %v", err)
+	}
+}
+
+func TestValidate_BranchRequiresBranches(t *testing.T) {
+	root := t.TempDir()
+	cfg := minimalConfig(Phase{Name: "b", Type: "branch", Check: "echo ok"})
+	if err := Validate(cfg, root); err == nil || !strings.Contains(err.Error(), "'branches' is required") {
+		t.Fatalf("expected branches required error, got %v", err)
+	}
+}
+
+func TestValidate_BranchRefNotFound(t *testing.T) {
+	root := t.TempDir()
+	cfg := minimalConfig(Phase{Name: "b", Type: "branch", Check: "echo ok", Branches: map[string]string{"a": "missing"}})
+	if err := Validate(cfg, root); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected not found error, got %v", err)
+	}
+}
+
+func TestValidate_BranchDefaultRefNotFound(t *testing.T) {
+	root := t.TempDir()
+	writeWorkflowFile(t, root, "wf")
+	cfg := minimalConfig(Phase{Name: "b", Type: "branch", Check: "echo ok", Branches: map[string]string{"a": "wf"}, Default: "missing"})
+	if err := Validate(cfg, root); err == nil || !strings.Contains(err.Error(), "default workflow") {
+		t.Fatalf("expected default not found error, got %v", err)
+	}
+}
+
+func TestValidate_BranchValid(t *testing.T) {
+	root := t.TempDir()
+	writeWorkflowFile(t, root, "wf-a")
+	writeWorkflowFile(t, root, "wf-b")
+	cfg := minimalConfig(Phase{Name: "b", Type: "branch", Check: "echo ok", Branches: map[string]string{"a": "wf-a", "b": "wf-b"}, Default: "wf-a"})
+	if err := Validate(cfg, root); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_BranchDisallowsPrompt(t *testing.T) {
+	root := t.TempDir()
+	writeWorkflowFile(t, root, "wf")
+	cfg := minimalConfig(Phase{Name: "b", Type: "branch", Check: "echo ok", Branches: map[string]string{"a": "wf"}, Prompt: "foo.md"})
+	if err := Validate(cfg, root); err == nil || !strings.Contains(err.Error(), "'prompt' is not valid") {
+		t.Fatalf("expected prompt error, got %v", err)
+	}
+}
+
+func TestValidate_BranchDisallowsRun(t *testing.T) {
+	root := t.TempDir()
+	writeWorkflowFile(t, root, "wf")
+	cfg := minimalConfig(Phase{Name: "b", Type: "branch", Check: "echo ok", Branches: map[string]string{"a": "wf"}, Run: "echo"})
+	if err := Validate(cfg, root); err == nil || !strings.Contains(err.Error(), "'run' is not valid") {
+		t.Fatalf("expected run error, got %v", err)
+	}
+}
+
+// --- Cycle detection tests ---
+
+func TestValidateWorkflowGraph_NoCycle(t *testing.T) {
+	root := t.TempDir()
+	writeWorkflowFile(t, root, "child")
+	cfg := minimalConfig(Phase{Name: "w", Type: "workflow", WorkflowRef: "child"})
+	cfg.Name = "parent"
+	if err := ValidateWorkflowGraph(root, cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateWorkflowGraph_DirectCycle(t *testing.T) {
+	root := t.TempDir()
+	// Write workflow "b" that references workflow "a" (which we'll treat as root).
+	dir := filepath.Join(root, ".orc", "workflows")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, "b.yaml"), []byte("name: b\nphases:\n  - name: x\n    type: workflow\n    workflow: a\n"), 0o644)
+	// Root config "a" references "b".
+	os.WriteFile(filepath.Join(dir, "a.yaml"), []byte("name: a\nphases:\n  - name: y\n    type: script\n    run: echo\n"), 0o644)
+
+	cfg := &Config{Name: "a", Phases: []Phase{{Name: "w", Type: "workflow", WorkflowRef: "b"}}}
+	err := ValidateWorkflowGraph(root, cfg)
+	if err == nil || !strings.Contains(err.Error(), "circular workflow reference") {
+		t.Fatalf("expected cycle error, got %v", err)
+	}
+}
+
+func TestValidateWorkflowGraph_SelfReference(t *testing.T) {
+	root := t.TempDir()
+	// Write a workflow that references itself.
+	dir := filepath.Join(root, ".orc", "workflows")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, "loop.yaml"), []byte("name: loop\nphases:\n  - name: s\n    type: script\n    run: echo\n"), 0o644)
+
+	// Workflow "x" references itself.
+	os.WriteFile(filepath.Join(dir, "x.yaml"), []byte("name: x\nphases:\n  - name: w\n    type: workflow\n    workflow: x\n"), 0o644)
+
+	cfg := &Config{Name: "root", Phases: []Phase{{Name: "w", Type: "workflow", WorkflowRef: "x"}}}
+	err := ValidateWorkflowGraph(root, cfg)
+	if err == nil || !strings.Contains(err.Error(), "circular workflow reference") {
+		t.Fatalf("expected cycle error, got %v", err)
+	}
+}
+
+func TestValidateWorkflowGraph_BranchCycle(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".orc", "workflows")
+	os.MkdirAll(dir, 0o755)
+	// "b" has a workflow phase that references back to "a" (root).
+	os.WriteFile(filepath.Join(dir, "b.yaml"), []byte("name: b\nphases:\n  - name: x\n    type: workflow\n    workflow: a\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "a.yaml"), []byte("name: a\nphases:\n  - name: s\n    type: script\n    run: echo\n"), 0o644)
+
+	cfg := &Config{Name: "a", Phases: []Phase{{Name: "br", Type: "branch", Check: "echo b", Branches: map[string]string{"b": "b"}}}}
+	err := ValidateWorkflowGraph(root, cfg)
+	if err == nil || !strings.Contains(err.Error(), "circular workflow reference") {
+		t.Fatalf("expected cycle error, got %v", err)
+	}
+}

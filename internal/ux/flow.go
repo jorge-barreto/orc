@@ -73,6 +73,10 @@ func FlowDiagram(cfg *config.Config, customVars map[string]string, expandFn func
 		typeLabel := p.Type
 		if p.Type == "agent" && p.Model != "" {
 			typeLabel = p.Type + "/" + p.Model
+		} else if p.Type == "workflow" && p.WorkflowRef != "" {
+			typeLabel = p.Type + "/" + p.WorkflowRef
+		} else if p.Type == "branch" {
+			typeLabel = "branch"
 		}
 
 		phaseLine := fmt.Sprintf("%d. %s [%s]", i+1, p.Name, typeLabel)

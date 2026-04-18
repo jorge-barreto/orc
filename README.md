@@ -8,12 +8,12 @@ Deterministic agent orchestrator CLI — run AI workflows as a state machine, no
 
 LLM agents that self-manage multi-phase workflows are unreliable. They lose context, skip steps, and hallucinate progress. **orc** takes a different approach: a deterministic state machine drives the workflow, and context passes through artifact files on disk — not conversational memory.
 
-You define your workflow as a series of **phases** in a YAML config file. Each phase is either a shell script, an AI agent invocation, or a human approval gate. orc runs them in order, persists state after each phase, and can resume from where it left off if interrupted.
+You define your workflow as a series of **phases** in a YAML config file. Each phase is a shell script, an AI agent invocation, a human approval gate, a sub-workflow, or a branch that routes to different workflows based on a check script. orc runs them in order, persists state after each phase, and can resume from where it left off if interrupted.
 
 ## Features
 
 ### Workflow Engine
-- **Three phase types**: `script` (shell commands), `agent` (Claude AI via `claude -p`), `gate` (human approval with feedback)
+- **Five phase types**: `script` (shell commands), `agent` (Claude AI via `claude -p`), `gate` (human approval with feedback), `workflow` (run a named sub-workflow inline), `branch` (N-way dispatch to a workflow based on a check script)
 - **Convergent loops**: Phases can loop back with `loop` for retry-on-failure and min-iteration enforcement, with optional `on-exhaust` recovery
 - **Parallel execution**: Run two phases concurrently with `parallel-with`
 - **Conditional phases**: Skip phases based on a shell command exit code
@@ -346,7 +346,7 @@ Workflows are defined in `.orc/config.yaml`.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `name` | string | — | Unique phase name (required). Must not contain path separators. |
-| `type` | string | — | `script`, `agent`, or `gate` (required) |
+| `type` | string | — | `script`, `agent`, `gate`, `workflow`, or `branch` (required) |
 | `description` | string | — | Human-readable description |
 | `run` | string | — | Shell command (required for `script`) |
 | `prompt` | string | — | Path to prompt template file, relative to project root (required for `agent`) |
@@ -363,6 +363,10 @@ Workflows are defined in `.orc/config.yaml`.
 | `cwd` | string | — | Working directory for this phase (expanded with vars). Not supported on gate phases. |
 | `pre-run` | string | — | Shell command to run before dispatch. Non-zero exit skips dispatch and fails the phase. Post-run still runs. |
 | `post-run` | string | — | Shell command to run after dispatch regardless of outcome (cleanup semantics). Failure overrides dispatch success. |
+| `workflow` | string | — | Name of a workflow in `.orc/workflows/` (required for `workflow` and used by `branch`) |
+| `check` | string | — | Shell command whose stdout selects a branch key (required for `branch`) |
+| `branches` | map | — | Map of key → workflow name (required for `branch`). Each value must reference a workflow in `.orc/workflows/`. |
+| `default` | string | — | Fallback workflow name if `check` output doesn't match any branch key (`branch` only) |
 
 ### Phase types
 
@@ -371,6 +375,26 @@ Workflows are defined in `.orc/config.yaml`.
 **agent** — Reads a prompt template file, expands variables, and invokes `claude -p`. Output is streamed to the terminal and saved to `.orc/artifacts/<ticket>/logs/`. The following tools are always approved by default: Read, Edit, Write, Glob, Grep, Task, WebFetch, WebSearch. Add more via `default-allow-tools` (all agents) or `allow-tools` (per phase). If outputs are declared and missing after the agent finishes, orc re-invokes the agent once to produce them. Use `mcp-config` to connect agents to MCP servers with a dynamically-generated config file.
 
 **gate** — Prompts the operator for approval. The operator can type `y` to continue, or any other text to request a revision — the text is captured as feedback in the phase log. Skipped automatically when using `--auto`.
+
+**workflow** — Runs a named sub-workflow inline. The `workflow` field references a config in `.orc/workflows/`. The child workflow executes in the same process with its own state and artifacts directory (`.orc/artifacts/<workflow>/<ticket>/`). Child costs are merged into the parent's cost tracking. Supports `condition` and `loop` (standard rules). Cannot use `parallel-with`, `prompt`, or `run`.
+
+**branch** — N-way dispatch: runs a `check` script, matches its stdout against `branches` keys, and runs the corresponding workflow. If no key matches, uses `default` (if set) or fails. Supports `condition` and `loop`. Cross-workflow cycle detection catches circular references at config load time.
+
+```yaml
+# Workflow composition example
+- name: review
+  type: workflow
+  workflow: review-pipeline
+
+# Branch example
+- name: classify
+  type: branch
+  check: .orc/scripts/classify.sh
+  branches:
+    simple: quick-fix
+    complex: full-pipeline
+  default: full-pipeline
+```
 
 ## Complete Example Config
 
@@ -633,7 +657,7 @@ Resume the workflow later — it picks up from the interrupted phase.
 | Code | Meaning |
 |------|---------|
 | 0 | Success — workflow completed, all phases passed |
-| 1 | Phase failure — agent or script phase failed, loop exhausted, gate denied, or outputs missing |
+| 1 | Phase failure — agent or script phase failed, loop exhausted, gate denied, outputs missing, or sub-workflow/branch failed |
 | 2 | Timeout — a phase exceeded its configured timeout |
 | 3 | Configuration error — invalid config, missing prompt file, setup failure |
 | 4 | Cost limit exceeded — per-phase or per-run cost budget hit |

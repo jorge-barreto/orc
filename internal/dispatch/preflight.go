@@ -17,6 +17,8 @@ func Preflight(phases []config.Phase) error {
 			needed["bash"] = true
 		case "agent":
 			needed["claude"] = true
+		case "branch":
+			needed["bash"] = true // check script runs via bash
 		}
 		if p.PreRun != "" || p.PostRun != "" {
 			needed["bash"] = true

@@ -96,6 +96,37 @@ func (c *CostData) PhaseCost(name string) float64 {
 	return total
 }
 
+// Merge folds another CostData into this one (e.g., child workflow costs into parent).
+// Entry names are prefixed with the given prefix for disambiguation.
+func (c *CostData) Merge(other *CostData, prefix string) {
+	if other == nil {
+		return
+	}
+	other.mu.Lock()
+	entries := make([]CostEntry, len(other.Phases))
+	copy(entries, other.Phases)
+	totalCost := other.TotalCostUSD
+	totalIn := other.TotalInputTokens
+	totalOut := other.TotalOutputTokens
+	totalCacheCreate := other.TotalCacheCreationInputTokens
+	totalCacheRead := other.TotalCacheReadInputTokens
+	other.mu.Unlock()
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, e := range entries {
+		if prefix != "" {
+			e.Name = prefix + "/" + e.Name
+		}
+		c.Phases = append(c.Phases, e)
+	}
+	c.TotalCostUSD += totalCost
+	c.TotalInputTokens += totalIn
+	c.TotalOutputTokens += totalOut
+	c.TotalCacheCreationInputTokens += totalCacheCreate
+	c.TotalCacheReadInputTokens += totalCacheRead
+}
+
 // Flush writes cost data to disk atomically.
 func (c *CostData) Flush(artifactsDir string) error {
 	c.mu.Lock()

@@ -79,7 +79,7 @@ const topicQuickstart = `Quick Start
    template is used instead.
 
 2. Edit .orc/config.yaml to define your workflow. A workflow is a list
-   of phases — each phase is a script, agent, or gate.
+   of phases — each phase is a script, agent, gate, workflow, or branch.
 
 3. Preview the plan without executing:
 
@@ -203,7 +203,8 @@ Phase fields
 
   name             string    Required. Unique phase name. Must be a simple
                              name (no path separators or '.' / '..').
-  type             string    Required. "script", "agent", or "gate".
+  type             string    Required. "script", "agent", "gate", "workflow",
+                             or "branch".
   description      string    Human-readable description.
   run              string    Shell command (required for script phases).
   prompt           string    Path to prompt template, relative to project root
@@ -484,6 +485,59 @@ Example:
   - name: review
     type: gate
     description: Review implementation before merging
+
+workflow
+--------
+
+Runs a named sub-workflow inline. The workflow field references a config
+in .orc/workflows/. The child workflow executes in the same process with
+its own state and artifacts directory (.orc/artifacts/<workflow>/<ticket>/).
+
+Child costs are merged into the parent's cost tracking. The child inherits
+the parent's ticket, project root, custom vars, and signal context.
+
+Supports condition and loop (standard rules). Cannot use parallel-with,
+prompt, or run.
+
+Circular workflow references are caught at config load time via DFS cycle
+detection across all workflow/branch phase references.
+
+Example:
+
+  - name: deep-review
+    type: workflow
+    workflow: review-pipeline
+
+  - name: review-loop
+    type: workflow
+    workflow: review-pipeline
+    loop:
+      goto: implement
+      max: 3
+      check: test -f $ARTIFACTS_DIR/review-pass.txt
+
+branch
+------
+
+N-way dispatch: runs a check script, matches its stdout (trimmed) against
+branch keys, and runs the corresponding workflow. If no key matches, uses
+the default workflow (if set) or fails the phase.
+
+The check script runs via bash -c with the standard orc environment.
+Non-zero exit code from the check script fails the branch phase.
+
+Supports condition and loop (standard rules). Cannot use parallel-with,
+prompt, or run.
+
+Example:
+
+  - name: classify
+    type: branch
+    check: .orc/scripts/classify.sh
+    branches:
+      simple: quick-fix
+      complex: full-pipeline
+    default: full-pipeline
 `
 
 const topicVariables = `Template Variables
@@ -890,7 +944,7 @@ orc report for richer output.
 
 Fields:
   phase_name         string     Phase name from config
-  phase_type         string     "agent", "script", or "gate"
+  phase_type         string     "agent", "script", "gate", "workflow", or "branch"
   phase_index        int        0-indexed phase number
   model              string     Model used (agent phases only)
   effort             string     Effort level (agent phases only)
@@ -1415,7 +1469,7 @@ Top-level fields:
 Each phases[] entry:
   number        int      1-indexed phase number
   name          string   Phase name
-  type          string   "agent", "script", or "gate"
+  type          string   "agent", "script", "gate", "workflow", or "branch"
   duration      string   Formatted duration or "—"
   cost          string   Formatted cost or "—"
   cost_usd      float    Raw cost in USD

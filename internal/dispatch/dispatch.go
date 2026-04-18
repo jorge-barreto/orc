@@ -190,7 +190,9 @@ func Dispatch(ctx context.Context, phase config.Phase, env *Environment) (*Resul
 		return RunAgentAttended(ctx, phase, env)
 	case "gate":
 		return RunGate(ctx, phase, env)
+	case "workflow", "branch":
+		return nil, fmt.Errorf("phase %q: %s phases are dispatched by the runner, not the dispatcher", phase.Name, phase.Type)
 	default:
-		return nil, fmt.Errorf("unknown phase type %q for phase %q (must be agent, script, or gate)", phase.Type, phase.Name)
+		return nil, fmt.Errorf("unknown phase type %q for phase %q (must be agent, script, gate, workflow, or branch)", phase.Type, phase.Name)
 	}
 }

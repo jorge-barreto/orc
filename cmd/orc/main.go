@@ -141,6 +141,12 @@ func runCmd() *cli.Command {
 				return cfgErr(err)
 			}
 
+			if config.HasWorkflowRefs(cfg) {
+				if err := config.ValidateWorkflowGraph(projectRoot, cfg); err != nil {
+					return cfgErr(err)
+				}
+			}
+
 			artifactsDir := state.ArtifactsDirForWorkflow(projectRoot, workflowName, ticket)
 
 			env := &dispatch.Environment{

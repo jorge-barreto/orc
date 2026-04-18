@@ -138,6 +138,10 @@ func phaseIcon(phaseType string, c flowColors) string {
 		return c.scriptIcon + "▸" + c.reset
 	case "gate":
 		return c.gateIcon + "⏸" + c.reset
+	case "workflow":
+		return c.agentIcon + "⊞" + c.reset
+	case "branch":
+		return c.scriptIcon + "⑂" + c.reset
 	}
 	return " "
 }
@@ -171,7 +175,7 @@ func FlowViz(cfg *config.Config) {
 	fmt.Printf("  %sorc%s · %s%s%s\n", c.bold, c.reset, c.projectName, cfg.Name, c.reset)
 
 	// Stats
-	var agents, scripts, gates, loops int
+	var agents, scripts, gates, workflows, branches, loops int
 	for _, p := range cfg.Phases {
 		switch p.Type {
 		case "agent":
@@ -180,6 +184,10 @@ func FlowViz(cfg *config.Config) {
 			scripts++
 		case "gate":
 			gates++
+		case "workflow":
+			workflows++
+		case "branch":
+			branches++
 		}
 		if p.Loop != nil {
 			loops++
@@ -195,6 +203,12 @@ func FlowViz(cfg *config.Config) {
 	}
 	if gates > 0 {
 		statParts = append(statParts, pluralize(gates, "gate"))
+	}
+	if workflows > 0 {
+		statParts = append(statParts, pluralize(workflows, "workflow"))
+	}
+	if branches > 0 {
+		statParts = append(statParts, pluralize(branches, "branch"))
 	}
 	if loops > 0 {
 		statParts = append(statParts, pluralize(loops, "loop"))

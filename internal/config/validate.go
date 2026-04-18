@@ -165,8 +165,48 @@ func Validate(cfg *Config, projectRoot string) error {
 			if p.Cwd == "" && cfg.Cwd != "" && p.Run != "" {
 				p.Cwd = cfg.Cwd
 			}
+		case "workflow":
+			if p.WorkflowRef == "" {
+				return fmt.Errorf("config: workflow phase %q: 'workflow' is required", p.Name)
+			}
+			if !WorkflowExists(projectRoot, p.WorkflowRef) {
+				return fmt.Errorf("config: workflow phase %q: workflow %q not found in .orc/workflows/", p.Name, p.WorkflowRef)
+			}
+			if p.Prompt != "" {
+				return fmt.Errorf("config: workflow phase %q: 'prompt' is not valid on workflow phases", p.Name)
+			}
+			if p.Run != "" {
+				return fmt.Errorf("config: workflow phase %q: 'run' is not valid on workflow phases", p.Name)
+			}
+			if p.ParallelWith != "" {
+				return fmt.Errorf("config: workflow phase %q: 'parallel-with' is not valid on workflow phases", p.Name)
+			}
+		case "branch":
+			if p.Check == "" {
+				return fmt.Errorf("config: branch phase %q: 'check' is required", p.Name)
+			}
+			if len(p.Branches) == 0 {
+				return fmt.Errorf("config: branch phase %q: 'branches' is required and must have at least one entry", p.Name)
+			}
+			for key, wf := range p.Branches {
+				if !WorkflowExists(projectRoot, wf) {
+					return fmt.Errorf("config: branch phase %q: branch %q references workflow %q not found in .orc/workflows/", p.Name, key, wf)
+				}
+			}
+			if p.Default != "" && !WorkflowExists(projectRoot, p.Default) {
+				return fmt.Errorf("config: branch phase %q: default workflow %q not found in .orc/workflows/", p.Name, p.Default)
+			}
+			if p.Prompt != "" {
+				return fmt.Errorf("config: branch phase %q: 'prompt' is not valid on branch phases", p.Name)
+			}
+			if p.Run != "" {
+				return fmt.Errorf("config: branch phase %q: 'run' is not valid on branch phases", p.Name)
+			}
+			if p.ParallelWith != "" {
+				return fmt.Errorf("config: branch phase %q: 'parallel-with' is not valid on branch phases", p.Name)
+			}
 		default:
-			return fmt.Errorf("config: phase %q: unknown type %q (must be agent, script, or gate)", p.Name, p.Type)
+			return fmt.Errorf("config: phase %q: unknown type %q (must be agent, script, gate, workflow, or branch)", p.Name, p.Type)
 		}
 
 		if len(p.AllowTools) > 0 && p.Type != "agent" {
@@ -304,6 +344,123 @@ func phaseExists(phases []Phase, name string) bool {
 		}
 	}
 	return false
+}
+
+// HasWorkflowRefs reports whether the config contains any workflow or branch phases.
+func HasWorkflowRefs(cfg *Config) bool {
+	for _, p := range cfg.Phases {
+		if p.Type == "workflow" || p.Type == "branch" {
+			return true
+		}
+	}
+	return false
+}
+
+// ValidateWorkflowGraph checks for circular workflow references across configs.
+// It builds a directed graph of workflow → workflow edges and runs DFS cycle detection.
+func ValidateWorkflowGraph(projectRoot string, cfg *Config) error {
+	// Collect workflow references from a config.
+	type edge struct {
+		fromWorkflow string
+		toWorkflow   string
+		phaseName    string
+	}
+
+	// Cache of loaded configs to avoid repeated disk reads.
+	cache := map[string]*Config{}
+
+	// getWorkflowRefs extracts all workflow references from a config.
+	getWorkflowRefs := func(name string, c *Config) []edge {
+		var edges []edge
+		for _, p := range c.Phases {
+			switch p.Type {
+			case "workflow":
+				edges = append(edges, edge{name, p.WorkflowRef, p.Name})
+			case "branch":
+				for _, wf := range p.Branches {
+					edges = append(edges, edge{name, wf, p.Name})
+				}
+				if p.Default != "" {
+					edges = append(edges, edge{name, p.Default, p.Name})
+				}
+			}
+		}
+		return edges
+	}
+
+	// Adjacency list and DFS state.
+	adj := map[string][]string{} // workflow name → list of referenced workflow names
+	const white, gray, black = 0, 1, 2
+	color := map[string]int{}
+	parent := map[string]string{}
+
+	// Recursively discover the graph.
+	var discover func(name string, c *Config) error
+	discover = func(name string, c *Config) error {
+		cache[name] = c
+		for _, e := range getWorkflowRefs(name, c) {
+			adj[name] = append(adj[name], e.toWorkflow)
+			if _, loaded := cache[e.toWorkflow]; !loaded {
+				child, err := LoadWorkflow(projectRoot, e.toWorkflow)
+				if err != nil {
+					return fmt.Errorf("config: phase %q in workflow %q: %w", e.phaseName, name, err)
+				}
+				if err := discover(e.toWorkflow, child); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+
+	// Start from the root config. Use empty string or cfg.Name as root identifier.
+	rootName := cfg.Name
+	if rootName == "" {
+		rootName = "_root"
+	}
+	if err := discover(rootName, cfg); err != nil {
+		return err
+	}
+
+	// DFS cycle detection.
+	var cyclePath []string
+	var dfs func(node string) bool
+	dfs = func(node string) bool {
+		color[node] = gray
+		for _, next := range adj[node] {
+			if color[next] == gray {
+				// Reconstruct cycle path.
+				cyclePath = []string{next, node}
+				for cur := node; cur != next; {
+					cur = parent[cur]
+					cyclePath = append(cyclePath, cur)
+				}
+				// Reverse to get forward order.
+				for i, j := 0, len(cyclePath)-1; i < j; i, j = i+1, j-1 {
+					cyclePath[i], cyclePath[j] = cyclePath[j], cyclePath[i]
+				}
+				return true
+			}
+			if color[next] == white {
+				parent[next] = node
+				if dfs(next) {
+					return true
+				}
+			}
+		}
+		color[node] = black
+		return false
+	}
+
+	for node := range cache {
+		if color[node] == white {
+			if dfs(node) {
+				return fmt.Errorf("config: circular workflow reference: %s", strings.Join(cyclePath, " → "))
+			}
+		}
+	}
+
+	return nil
 }
 
 // hasUnescapedSuffix reports whether s ends with an unescaped instance of ch.
