@@ -230,9 +230,9 @@ func (r *Runner) buildPhaseResults(failedPhase string) []state.PhaseResult {
 		var status string
 		switch {
 		case r.skipped != nil && r.skipped[phase.Name]:
-			status = "skipped"
+			status = state.PhaseStatusSkipped
 		case failedPhase == phase.Name:
-			status = "failed"
+			status = state.PhaseStatusFailed
 		case runStatus == state.StatusInterrupted && i == phaseIndex:
 			// At phaseIndex with run interrupted: the runner detected ctx
 			// cancellation either at the loop head (pre-dispatch, no timing
@@ -240,14 +240,14 @@ func (r *Runner) buildPhaseResults(failedPhase string) []state.PhaseResult {
 			// interrupted). Phases before phaseIndex are handled by the
 			// i<phaseIndex branch below.
 			if dispatched[phase.Name] {
-				status = "interrupted"
+				status = state.PhaseStatusInterrupted
 			} else {
-				status = "pending"
+				status = state.PhaseStatusPending
 			}
 		case i < phaseIndex:
-			status = "completed"
+			status = state.PhaseStatusCompleted
 		default:
-			status = "pending"
+			status = state.PhaseStatusPending
 		}
 
 		costUSD := 0.0

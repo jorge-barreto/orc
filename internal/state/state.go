@@ -17,6 +17,15 @@ const (
 	StatusInterrupted = "interrupted"
 )
 
+// Per-phase status values used in RunResult.Phases[*].Status.
+const (
+	PhaseStatusPending     = "pending"
+	PhaseStatusSkipped     = "skipped"
+	PhaseStatusCompleted   = "completed"
+	PhaseStatusFailed      = "failed"
+	PhaseStatusInterrupted = "interrupted"
+)
+
 const (
 	FailCategoryLoopExhaustion = "loop_exhaustion"
 	FailCategoryCostOverrun    = "cost_overrun"
