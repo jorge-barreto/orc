@@ -136,21 +136,31 @@ func (w *Workspace) ReadRunResult() map[string]any {
 	return rr
 }
 
-// ReadState reads state.json. On a completed run the live state.json is
-// archived into history/<timestamp>/; this helper checks live first and
-// falls back to the most recent history entry, mirroring the binary's own
-// state.ResolveStateDir behavior.
+// ReadState reads state.json (live or latest history entry).
 func (w *Workspace) ReadState() map[string]any {
 	w.t.Helper()
-	livePath := filepath.Join(w.ArtifactsDir, "state.json")
-	if data, err := os.ReadFile(livePath); err == nil {
-		return parseJSONMap(w.t, livePath, data)
-	}
+	return w.readHistoryJSON("state.json")
+}
 
+// ReadCosts reads costs.json (live or latest history entry).
+func (w *Workspace) ReadCosts() map[string]any {
+	w.t.Helper()
+	return w.readHistoryJSON("costs.json")
+}
+
+// ReadTiming reads timing.json (live or latest history entry).
+func (w *Workspace) ReadTiming() map[string]any {
+	w.t.Helper()
+	return w.readHistoryJSON("timing.json")
+}
+
+// HistoryDir returns the path of the most recent history/<timestamp>/ dir.
+func (w *Workspace) HistoryDir() string {
+	w.t.Helper()
 	histDir := filepath.Join(w.ArtifactsDir, "history")
 	entries, err := os.ReadDir(histDir)
 	if err != nil {
-		w.t.Fatalf("no live state.json and no history dir at %s: %v", histDir, err)
+		w.t.Fatalf("read history dir %s: %v", histDir, err)
 	}
 	var latest string
 	for _, e := range entries {
@@ -161,10 +171,21 @@ func (w *Workspace) ReadState() map[string]any {
 	if latest == "" {
 		w.t.Fatalf("no history entries under %s", histDir)
 	}
-	path := filepath.Join(histDir, latest, "state.json")
+	return filepath.Join(histDir, latest)
+}
+
+// readHistoryJSON reads a JSON file by name, preferring live artifacts dir,
+// falling back to the latest history entry (completed runs archive the file).
+func (w *Workspace) readHistoryJSON(name string) map[string]any {
+	w.t.Helper()
+	livePath := filepath.Join(w.ArtifactsDir, name)
+	if data, err := os.ReadFile(livePath); err == nil {
+		return parseJSONMap(w.t, livePath, data)
+	}
+	path := filepath.Join(w.HistoryDir(), name)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		w.t.Fatalf("read state.json from history %s: %v", path, err)
+		w.t.Fatalf("read %s: %v", path, err)
 	}
 	return parseJSONMap(w.t, path, data)
 }
