@@ -190,6 +190,22 @@ func (w *Workspace) readHistoryJSON(name string) map[string]any {
 	return parseJSONMap(w.t, path, data)
 }
 
+// ReadHistoryFile reads a file by relative path (live dir first, then latest
+// history entry). Returns raw bytes as a string. Fails the test if missing.
+func (w *Workspace) ReadHistoryFile(relPath string) string {
+	w.t.Helper()
+	livePath := filepath.Join(w.ArtifactsDir, relPath)
+	if data, err := os.ReadFile(livePath); err == nil {
+		return string(data)
+	}
+	path := filepath.Join(w.HistoryDir(), relPath)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		w.t.Fatalf("read %s: %v", path, err)
+	}
+	return string(data)
+}
+
 func parseJSONMap(t *testing.T, path string, data []byte) map[string]any {
 	t.Helper()
 	var m map[string]any
