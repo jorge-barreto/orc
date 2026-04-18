@@ -89,6 +89,19 @@ func Validate(cfg *Config, projectRoot string) error {
 		cfg.HistoryLimit = 10 // default
 	}
 
+	// Compile ticket-pattern eagerly so bad regex is caught at config-load
+	// time, not at first run. Mirrors the anchoring logic in ValidateTicket.
+	if cfg.TicketPattern != "" {
+		anchored := cfg.TicketPattern
+		fullyAnchored := strings.HasPrefix(cfg.TicketPattern, "^") && hasUnescapedSuffix(cfg.TicketPattern, '$')
+		if !fullyAnchored {
+			anchored = "^(?:" + cfg.TicketPattern + ")$"
+		}
+		if _, err := regexp.Compile(anchored); err != nil {
+			return fmt.Errorf("config: invalid ticket-pattern %q: %w", cfg.TicketPattern, err)
+		}
+	}
+
 	seen := make(map[string]bool)
 	for i := range cfg.Phases {
 		p := &cfg.Phases[i]
