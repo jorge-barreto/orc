@@ -114,6 +114,49 @@ phases:
 	if got := state["failure_category"]; got != "cost_overrun" {
 		t.Errorf("state.failure_category = %v, want cost_overrun", got)
 	}
+
+	// Critical assertion: agent2 MUST NOT have actually run — that's the
+	// whole point of run-level max-cost. orc's data model: after agent1
+	// completes, orc checks total cost > max-cost, then halts the run
+	// WITHOUT dispatching agent2. run-result marks agent2 with
+	// duration_seconds: 0 and cost_usd: 0 (placeholder for "didn't run"),
+	// and sets failed_phase to agent2 (the one that was blocked).
+	// costs.json records only phases that actually executed.
+	costs := w.ReadCosts()
+	costPhases, _ := costs["phases"].([]any)
+	var gotAgent2Cost bool
+	for _, p := range costPhases {
+		m, _ := p.(map[string]any)
+		if m["name"] == "agent2" {
+			gotAgent2Cost = true
+		}
+	}
+	if gotAgent2Cost {
+		t.Errorf("costs.json contains entry for agent2; it should have been blocked before dispatch")
+	}
+
+	rr := w.ReadRunResult()
+	if got := rr["phases_completed"]; got != float64(1) {
+		t.Errorf("run-result.phases_completed = %v, want 1 (agent1 completed, agent2 blocked)", got)
+	}
+	phases, _ := rr["phases"].([]any)
+	var agent2Entry map[string]any
+	for _, p := range phases {
+		m, _ := p.(map[string]any)
+		if m["name"] == "agent2" {
+			agent2Entry = m
+		}
+	}
+	if agent2Entry == nil {
+		t.Fatalf("run-result.phases has no agent2 entry: %v", phases)
+	}
+	// Zero-duration and zero-cost prove agent2 never executed.
+	if d, _ := agent2Entry["duration_seconds"].(float64); d != 0 {
+		t.Errorf("agent2.duration_seconds = %v, want 0 (should not have run)", d)
+	}
+	if c, _ := agent2Entry["cost_usd"].(float64); c != 0 {
+		t.Errorf("agent2.cost_usd = %v, want 0 (should not have run)", c)
+	}
 }
 
 // TestCost_PhaseLevelMaxCostEnforced verifies that a single phase
