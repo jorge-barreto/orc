@@ -12,6 +12,7 @@ import (
 
 	"github.com/jorge-barreto/orc/internal/runner"
 	"github.com/jorge-barreto/orc/internal/ux"
+	"github.com/jorge-barreto/orc/internal/ux/uxtest"
 	cli "github.com/urfave/cli/v3"
 )
 
@@ -561,36 +562,8 @@ func TestDoctorCmd_MissingTicket_ExitConfigError(t *testing.T) {
 }
 
 func TestRunCmd_HeadlessAndStepMutuallyExclusive(t *testing.T) {
+	uxtest.SaveState(t)
 	dir := t.TempDir()
-	// Save and restore globals that EnableQuiet() mutates
-	origQuiet := ux.QuietMode
-	origReset := ux.Reset
-	origBold := ux.Bold
-	origDim := ux.Dim
-	origRed := ux.Red
-	origGreen := ux.Green
-	origYellow := ux.Yellow
-	origCyan := ux.Cyan
-	origMagenta := ux.Magenta
-	origBlue := ux.Blue
-	origBoldCyan := ux.BoldCyan
-	origBoldBlue := ux.BoldBlue
-	origBoldGreen := ux.BoldGreen
-	t.Cleanup(func() {
-		ux.QuietMode = origQuiet
-		ux.Reset = origReset
-		ux.Bold = origBold
-		ux.Dim = origDim
-		ux.Red = origRed
-		ux.Green = origGreen
-		ux.Yellow = origYellow
-		ux.Cyan = origCyan
-		ux.Magenta = origMagenta
-		ux.Blue = origBlue
-		ux.BoldCyan = origBoldCyan
-		ux.BoldBlue = origBoldBlue
-		ux.BoldGreen = origBoldGreen
-	})
 	orcDir := filepath.Join(dir, ".orc")
 	if err := os.MkdirAll(orcDir, 0755); err != nil {
 		t.Fatal(err)
@@ -629,37 +602,8 @@ func TestRunCmd_HeadlessAndStepMutuallyExclusive(t *testing.T) {
 }
 
 func TestRunCmd_OrcHeadlessEnvActivatesQuietMode(t *testing.T) {
+	uxtest.SaveState(t)
 	dir := t.TempDir()
-	// Save and restore globals that EnableQuiet() mutates
-	origQuiet := ux.QuietMode
-	origReset := ux.Reset
-	origBold := ux.Bold
-	origDim := ux.Dim
-	origRed := ux.Red
-	origGreen := ux.Green
-	origYellow := ux.Yellow
-	origCyan := ux.Cyan
-	origMagenta := ux.Magenta
-	origBlue := ux.Blue
-	origBoldCyan := ux.BoldCyan
-	origBoldBlue := ux.BoldBlue
-	origBoldGreen := ux.BoldGreen
-	t.Cleanup(func() {
-		ux.QuietMode = origQuiet
-		ux.Reset = origReset
-		ux.Bold = origBold
-		ux.Dim = origDim
-		ux.Red = origRed
-		ux.Green = origGreen
-		ux.Yellow = origYellow
-		ux.Cyan = origCyan
-		ux.Magenta = origMagenta
-		ux.Blue = origBlue
-		ux.BoldCyan = origBoldCyan
-		ux.BoldBlue = origBoldBlue
-		ux.BoldGreen = origBoldGreen
-	})
-
 	orcDir := filepath.Join(dir, ".orc")
 	if err := os.MkdirAll(orcDir, 0755); err != nil {
 		t.Fatal(err)
@@ -691,36 +635,8 @@ func TestRunCmd_OrcHeadlessEnvActivatesQuietMode(t *testing.T) {
 }
 
 func TestNoColorFlag_DisablesColor(t *testing.T) {
-	origReset := ux.Reset
-	origBold := ux.Bold
-	origDim := ux.Dim
-	origRed := ux.Red
-	origGreen := ux.Green
-	origYellow := ux.Yellow
-	origCyan := ux.Cyan
-	origMagenta := ux.Magenta
-	origBlue := ux.Blue
-	origBoldCyan := ux.BoldCyan
-	origBoldBlue := ux.BoldBlue
-	origBoldGreen := ux.BoldGreen
-	t.Cleanup(func() {
-		ux.Reset = origReset
-		ux.Bold = origBold
-		ux.Dim = origDim
-		ux.Red = origRed
-		ux.Green = origGreen
-		ux.Yellow = origYellow
-		ux.Cyan = origCyan
-		ux.Magenta = origMagenta
-		ux.Blue = origBlue
-		ux.BoldCyan = origBoldCyan
-		ux.BoldBlue = origBoldBlue
-		ux.BoldGreen = origBoldGreen
-	})
-
-	origIsTerminal := ux.IsTerminal
+	uxtest.SaveState(t)
 	ux.IsTerminal = func(f *os.File) bool { return true }
-	t.Cleanup(func() { ux.IsTerminal = origIsTerminal })
 
 	colorDisabled := false
 	sub := &cli.Command{
@@ -760,50 +676,8 @@ func TestNoColorEnvVars(t *testing.T) {
 		{"ORC_NO_COLOR", "ORC_NO_COLOR"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			origReset := ux.Reset
-			origBold := ux.Bold
-			origDim := ux.Dim
-			origRed := ux.Red
-			origGreen := ux.Green
-			origYellow := ux.Yellow
-			origCyan := ux.Cyan
-			origMagenta := ux.Magenta
-			origBlue := ux.Blue
-			origBoldCyan := ux.BoldCyan
-			origBoldBlue := ux.BoldBlue
-			origBoldGreen := ux.BoldGreen
-			t.Cleanup(func() {
-				ux.Reset = origReset
-				ux.Bold = origBold
-				ux.Dim = origDim
-				ux.Red = origRed
-				ux.Green = origGreen
-				ux.Yellow = origYellow
-				ux.Cyan = origCyan
-				ux.Magenta = origMagenta
-				ux.Blue = origBlue
-				ux.BoldCyan = origBoldCyan
-				ux.BoldBlue = origBoldBlue
-				ux.BoldGreen = origBoldGreen
-			})
-
-			// Restore color vars so we test the env var path, not the non-TTY path
-			ux.Reset = origReset
-			ux.Bold = origBold
-			ux.Dim = origDim
-			ux.Red = origRed
-			ux.Green = origGreen
-			ux.Yellow = origYellow
-			ux.Cyan = origCyan
-			ux.Magenta = origMagenta
-			ux.Blue = origBlue
-			ux.BoldCyan = origBoldCyan
-			ux.BoldBlue = origBoldBlue
-			ux.BoldGreen = origBoldGreen
-
-			origIsTerminal := ux.IsTerminal
+			uxtest.SaveState(t)
 			ux.IsTerminal = func(f *os.File) bool { return true }
-			t.Cleanup(func() { ux.IsTerminal = origIsTerminal })
 
 			t.Setenv(tc.envKey, "1")
 
@@ -839,37 +713,8 @@ func TestNoColorEnvVars(t *testing.T) {
 }
 
 func TestRunCmd_PositionalDisambiguationHint(t *testing.T) {
+	uxtest.SaveState(t)
 	dir := t.TempDir()
-	// Save and restore globals that EnableQuiet() mutates
-	origQuiet := ux.QuietMode
-	origReset := ux.Reset
-	origBold := ux.Bold
-	origDim := ux.Dim
-	origRed := ux.Red
-	origGreen := ux.Green
-	origYellow := ux.Yellow
-	origCyan := ux.Cyan
-	origMagenta := ux.Magenta
-	origBlue := ux.Blue
-	origBoldCyan := ux.BoldCyan
-	origBoldBlue := ux.BoldBlue
-	origBoldGreen := ux.BoldGreen
-	t.Cleanup(func() {
-		ux.QuietMode = origQuiet
-		ux.Reset = origReset
-		ux.Bold = origBold
-		ux.Dim = origDim
-		ux.Red = origRed
-		ux.Green = origGreen
-		ux.Yellow = origYellow
-		ux.Cyan = origCyan
-		ux.Magenta = origMagenta
-		ux.Blue = origBlue
-		ux.BoldCyan = origBoldCyan
-		ux.BoldBlue = origBoldBlue
-		ux.BoldGreen = origBoldGreen
-	})
-
 	if err := os.MkdirAll(filepath.Join(dir, ".orc", "workflows"), 0755); err != nil {
 		t.Fatal(err)
 	}
