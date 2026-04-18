@@ -727,6 +727,9 @@ orc run returns structured exit codes for scripting and CI/CD:
        (session ID missing or invalid).
   7    Infrastructure error. All phases completed but a state-save
        or other infrastructure operation failed afterward.
+  8    Rate limit. Claude API rate limit or subscription usage
+       exhausted. The on-rate-limit policy (exit/wait) governs
+       whether orc waits for reset or exits immediately.
 
 A wrapper script can check $? to decide how to react:
 
@@ -740,6 +743,7 @@ A wrapper script can check $? to decide how to react:
     5) echo "Interrupted" ;;
     6) echo "Resume failed — use --retry instead" ;;
     7) echo "Infrastructure error — investigate state persistence" ;;
+    8) echo "Rate limit — wait for reset or check subscription" ;;
   esac
 
 Signal Handling
@@ -905,7 +909,7 @@ Fields:
   ticket                  string     Ticket identifier
   workflow                string     Workflow name (empty for flat layout)
   status                  string     "completed", "failed", or "interrupted"
-  exit_code               int        Process exit code (0=success, 1=phase-failure, 2=timeout, 3=config-error, 4=cost-limit, 5=interrupted, 6=resume-failure, 7=infra-error)
+  exit_code               int        Process exit code (0=success, 1=phase-failure, 2=timeout, 3=config-error, 4=cost-limit, 5=interrupted, 6=resume-failure, 7=infra-error, 8=rate-limit)
   failed_phase            string?    Name of the failed phase (null on success)
   phases_completed        int        Number of phases that completed successfully
   phases_total            int        Total number of phases in workflow

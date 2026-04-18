@@ -51,7 +51,7 @@ You define your workflow as a series of **phases** in a YAML config file. Each p
 - **`orc report`**: Generate a run summary with timing, costs, phase outcomes, loop activity, and artifact listing — markdown or JSON
 - **`orc stats`**: Aggregate metrics across runs — success rate, cost/duration distributions, per-phase breakdown, failure categories, and weekly trends
 - **`orc eval`**: Measure workflow quality, cost, and time across eval cases pinned to known git refs — track score trends across config changes
-- **Structured exit codes**: 0 (success), 1 (phase failure), 2 (timeout), 3 (config error), 4 (cost limit), 5 (interrupted), 6 (resume failure), 7 (infrastructure error)
+- **Structured exit codes**: 0 (success), 1 (phase failure), 2 (timeout), 3 (config error), 4 (cost limit), 5 (interrupted), 6 (resume failure), 7 (infrastructure error), 8 (rate limit)
 
 ## Prerequisites
 
@@ -159,7 +159,7 @@ orc run -w bugfix PROJ-123      # named workflow (explicit flag)
 
 **Step-through mode**: `--step` pauses after each phase with an interactive prompt. You can continue, rewind to a previous phase (forward jumps are rejected), abort, or inspect artifact files. Incompatible with `--auto`.
 
-**Headless mode**: `--headless` (or `ORC_HEADLESS=1`) runs in fully non-interactive mode — implies `--auto` (gates auto-approved, no steering), disables ANSI color, and emits machine-readable JSONL instead of decorated text. One JSON line per phase transition to stdout: `{"phase":"plan","status":"started"}`, `{"phase":"plan","status":"complete","duration_s":120.5}`. Errors remain on stderr as plain text. Exit codes (0 = success, 1 = phase failure, 2 = timeout, 3 = config error, 4 = cost limit, 5 = interrupted, 6 = resume failure, 7 = infrastructure error) are the primary status signal. Incompatible with `--step`. Useful for CI/CD pipelines, cron jobs, launchers, monitoring dashboards, and log aggregation.
+**Headless mode**: `--headless` (or `ORC_HEADLESS=1`) runs in fully non-interactive mode — implies `--auto` (gates auto-approved, no steering), disables ANSI color, and emits machine-readable JSONL instead of decorated text. One JSON line per phase transition to stdout: `{"phase":"plan","status":"started"}`, `{"phase":"plan","status":"complete","duration_s":120.5}`. Errors remain on stderr as plain text. Exit codes (0 = success, 1 = phase failure, 2 = timeout, 3 = config error, 4 = cost limit, 5 = interrupted, 6 = resume failure, 7 = infrastructure error, 8 = rate limit) are the primary status signal. Incompatible with `--step`. Useful for CI/CD pipelines, cron jobs, launchers, monitoring dashboards, and log aggregation.
 
 
 **Color control**: orc disables color when any of these are true: `--no-color` flag is passed, `NO_COLOR` env var is set (standard [no-color.org](https://no-color.org/) convention), `ORC_NO_COLOR` env var is set, or stdout is not a TTY (e.g., piped output). `--headless` disables color and switches to JSONL output. The `--no-color` flag is global and works on any command.
@@ -664,6 +664,7 @@ Resume the workflow later — it picks up from the interrupted phase.
 | 5 | Interrupted — SIGINT, SIGTERM, or SIGHUP received |
 | 6 | Resume failure — cannot resume interrupted session |
 | 7 | Infrastructure error — all phases completed but state persistence failed |
+| 8 | Rate limit — Claude API rate limit or subscription usage exhausted |
 
 ## Run Summary
 
