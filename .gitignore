@@ -3,3 +3,6 @@
 .orc/audit/
 .claude/
 reviews/
+
+# Local env for e2e-docker (holds CLAUDE_CODE_OAUTH_TOKEN)
+.env
