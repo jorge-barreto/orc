@@ -17,10 +17,15 @@ var orcBinary string
 
 // TestMain builds the orc binary once for all e2e tests.
 func TestMain(m *testing.M) {
+	code := runTests(m)
+	os.Exit(code)
+}
+
+func runTests(m *testing.M) int {
 	tmp, err := os.MkdirTemp("", "orc-e2e-bin-*")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mktemp: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	defer os.RemoveAll(tmp)
 
@@ -30,10 +35,10 @@ func TestMain(m *testing.M) {
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "build orc: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
-	os.Exit(m.Run())
+	return m.Run()
 }
 
 // Workspace is a temporary .orc/ workspace for a single test.
