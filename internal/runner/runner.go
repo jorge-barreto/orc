@@ -117,10 +117,16 @@ func (r *Runner) failAndHint(status string, exitCode int, err error) error {
 		}
 	}
 	ux.ResumeHint(r.State.GetTicket(), r.State.GetSessionID() != "")
+	// Only attribute a failing phase when the run actually failed. On
+	// interrupt the current phase was either never dispatched (pending)
+	// or stopped mid-run (interrupted) — not failed. buildPhaseResults
+	// reads r.State.GetStatus() and timing data to classify correctly.
 	failedPhase := ""
-	idx := r.State.GetPhaseIndex()
-	if idx < len(r.Config.Phases) {
-		failedPhase = r.Config.Phases[idx].Name
+	if status == state.StatusFailed {
+		idx := r.State.GetPhaseIndex()
+		if idx < len(r.Config.Phases) {
+			failedPhase = r.Config.Phases[idx].Name
+		}
 	}
 	r.writeRunResult(exitCode, failedPhase)
 	return &ExitError{Code: exitCode, Err: err}
@@ -203,12 +209,17 @@ func (r *Runner) writeRunResult(exitCode int, failedPhase string) *state.RunResu
 // buildPhaseResults assembles per-phase results from timing, cost, and status data.
 func (r *Runner) buildPhaseResults(failedPhase string) []state.PhaseResult {
 	phaseIndex := r.State.GetPhaseIndex()
+	runStatus := r.State.GetStatus()
 	results := make([]state.PhaseResult, 0, len(r.Config.Phases))
 
-	// Build duration map: sum all timing entries per phase (loops may repeat a phase)
+	// Build duration + dispatched maps. A phase is "dispatched" if it has
+	// any timing entry — the runner adds a start entry immediately before
+	// handing the phase to the dispatcher.
 	durations := make(map[string]float64)
+	dispatched := make(map[string]bool)
 	if r.Timing != nil {
 		for _, e := range r.Timing.Entries() {
+			dispatched[e.Phase] = true
 			if !e.End.IsZero() {
 				durations[e.Phase] += e.End.Sub(e.Start).Seconds()
 			}
@@ -222,6 +233,17 @@ func (r *Runner) buildPhaseResults(failedPhase string) []state.PhaseResult {
 			status = "skipped"
 		case failedPhase == phase.Name:
 			status = "failed"
+		case runStatus == state.StatusInterrupted && i == phaseIndex:
+			// At phaseIndex with run interrupted: the runner detected ctx
+			// cancellation either at the loop head (pre-dispatch, no timing
+			// entry → pending) or mid/post-dispatch (timing entry exists →
+			// interrupted). Phases before phaseIndex are handled by the
+			// i<phaseIndex branch below.
+			if dispatched[phase.Name] {
+				status = "interrupted"
+			} else {
+				status = "pending"
+			}
 		case i < phaseIndex:
 			status = "completed"
 		default:

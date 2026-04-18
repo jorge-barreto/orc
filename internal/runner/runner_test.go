@@ -4048,6 +4048,122 @@ func TestRun_RunResultOnInterrupt(t *testing.T) {
 	}
 }
 
+func TestRun_RunResultPhasesOnInterrupt_MidDispatch(t *testing.T) {
+	// Interrupt arrives while phase b is being dispatched. Phase a
+	// completed and Advance'd — marked completed. Phase b was dispatched
+	// but the runner never acknowledged success via Advance — marked
+	// interrupted. No phase is "failed".
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo"},
+			{Name: "c", Type: "script", Run: "echo"},
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		if phase.Name == "b" {
+			cancel()
+		}
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+	r := newTestRunner(t, cfg, mock)
+
+	if err := r.Run(ctx); err == nil {
+		t.Fatal("expected error")
+	}
+
+	data, err := os.ReadFile(state.RunResultPath(r.Env.ArtifactsDir))
+	if err != nil {
+		t.Fatalf("run-result.json not written: %v", err)
+	}
+	var result state.RunResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if result.Status != state.StatusInterrupted {
+		t.Fatalf("status = %q, want interrupted", result.Status)
+	}
+	if result.FailedPhase != nil {
+		t.Fatalf("FailedPhase = %q, want nil on interrupt", *result.FailedPhase)
+	}
+	if result.Phases[0].Status != "completed" {
+		t.Fatalf("phases[0] (a).status = %q, want completed", result.Phases[0].Status)
+	}
+	if result.Phases[1].Status != "interrupted" {
+		t.Fatalf("phases[1] (b).status = %q, want interrupted (dispatched but not Advance'd)", result.Phases[1].Status)
+	}
+	if result.Phases[2].Status != "pending" {
+		t.Fatalf("phases[2] (c).status = %q, want pending (never dispatched)", result.Phases[2].Status)
+	}
+}
+
+func TestRun_RunResultPhasesOnInterrupt_PreDispatch(t *testing.T) {
+	// Interrupt arrives at the loop head, before phase b is dispatched.
+	// Phase a completed and Advance'd. Phase b was never dispatched (no
+	// timing entry) → marked pending, not failed.
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo"},
+			{Name: "b", Type: "script", Run: "echo"},
+			{Name: "c", Type: "script", Run: "echo"},
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	mock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		return &dispatch.Result{ExitCode: 0}, nil
+	}}
+	r := newTestRunner(t, cfg, mock)
+	// Trip the loop-head ctx check after phase a's Advance. We install a
+	// StateHook the runner doesn't have; instead, exploit the fact that
+	// phase a's dispatcher is synchronous by cancelling from a goroutine
+	// once phaseIndex has advanced to 1.
+	go func() {
+		for {
+			if r.State.GetPhaseIndex() >= 1 {
+				cancel()
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
+
+	if err := r.Run(ctx); err == nil {
+		t.Fatal("expected error")
+	}
+
+	data, err := os.ReadFile(state.RunResultPath(r.Env.ArtifactsDir))
+	if err != nil {
+		t.Fatalf("run-result.json not written: %v", err)
+	}
+	var result state.RunResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if result.Status != state.StatusInterrupted {
+		t.Fatalf("status = %q, want interrupted", result.Status)
+	}
+	if result.FailedPhase != nil {
+		t.Fatalf("FailedPhase = %q, want nil on interrupt", *result.FailedPhase)
+	}
+	if result.Phases[0].Status != "completed" {
+		t.Fatalf("phases[0] (a).status = %q, want completed", result.Phases[0].Status)
+	}
+	// Phase b's status depends on scheduler timing: if the cancel goroutine
+	// wins the race, we hit the loop-head check (status=pending); otherwise
+	// phase b gets dispatched first and we hit the mid-dispatch path
+	// (status=interrupted). Both are correct — the key regression test is
+	// that it's *never* "failed".
+	if result.Phases[1].Status == "failed" {
+		t.Fatalf("phases[1] (b).status = %q, want pending or interrupted — never failed on interrupt", result.Phases[1].Status)
+	}
+	if result.Phases[2].Status != "pending" {
+		t.Fatalf("phases[2] (c).status = %q, want pending", result.Phases[2].Status)
+	}
+}
+
 func TestRun_RunResultPhasesOnSuccess(t *testing.T) {
 	cfg := &config.Config{
 		Name: "test",
