@@ -4321,7 +4321,8 @@ func TestRun_RunResultSurvivesArchive(t *testing.T) {
 
 func TestRun_RateLimitWait_AutoMode(t *testing.T) {
 	cfg := &config.Config{
-		Name: "test",
+		Name:        "test",
+		OnRateLimit: "wait",
 		Phases: []config.Phase{
 			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet"},
 		},
@@ -4383,7 +4384,7 @@ func TestRun_RateLimitNoWait_InteractiveMode(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error in interactive mode")
 	}
-	assertExitCode(t, err, ExitPhaseFailure)
+	assertExitCode(t, err, ExitRateLimit)
 	if r.State.GetFailureCategory() != state.FailCategoryRateLimit {
 		t.Fatalf("FailureCategory = %q, want %q", r.State.GetFailureCategory(), state.FailCategoryRateLimit)
 	}
@@ -4391,7 +4392,8 @@ func TestRun_RateLimitNoWait_InteractiveMode(t *testing.T) {
 
 func TestRun_RateLimitOverBudget_NoWait(t *testing.T) {
 	cfg := &config.Config{
-		Name: "test",
+		Name:        "test",
+		OnRateLimit: "wait",
 		Phases: []config.Phase{
 			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet", MaxCost: 1.0},
 		},
@@ -4417,7 +4419,8 @@ func TestRun_RateLimitOverBudget_NoWait(t *testing.T) {
 
 func TestRun_RateLimitInterrupted(t *testing.T) {
 	cfg := &config.Config{
-		Name: "test",
+		Name:        "test",
+		OnRateLimit: "wait",
 		Phases: []config.Phase{
 			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet"},
 		},
@@ -4446,7 +4449,8 @@ func TestRun_RateLimitInterrupted(t *testing.T) {
 
 func TestRun_RateLimitTimingExcludesWait(t *testing.T) {
 	cfg := &config.Config{
-		Name: "test",
+		Name:        "test",
+		OnRateLimit: "wait",
 		Phases: []config.Phase{
 			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet"},
 		},
@@ -4493,5 +4497,138 @@ func TestRun_RateLimitTimingExcludesWait(t *testing.T) {
 		if e.End.Before(e.Start) {
 			t.Fatalf("timing entry %d for phase a: End before Start", idx)
 		}
+	}
+}
+
+// TestRun_RateLimit_DefaultExits verifies that with no on-rate-limit
+// config, the runner exits immediately with ExitRateLimit when the
+// API returns a rate-limit rejection — no waiting, no resume.
+func TestRun_RateLimit_DefaultExits(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet"},
+		},
+	}
+	customMock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		return &dispatch.Result{
+			ExitCode:         1,
+			RateLimited:      true,
+			RateLimitResetAt: time.Now().Unix() + 3600,
+			SessionID:        "sess-x",
+		}, nil
+	}}
+	r := newTestRunner(t, cfg, customMock)
+	r.Env.AutoMode = true
+	r.sleepFn = func(d time.Duration) { t.Fatal("should not sleep when on-rate-limit defaults to exit") }
+
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	assertExitCode(t, err, ExitRateLimit)
+	if r.State.GetFailureCategory() != state.FailCategoryRateLimit {
+		t.Errorf("FailureCategory = %q, want %q", r.State.GetFailureCategory(), state.FailCategoryRateLimit)
+	}
+}
+
+// TestRun_RateLimit_ConfigWaitOptsIn verifies that on-rate-limit: wait
+// at the config level triggers the legacy wait-and-resume path.
+func TestRun_RateLimit_ConfigWaitOptsIn(t *testing.T) {
+	cfg := &config.Config{
+		Name:        "test",
+		OnRateLimit: "wait",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet"},
+		},
+	}
+	callCount := 0
+	var mu sync.Mutex
+	customMock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		mu.Lock()
+		callCount++
+		n := callCount
+		mu.Unlock()
+		if n == 1 {
+			return &dispatch.Result{
+				ExitCode:         1,
+				RateLimited:      true,
+				RateLimitResetAt: time.Now().Unix() + 1,
+				SessionID:        "rate-limited-session",
+			}, nil
+		}
+		return &dispatch.Result{ExitCode: 0, SessionID: "resumed-session"}, nil
+	}}
+	r := newTestRunner(t, cfg, customMock)
+	r.Env.AutoMode = true
+	sleepCalled := false
+	r.sleepFn = func(d time.Duration) { sleepCalled = true }
+
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatalf("expected success after retry, got %v", err)
+	}
+	if !sleepCalled {
+		t.Fatal("sleepFn was not called — wait logic did not execute")
+	}
+	if r.State.GetStatus() != state.StatusCompleted {
+		t.Fatalf("status = %q, want completed", r.State.GetStatus())
+	}
+}
+
+// TestRun_RateLimit_PhaseOverride verifies that phase.on-rate-limit
+// overrides config.on-rate-limit.
+func TestRun_RateLimit_PhaseOverride(t *testing.T) {
+	cfg := &config.Config{
+		Name:        "test",
+		OnRateLimit: "wait",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet", OnRateLimit: "exit"},
+		},
+	}
+	customMock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		return &dispatch.Result{
+			ExitCode:         1,
+			RateLimited:      true,
+			RateLimitResetAt: time.Now().Unix() + 3600,
+		}, nil
+	}}
+	r := newTestRunner(t, cfg, customMock)
+	r.Env.AutoMode = true
+	r.sleepFn = func(d time.Duration) { t.Fatal("phase override exit should not sleep") }
+
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	assertExitCode(t, err, ExitRateLimit)
+}
+
+// TestRun_RateLimit_InteractiveAlsoUsesNewCode verifies that
+// interactive (non-auto) mode also reports ExitRateLimit on rate limit.
+func TestRun_RateLimit_InteractiveAlsoUsesNewCode(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet"},
+		},
+	}
+	customMock := &funcDispatcher{fn: func(ctx context.Context, phase config.Phase, env *dispatch.Environment) (*dispatch.Result, error) {
+		return &dispatch.Result{
+			ExitCode:         1,
+			RateLimited:      true,
+			RateLimitResetAt: time.Now().Unix() + 3600,
+			SessionID:        "sess-1",
+		}, nil
+	}}
+	r := newTestRunner(t, cfg, customMock)
+	r.Env.AutoMode = false
+
+	err := r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected error in interactive mode")
+	}
+	assertExitCode(t, err, ExitRateLimit)
+	if r.State.GetFailureCategory() != state.FailCategoryRateLimit {
+		t.Errorf("FailureCategory = %q, want %q", r.State.GetFailureCategory(), state.FailCategoryRateLimit)
 	}
 }

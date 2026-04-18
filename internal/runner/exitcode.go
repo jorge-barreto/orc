@@ -12,6 +12,7 @@ const (
 	ExitInterrupted   = 5 // Signal interrupt (SIGINT/SIGTERM/SIGHUP)
 	ExitResumeFailure = 6 // Cannot resume interrupted session
 	ExitInfraError    = 7 // Infrastructure error (state save failed after phases completed)
+	ExitRateLimit     = 8 // Claude API rate limit / subscription usage exhausted
 )
 
 // ExitError wraps an error with an orc exit code.

@@ -175,6 +175,37 @@ func TestValidate_ValidEfforts(t *testing.T) {
 	}
 }
 
+func TestValidate_ValidRateLimitPolicies(t *testing.T) {
+	for _, policy := range []string{"", "wait", "exit"} {
+		cfg := minimalConfig(Phase{Name: "a", Type: "script", Run: "echo"})
+		cfg.OnRateLimit = policy
+		if err := Validate(cfg, t.TempDir()); err != nil {
+			t.Errorf("config on-rate-limit=%q: %v", policy, err)
+		}
+		cfg = minimalConfig(Phase{Name: "a", Type: "script", Run: "echo", OnRateLimit: policy})
+		if err := Validate(cfg, t.TempDir()); err != nil {
+			t.Errorf("phase on-rate-limit=%q: %v", policy, err)
+		}
+	}
+}
+
+func TestValidate_InvalidRateLimitPolicy_Config(t *testing.T) {
+	cfg := minimalConfig(Phase{Name: "a", Type: "script", Run: "echo"})
+	cfg.OnRateLimit = "retry"
+	err := Validate(cfg, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "unknown on-rate-limit") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestValidate_InvalidRateLimitPolicy_Phase(t *testing.T) {
+	cfg := minimalConfig(Phase{Name: "a", Type: "script", Run: "echo", OnRateLimit: "panic"})
+	err := Validate(cfg, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "unknown on-rate-limit") {
+		t.Fatalf("got %v", err)
+	}
+}
+
 func TestValidate_NegativeTimeout(t *testing.T) {
 	cfg := minimalConfig(Phase{Name: "a", Type: "script", Run: "echo", Timeout: -1})
 	if err := Validate(cfg, t.TempDir()); err == nil || !strings.Contains(err.Error(), "(got -1)") {

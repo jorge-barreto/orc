@@ -62,6 +62,7 @@ type Phase struct {
 	Cwd          string   `yaml:"cwd"`
 	PreRun       string   `yaml:"pre-run"`
 	PostRun      string   `yaml:"post-run"`
+	OnRateLimit  string   `yaml:"on-rate-limit"` // "" (inherit from Config), "wait", or "exit"
 }
 
 // VarEntry holds a single key-value pair from the vars map.
@@ -105,6 +106,7 @@ type Config struct {
 	MaxCost           float64     `yaml:"max-cost"`
 	HistoryLimit      int         `yaml:"history-limit"`
 	Vars              OrderedVars `yaml:"vars"`
+	OnRateLimit       string      `yaml:"on-rate-limit"` // "" (default: exit), "wait", or "exit"
 	Phases            []Phase     `yaml:"phases"`
 }
 

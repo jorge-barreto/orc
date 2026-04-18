@@ -368,20 +368,10 @@ mainLoop:
 		// Clear resume session ID after first dispatch (don't resume again on loop iterations)
 		r.Env.ResumeSessionID = ""
 
-		// Handle rate-limit: wait-and-retry in auto mode, fail-with-hint in interactive
+		// Handle rate-limit: policy-driven (on-rate-limit: wait|exit; default exit).
 		if result != nil && result.RateLimited {
-			if !r.Env.AutoMode {
-				// Interactive mode: fail immediately with hint
-				r.Timing.AddEnd(phase.Name)
-				resetTime := time.Unix(result.RateLimitResetAt, 0)
-				ux.RateLimitHint(resetTime)
-				r.printRunSummary(i)
-				return r.failWithCategory(state.StatusFailed, ExitPhaseFailure, state.FailCategoryRateLimit,
-					fmt.Sprintf("usage limit reached, resets at %s", resetTime.Format("15:04")),
-					fmt.Errorf("phase %q: rate limited", phase.Name))
-			}
-
-			// Auto mode: record cost first, then check budget (matches pattern at lines 381-401)
+			// Always record partial cost first, so the audit trail captures
+			// whatever was spent before rejection regardless of policy.
 			if phase.Type == "agent" && result != nil {
 				r.Costs.Record(phase.Name, i, result.CostUSD, result.InputTokens, result.OutputTokens, result.CacheCreationInputTokens, result.CacheReadInputTokens, result.Turns)
 				if flushErr := r.Costs.Flush(r.auditDir); flushErr != nil {
@@ -389,7 +379,38 @@ mainLoop:
 				}
 			}
 
-			// Check phase cost budget AFTER recording (so PhaseCost includes this attempt)
+			// Resolve policy: phase overrides config; config defaults to exit.
+			policy := phase.OnRateLimit
+			if policy == "" {
+				policy = r.Config.OnRateLimit
+			}
+			if policy == "" {
+				policy = "exit"
+			}
+
+			// Interactive mode (!--auto) can't usefully wait regardless of policy.
+			// It always exits — but with the new ExitRateLimit code for observability.
+			if !r.Env.AutoMode {
+				r.Timing.AddEnd(phase.Name)
+				resetTime := time.Unix(result.RateLimitResetAt, 0)
+				ux.RateLimitHint(resetTime)
+				r.printRunSummary(i)
+				return r.failWithCategory(state.StatusFailed, ExitRateLimit, state.FailCategoryRateLimit,
+					fmt.Sprintf("usage limit reached, resets at %s", resetTime.Format("15:04")),
+					fmt.Errorf("phase %q: rate limited", phase.Name))
+			}
+
+			if policy == "exit" {
+				r.Timing.AddEnd(phase.Name)
+				resetTime := time.Unix(result.RateLimitResetAt, 0)
+				ux.RateLimitHint(resetTime)
+				r.printRunSummary(i)
+				return r.failWithCategory(state.StatusFailed, ExitRateLimit, state.FailCategoryRateLimit,
+					fmt.Sprintf("usage limit reached, resets at %s (on-rate-limit: exit)", resetTime.Format("15:04")),
+					fmt.Errorf("phase %q: rate limited (on-rate-limit: exit)", phase.Name))
+			}
+
+			// policy == "wait": check phase cost budget before waiting.
 			if phase.MaxCost > 0 && r.Costs != nil {
 				phaseCost := r.Costs.PhaseCost(phase.Name)
 				if phaseCost > phase.MaxCost {
@@ -401,28 +422,23 @@ mainLoop:
 				}
 			}
 
-			// Validate resetsAt before waiting
+			// Validate resetsAt before waiting.
 			if result.RateLimitResetAt <= 0 {
 				r.Timing.AddEnd(phase.Name)
 				r.printRunSummary(i)
-				return r.failWithCategory(state.StatusFailed, ExitPhaseFailure, state.FailCategoryRateLimit,
+				return r.failWithCategory(state.StatusFailed, ExitRateLimit, state.FailCategoryRateLimit,
 					"rate limited but resetsAt missing or invalid — cannot wait",
 					fmt.Errorf("phase %q: rate limited with invalid resetsAt", phase.Name))
 			}
 
-			// Wait for rate limit to reset
+			// Wait for rate limit to reset.
 			if waitErr := r.waitForRateLimit(ctx, phase.Name, result.RateLimitResetAt); waitErr != nil {
 				r.printRunSummary(i)
 				return r.failWithCategory(state.StatusInterrupted, ExitInterrupted, state.FailCategoryInterrupted, waitErr.Error(), waitErr)
 			}
 
-			// Set up resume with the session ID from the rate-limited run
+			// Set up resume with the session ID from the rate-limited run.
 			r.Env.ResumeSessionID = result.SessionID
-
-			// continue re-enters the loop at the same phase index.
-			// The main loop's r.Timing.AddStartAt at line 344 handles timing resume.
-			// Metadata write and audit archiving are skipped for this attempt —
-			// only the successful retry appears in the audit trail.
 			continue
 		}
 

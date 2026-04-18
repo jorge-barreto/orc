@@ -22,6 +22,12 @@ var validEfforts = map[string]bool{
 	"high":   true,
 }
 
+var validRateLimitPolicies = map[string]bool{
+	"":     true,
+	"wait": true,
+	"exit": true,
+}
+
 var varNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // Validate checks the config for errors and sets defaults.
@@ -68,6 +74,9 @@ func Validate(cfg *Config, projectRoot string) error {
 	}
 	if !validEfforts[cfg.Effort] {
 		return fmt.Errorf("config: unknown effort %q (must be low, medium, or high)", cfg.Effort)
+	}
+	if !validRateLimitPolicies[cfg.OnRateLimit] {
+		return fmt.Errorf("config: unknown on-rate-limit %q (must be \"wait\" or \"exit\")", cfg.OnRateLimit)
 	}
 
 	if cfg.MaxCost < 0 {
@@ -166,6 +175,9 @@ func Validate(cfg *Config, projectRoot string) error {
 
 		if !validEfforts[p.Effort] {
 			return fmt.Errorf("config: phase %q: unknown effort %q (must be low, medium, or high)", p.Name, p.Effort)
+		}
+		if !validRateLimitPolicies[p.OnRateLimit] {
+			return fmt.Errorf("config: phase %q: unknown on-rate-limit %q (must be \"wait\" or \"exit\")", p.Name, p.OnRateLimit)
 		}
 
 		if p.Timeout < 0 {
