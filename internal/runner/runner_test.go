@@ -841,6 +841,68 @@ func TestRun_ParallelTimingPerPhase(t *testing.T) {
 	}
 }
 
+func TestRun_ParallelWith_RunResultPhases(t *testing.T) {
+	// Parallel-with must produce a deterministic RunResult.Phases with both
+	// phases present in config order, each completed with a non-zero
+	// duration. The partner's timing and cost should be attributed to its
+	// own phase entry, not merged into the primary.
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "script", Run: "echo", ParallelWith: "b"},
+			{Name: "b", Type: "script", Run: "echo"},
+			{Name: "c", Type: "script", Run: "echo"},
+		},
+	}
+	mock := newMock()
+	// Small delays ensure both phases record measurable durations and
+	// exercise goroutine interleaving of the parallel pair.
+	mock.delays["a"] = 5 * time.Millisecond
+	mock.delays["b"] = 10 * time.Millisecond
+	r := newTestRunner(t, cfg, mock)
+
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(state.RunResultPath(r.Env.ArtifactsDir))
+	if err != nil {
+		t.Fatalf("run-result.json not written: %v", err)
+	}
+	var result state.RunResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	if result.Status != state.StatusCompleted {
+		t.Fatalf("status = %q, want completed", result.Status)
+	}
+	if len(result.Phases) != 3 {
+		t.Fatalf("len(phases) = %d, want 3: %+v", len(result.Phases), result.Phases)
+	}
+
+	// Ordering is deterministic and follows config order, regardless of
+	// goroutine scheduling of the parallel pair.
+	wantNames := []string{"a", "b", "c"}
+	for i, want := range wantNames {
+		if result.Phases[i].Name != want {
+			t.Fatalf("phases[%d].Name = %q, want %q (ordering must match config)", i, result.Phases[i].Name, want)
+		}
+		if result.Phases[i].Status != "completed" {
+			t.Fatalf("phases[%d] (%s).Status = %q, want completed", i, want, result.Phases[i].Status)
+		}
+		if result.Phases[i].DurationSeconds <= 0 {
+			t.Fatalf("phases[%d] (%s).DurationSeconds = %v, want > 0", i, want, result.Phases[i].DurationSeconds)
+		}
+	}
+
+	// Sanity: the mock should have been invoked for all three phases; the
+	// parallel partner should not have been skipped.
+	if mock.callCount() != 3 {
+		t.Fatalf("expected 3 dispatcher calls, got %d: %v", mock.callCount(), mock.callNames())
+	}
+}
+
 func TestRun_ParallelBothSucceed(t *testing.T) {
 	cfg := &config.Config{
 		Name: "test",
