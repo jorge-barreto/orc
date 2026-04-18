@@ -23,6 +23,34 @@ func TestHasState(t *testing.T) {
 	}
 }
 
+func TestIsAuditDir(t *testing.T) {
+	t.Run("empty dir is not an audit dir", func(t *testing.T) {
+		if IsAuditDir(t.TempDir()) {
+			t.Fatal("empty dir should not be an audit dir")
+		}
+	})
+	for _, sentinel := range []string{"timing.json", "costs.json", "state.json"} {
+		t.Run("detected by "+sentinel, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, sentinel), []byte("{}"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if !IsAuditDir(dir) {
+				t.Fatalf("dir with %s should be an audit dir", sentinel)
+			}
+		})
+	}
+	t.Run("unrelated file is not an audit dir", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "readme.md"), []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if IsAuditDir(dir) {
+			t.Fatal("dir without sentinel files should not be an audit dir")
+		}
+	})
+}
+
 func TestLoad_NoExistingState(t *testing.T) {
 	dir := t.TempDir()
 	st, err := Load(dir)

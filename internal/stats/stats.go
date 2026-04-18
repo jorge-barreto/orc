@@ -67,16 +67,6 @@ type WeekStat struct {
 	RunCount  int
 }
 
-// isAuditDir reports whether dir looks like an audit directory.
-func isAuditDir(dir string) bool {
-	for _, f := range []string{"timing.json", "costs.json", "state.json"} {
-		if _, err := os.Stat(filepath.Join(dir, f)); err == nil {
-			return true
-		}
-	}
-	return false
-}
-
 // loadRunData loads a RunData from an audit directory.
 // Returns (RunData, false) if the directory lacks state.json or cannot be loaded.
 func loadRunData(dir string) (RunData, bool) {
@@ -167,7 +157,7 @@ func CollectRuns(auditBaseDir string) ([]RunData, error) {
 		dir := filepath.Join(auditBaseDir, e.Name())
 
 		// Flat layout (including rotated): audit/<ticket>/ or audit/<ticket>-YYMMDD-HHMMSS/
-		if isAuditDir(dir) {
+		if state.IsAuditDir(dir) {
 			if rd, ok := loadRunData(dir); ok {
 				if rd.Ticket == "" {
 					rd.Ticket = e.Name()
@@ -187,7 +177,7 @@ func CollectRuns(auditBaseDir string) ([]RunData, error) {
 				continue
 			}
 			ticketDir := filepath.Join(dir, se.Name())
-			if !isAuditDir(ticketDir) {
+			if !state.IsAuditDir(ticketDir) {
 				continue
 			}
 			if rd, ok := loadRunData(ticketDir); ok {

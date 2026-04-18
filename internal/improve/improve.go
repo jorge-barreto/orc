@@ -93,7 +93,7 @@ func readAuditSummary(projectRoot string) string {
 		dir := filepath.Join(auditBase, e.Name())
 
 		// Flat layout: audit/<ticket>/
-		if isTicketAuditDir(dir) {
+		if state.IsAuditDir(dir) {
 			t, tErr := state.LoadTiming(dir)
 			var start time.Time
 			if tErr == nil {
@@ -120,7 +120,7 @@ func readAuditSummary(projectRoot string) string {
 				continue
 			}
 			ticketDir := filepath.Join(dir, se.Name())
-			if !isTicketAuditDir(ticketDir) {
+			if !state.IsAuditDir(ticketDir) {
 				continue
 			}
 			t, tErr := state.LoadTiming(ticketDir)
@@ -217,17 +217,6 @@ func readAuditSummary(projectRoot string) string {
 	}
 	return "The following data is from previous workflow runs. Use it to inform your suggestions.\n\n" +
 		strings.Join(parts, "\n\n")
-}
-
-// isTicketAuditDir checks if a directory looks like a ticket audit dir
-// (contains timing.json, costs.json, or state.json).
-func isTicketAuditDir(dir string) bool {
-	for _, f := range []string{"timing.json", "costs.json", "state.json"} {
-		if _, err := os.Stat(filepath.Join(dir, f)); err == nil {
-			return true
-		}
-	}
-	return false
 }
 
 func gatherPhaseLogs(auditDir, artifactsDir string) string {

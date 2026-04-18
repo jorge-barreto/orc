@@ -61,6 +61,18 @@ func HasState(artifactsDir string) bool {
 	return err == nil
 }
 
+// IsAuditDir reports whether dir looks like an audit directory — i.e.
+// contains any of the sentinel files (timing.json, costs.json, or
+// state.json). Used by stats and improve to discover past-run dirs.
+func IsAuditDir(dir string) bool {
+	for _, f := range []string{"timing.json", "costs.json", "state.json"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 // ResolveStateDir finds the directory containing state.json for a ticket.
 // It checks the live artifacts directory first, then falls back to the
 // latest history entry. Returns an error if no state is found anywhere.

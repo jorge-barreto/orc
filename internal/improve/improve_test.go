@@ -610,17 +610,6 @@ func TestReadAuditSummary_WorkflowNamespaced(t *testing.T) {
 	}
 }
 
-func TestIsTicketAuditDir(t *testing.T) {
-	dir := t.TempDir()
-	if isTicketAuditDir(dir) {
-		t.Fatal("empty dir should not be a ticket audit dir")
-	}
-	os.WriteFile(filepath.Join(dir, "timing.json"), []byte("{}"), 0644)
-	if !isTicketAuditDir(dir) {
-		t.Fatal("dir with timing.json should be a ticket audit dir")
-	}
-}
-
 func TestCopyOrcDir(t *testing.T) {
 	srcDir := t.TempDir()
 	os.MkdirAll(filepath.Join(srcDir, ".orc", "phases"), 0755)
