@@ -1,0 +1,1 @@
+Write a detailed 2000-word essay about the history of software testing. Cover: early origins with punched cards, the rise of structured testing, the TDD movement, the shift to automated CI, and modern practices. Be thorough — aim for at least 2000 words. Do not create any files; return the essay as your text response only.
