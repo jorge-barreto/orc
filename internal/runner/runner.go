@@ -39,8 +39,7 @@ type Runner struct {
 	skipped      map[string]bool
 	auditDir     string
 	baseCommit   string
-	attemptCount map[int]int         // tracks phase attempts (includes pre-run hook failures where dispatch was skipped)
-	sleepFn      func(time.Duration) // injectable for testing; defaults to time.Sleep
+	attemptCount map[int]int // tracks phase attempts (includes pre-run hook failures where dispatch was skipped)
 }
 
 // appendPhaseLog appends a message to the phase log file.
@@ -52,14 +51,6 @@ func appendPhaseLog(artifactsDir string, phaseIdx int, msg string) {
 	}
 	defer f.Close()
 	fmt.Fprint(f, msg)
-}
-
-func (r *Runner) sleep(d time.Duration) {
-	if r.sleepFn != nil {
-		r.sleepFn(d)
-		return
-	}
-	time.Sleep(d)
 }
 
 // writePhaseMetadata writes structured metadata for a completed phase.
@@ -910,14 +901,10 @@ func (r *Runner) waitForRateLimit(ctx context.Context, phaseName string, resetAt
 			sleepDur = remaining
 		}
 
-		if ctx.Err() != nil {
+		select {
+		case <-ctx.Done():
 			return ctx.Err()
-		}
-
-		r.sleep(sleepDur)
-
-		if ctx.Err() != nil {
-			return ctx.Err()
+		case <-time.After(sleepDur):
 		}
 
 		remaining -= sleepDur

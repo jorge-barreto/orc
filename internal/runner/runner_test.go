@@ -4338,7 +4338,7 @@ func TestRun_RateLimitWait_AutoMode(t *testing.T) {
 			return &dispatch.Result{
 				ExitCode:         1,
 				RateLimited:      true,
-				RateLimitResetAt: time.Now().Unix() + 1,
+				RateLimitResetAt: time.Now().Unix() - 59,
 				SessionID:        "rate-limited-session",
 			}, nil
 		}
@@ -4347,15 +4347,16 @@ func TestRun_RateLimitWait_AutoMode(t *testing.T) {
 
 	r := newTestRunner(t, cfg, customMock)
 	r.Env.AutoMode = true
-	sleepCalled := false
-	r.sleepFn = func(d time.Duration) { sleepCalled = true }
 
 	err := r.Run(context.Background())
 	if err != nil {
 		t.Fatalf("expected success after retry, got %v", err)
 	}
-	if !sleepCalled {
-		t.Fatal("sleepFn was not called — wait logic did not execute")
+	mu.Lock()
+	gotCalls := callCount
+	mu.Unlock()
+	if gotCalls != 2 {
+		t.Fatalf("callCount = %d, want 2 (wait loop did not engage + retry)", gotCalls)
 	}
 	if r.State.GetStatus() != state.StatusCompleted {
 		t.Fatalf("status = %q, want completed", r.State.GetStatus())
@@ -4408,7 +4409,6 @@ func TestRun_RateLimitOverBudget_NoWait(t *testing.T) {
 	}}
 	r := newTestRunner(t, cfg, customMock)
 	r.Env.AutoMode = true
-	r.sleepFn = func(d time.Duration) { t.Fatal("should not sleep when over budget") }
 
 	err := r.Run(context.Background())
 	if err == nil {
@@ -4436,9 +4436,7 @@ func TestRun_RateLimitInterrupted(t *testing.T) {
 	}}
 	r := newTestRunner(t, cfg, customMock)
 	r.Env.AutoMode = true
-	r.sleepFn = func(d time.Duration) {
-		cancel()
-	}
+	time.AfterFunc(100*time.Millisecond, cancel)
 
 	err := r.Run(ctx)
 	if err == nil {
@@ -4466,7 +4464,7 @@ func TestRun_RateLimitTimingExcludesWait(t *testing.T) {
 			return &dispatch.Result{
 				ExitCode:         1,
 				RateLimited:      true,
-				RateLimitResetAt: time.Now().Unix() + 1,
+				RateLimitResetAt: time.Now().Unix() - 59,
 				SessionID:        "sess-1",
 			}, nil
 		}
@@ -4474,7 +4472,6 @@ func TestRun_RateLimitTimingExcludesWait(t *testing.T) {
 	}}
 	r := newTestRunner(t, cfg, customMock)
 	r.Env.AutoMode = true
-	r.sleepFn = func(d time.Duration) {}
 
 	err := r.Run(context.Background())
 	if err != nil {
@@ -4520,7 +4517,6 @@ func TestRun_RateLimit_DefaultExits(t *testing.T) {
 	}}
 	r := newTestRunner(t, cfg, customMock)
 	r.Env.AutoMode = true
-	r.sleepFn = func(d time.Duration) { t.Fatal("should not sleep when on-rate-limit defaults to exit") }
 
 	err := r.Run(context.Background())
 	if err == nil {
@@ -4553,7 +4549,7 @@ func TestRun_RateLimit_ConfigWaitOptsIn(t *testing.T) {
 			return &dispatch.Result{
 				ExitCode:         1,
 				RateLimited:      true,
-				RateLimitResetAt: time.Now().Unix() + 1,
+				RateLimitResetAt: time.Now().Unix() - 59,
 				SessionID:        "rate-limited-session",
 			}, nil
 		}
@@ -4561,14 +4557,15 @@ func TestRun_RateLimit_ConfigWaitOptsIn(t *testing.T) {
 	}}
 	r := newTestRunner(t, cfg, customMock)
 	r.Env.AutoMode = true
-	sleepCalled := false
-	r.sleepFn = func(d time.Duration) { sleepCalled = true }
 
 	if err := r.Run(context.Background()); err != nil {
 		t.Fatalf("expected success after retry, got %v", err)
 	}
-	if !sleepCalled {
-		t.Fatal("sleepFn was not called — wait logic did not execute")
+	mu.Lock()
+	gotCalls := callCount
+	mu.Unlock()
+	if gotCalls != 2 {
+		t.Fatalf("callCount = %d, want 2 (wait loop did not engage + retry)", gotCalls)
 	}
 	if r.State.GetStatus() != state.StatusCompleted {
 		t.Fatalf("status = %q, want completed", r.State.GetStatus())
@@ -4594,7 +4591,6 @@ func TestRun_RateLimit_PhaseOverride(t *testing.T) {
 	}}
 	r := newTestRunner(t, cfg, customMock)
 	r.Env.AutoMode = true
-	r.sleepFn = func(d time.Duration) { t.Fatal("phase override exit should not sleep") }
 
 	err := r.Run(context.Background())
 	if err == nil {
@@ -4630,5 +4626,36 @@ func TestRun_RateLimit_InteractiveAlsoUsesNewCode(t *testing.T) {
 	assertExitCode(t, err, ExitRateLimit)
 	if r.State.GetFailureCategory() != state.FailCategoryRateLimit {
 		t.Errorf("FailureCategory = %q, want %q", r.State.GetFailureCategory(), state.FailCategoryRateLimit)
+	}
+}
+
+// TestWaitForRateLimit_CtxCancelReturnsPromptly verifies that a context
+// cancellation during the wait loop returns within sub-second latency,
+// not after a 60s heartbeat chunk completes.
+func TestWaitForRateLimit_CtxCancelReturnsPromptly(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Phases: []config.Phase{
+			{Name: "a", Type: "agent", Prompt: "unused.md", Model: "sonnet"},
+		},
+	}
+	r := newTestRunner(t, cfg, newMock())
+	r.Timing = state.NewTiming(nil)
+	r.auditDir = t.TempDir()
+	r.Timing.AddStart("a")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(100*time.Millisecond, cancel)
+
+	resetAt := time.Now().Unix() + 3600
+	start := time.Now()
+	err := r.waitForRateLimit(ctx, "a", resetAt)
+	elapsed := time.Since(start)
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("waitForRateLimit took %v after cancel, want < 2s", elapsed)
 	}
 }

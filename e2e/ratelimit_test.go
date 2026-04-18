@@ -111,9 +111,6 @@ phases:
 // actually waiting an hour, we start orc and observe it's still running
 // after 2s (would have exited immediately with code 8 otherwise).
 func TestRateLimit_ConfigWaitEngagesWaitLoop(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping 60s+ wait-engagement test in -short mode")
-	}
 	cfg := `name: rl-wait
 on-rate-limit: wait
 phases:
@@ -148,18 +145,20 @@ phases:
 		t.Errorf("orc exited early (err=%v, code=%d); on-rate-limit: wait should have engaged wait loop.\nstdout: %s\nstderr: %s",
 			err, cmd.ProcessState.ExitCode(), stdout.String(), stderr.String())
 	case <-time.After(2 * time.Second):
-		// Still running after 2s → wait is engaged. Good. Kill it.
+		// Still running after 2s → wait is engaged. Good. Kill it and
+		// verify SIGINT exits the wait loop promptly.
+		sigStart := time.Now()
 		_ = cmd.Process.Signal(os.Interrupt)
 		<-done
+		if elapsed := time.Since(sigStart); elapsed > 5*time.Second {
+			t.Errorf("SIGINT took too long to exit wait loop: %v", elapsed)
+		}
 	}
 }
 
 // TestRateLimit_PhaseOverrideWaitInsideExitConfig verifies that a phase's
 // on-rate-limit: wait overrides a config's on-rate-limit: exit.
 func TestRateLimit_PhaseOverrideWaitInsideExitConfig(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping 60s+ wait-engagement test in -short mode")
-	}
 	cfg := `name: rl-override
 on-rate-limit: exit
 phases:
@@ -190,7 +189,11 @@ phases:
 	case <-done:
 		t.Errorf("orc exited early; phase override (wait) should have engaged wait loop despite config exit")
 	case <-time.After(2 * time.Second):
+		sigStart := time.Now()
 		_ = cmd.Process.Signal(os.Interrupt)
 		<-done
+		if elapsed := time.Since(sigStart); elapsed > 5*time.Second {
+			t.Errorf("SIGINT took too long to exit wait loop: %v", elapsed)
+		}
 	}
 }
