@@ -70,6 +70,44 @@ func NewWorkspace(t *testing.T, configYAML string) *Workspace {
 	}
 }
 
+// WriteWorkflow adds a .orc/workflows/<name>.yaml file. After calling,
+// the workspace is in multi-workflow mode and artifacts for this workflow
+// land at .orc/artifacts/<name>/<ticket>/. Does not modify the main
+// ArtifactsDir — callers should use ArtifactsDirForWorkflow() to resolve
+// paths per-workflow in multi-workflow tests.
+func (w *Workspace) WriteWorkflow(name, configYAML string) {
+	w.t.Helper()
+	dir := filepath.Join(w.Dir, ".orc", "workflows")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		w.t.Fatalf("mkdir workflows: %v", err)
+	}
+	path := filepath.Join(dir, name+".yaml")
+	if err := os.WriteFile(path, []byte(configYAML), 0o644); err != nil {
+		w.t.Fatalf("write workflow %s: %v", name, err)
+	}
+}
+
+// ArtifactsDirForWorkflow returns the per-workflow artifacts path for
+// this workspace. When workflowName is "", returns the default flat path.
+func (w *Workspace) ArtifactsDirForWorkflow(workflowName string) string {
+	if workflowName == "" {
+		return filepath.Join(w.Dir, ".orc", "artifacts", w.Ticket)
+	}
+	return filepath.Join(w.Dir, ".orc", "artifacts", workflowName, w.Ticket)
+}
+
+// DeleteDefaultConfig removes .orc/config.yaml. Useful when a test wants
+// a pure multi-workflow layout with no default config. NewWorkspace
+// always writes a config.yaml; call this after WriteWorkflow to achieve
+// the "workflows only" layout.
+func (w *Workspace) DeleteDefaultConfig() {
+	w.t.Helper()
+	path := filepath.Join(w.Dir, ".orc", "config.yaml")
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		w.t.Fatalf("remove config.yaml: %v", err)
+	}
+}
+
 // WritePrompt writes a prompt file at .orc/<relpath>.
 func (w *Workspace) WritePrompt(relpath, body string) {
 	w.t.Helper()
