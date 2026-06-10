@@ -860,6 +860,33 @@ func TestVersionDefaults(t *testing.T) {
 	}
 }
 
+func TestVersionString_BuildInfoFallback(t *testing.T) {
+	origV, origC, origD := version, commit, buildDate
+	t.Cleanup(func() { version, commit, buildDate = origV, origC, origD })
+
+	// Simulate an unstamped (`go install`) build: ldflags did not run.
+	version, commit, buildDate = "dev", "none", "unknown"
+
+	// When BuildInfo carries a real module version, it should be used.
+	got := resolveVersion("v0.1.0")
+	if got != "v0.1.0" {
+		t.Errorf("resolveVersion(real) = %q, want %q", got, "v0.1.0")
+	}
+
+	// When BuildInfo has no usable version, fall back to the ldflags default.
+	for _, bad := range []string{"", "(devel)"} {
+		if got := resolveVersion(bad); got != "dev" {
+			t.Errorf("resolveVersion(%q) = %q, want ldflags default %q", bad, got, "dev")
+		}
+	}
+
+	// When ldflags DID set a version, BuildInfo is ignored entirely.
+	version = "v9.9.9"
+	if got := resolveVersion("v0.1.0"); got != "v9.9.9" {
+		t.Errorf("resolveVersion with ldflags set = %q, want %q (ldflags wins)", got, "v9.9.9")
+	}
+}
+
 func TestRunCmd_NoDisambiguationHint_SingleArg(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, ".orc"), 0755); err != nil {
