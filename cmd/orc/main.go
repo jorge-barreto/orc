@@ -22,9 +22,22 @@ import (
 	cli "github.com/urfave/cli/v3"
 )
 
+// Overridden at build time via -ldflags
+// '-X main.version=... -X main.commit=... -X main.buildDate=...'.
+var (
+	version   = "dev"
+	commit    = "none"
+	buildDate = "unknown"
+)
+
+func versionString() string {
+	return fmt.Sprintf("%s (%s, built %s)", version, commit, buildDate)
+}
+
 func main() {
 	app := &cli.Command{
 		Name:        "orc",
+		Version:     versionString(),
 		Usage:       "Deterministic agent orchestrator",
 		Description: "Run 'orc docs' for documentation on config syntax, variables, phases, and more.",
 		Flags: []cli.Flag{
