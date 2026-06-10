@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -30,8 +31,27 @@ var (
 	buildDate = "unknown"
 )
 
+// resolveVersion picks the version string. ldflags (`make build`, GoReleaser)
+// win when set; otherwise fall back to the module version Go embeds for a
+// `go install …@vX.Y.Z` build. biVersion is BuildInfo.Main.Version (or "").
+func resolveVersion(biVersion string) string {
+	if version != "dev" {
+		return version // ldflags set it explicitly
+	}
+	if biVersion != "" && biVersion != "(devel)" {
+		return biVersion
+	}
+	return version // "dev"
+}
+
 func versionString() string {
-	return fmt.Sprintf("%s (%s, built %s)", version, commit, buildDate)
+	v := version
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		v = resolveVersion(bi.Main.Version)
+	} else {
+		v = resolveVersion("")
+	}
+	return fmt.Sprintf("%s (%s, built %s)", v, commit, buildDate)
 }
 
 func main() {
