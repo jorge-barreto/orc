@@ -839,6 +839,27 @@ func TestRunCmd_PositionalDisambiguationHint(t *testing.T) {
 	}
 }
 
+func TestVersionString(t *testing.T) {
+	// Format contract — downstream tooling/bug reports parse this line.
+	origV, origC, origD := version, commit, buildDate
+	t.Cleanup(func() { version, commit, buildDate = origV, origC, origD })
+
+	version, commit, buildDate = "v0.1.0", "abc1234", "2026-06-10T12:00:00Z"
+	got := versionString()
+	want := "v0.1.0 (abc1234, built 2026-06-10T12:00:00Z)"
+	if got != want {
+		t.Errorf("versionString() = %q, want %q", got, want)
+	}
+}
+
+func TestVersionDefaults(t *testing.T) {
+	// The unset-ldflags fallback for `go build` without make. If these
+	// regress, dev builds lose version metadata silently.
+	if version != "dev" || commit != "none" || buildDate != "unknown" {
+		t.Fatalf("defaults drifted: version=%q commit=%q buildDate=%q", version, commit, buildDate)
+	}
+}
+
 func TestRunCmd_NoDisambiguationHint_SingleArg(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, ".orc"), 0755); err != nil {

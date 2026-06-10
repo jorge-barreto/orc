@@ -65,6 +65,19 @@ Validation (`internal/config/validate.go`) enforces: unique phase names, `loop.g
 - The binary refuses to run if `CLAUDECODE` env var is set (prevents nesting inside Claude Code)
 - Go uses tabs for indentation (never spaces). A PostToolUse hook runs `gofmt -w` automatically after edits, but write idiomatic Go formatting from the start.
 
+## Releases
+
+orc ships as a single Go binary, released on **plain `v*` git tags** (e.g.
+`v0.1.0`). Pushing one fires `.github/workflows/release.yml` → GoReleaser
+builds the linux/darwin × amd64/arm64 binaries + checksums + a GitHub Release,
+and pushes a Homebrew formula to `jorge-barreto/homebrew-tap`.
+
+- Cut a release: `git tag -a v0.1.0 -m "..." && git push origin v0.1.0`.
+- GoReleaser strips the leading `v`, so tags are plain semver.
+- `make build` stamps the version via `git describe --tags --match 'v*'`.
+- Requires the `HOMEBREW_TAP_PAT` repo secret (shared with horde) for the
+  formula push; without it the binaries/Release still publish.
+
 ## Beads: Work Tracking
 
 Beads is a **work tracker** that persists across sessions. The orc roadmap (ROADMAP.md) has been decomposed into beads: each Wave is an epic, each roadmap item (R-NNN, P-NNN) is a task bead.

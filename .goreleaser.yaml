@@ -1,0 +1,57 @@
+# GoReleaser builds the orc CLI on a v* tag: multi-OS/arch binaries, a GitHub
+# Release with checksums, and a Homebrew formula. Version metadata is injected
+# into the same main.* vars that `make build` sets.
+version: 2
+
+project_name: orc
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: orc
+    main: ./cmd/orc
+    binary: orc
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .ShortCommit }}
+      - -X main.buildDate={{ .Date }}
+
+archives:
+  - id: orc
+    formats: [tar.gz]
+    name_template: "orc_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  github:
+    owner: jorge-barreto
+    name: orc
+  name_template: "orc {{ .Tag }}"
+
+changelog:
+  use: github
+  sort: asc
+
+brews:
+  - name: orc
+    repository:
+      owner: jorge-barreto
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_PAT }}"
+    homepage: "https://github.com/jorge-barreto/orc"
+    description: "Deterministic agent orchestrator"
+    license: "MIT"
+    commit_author:
+      name: github-actions[bot]
+      email: github-actions[bot]@users.noreply.github.com
+    test: |
+      system "#{bin}/orc", "--version"
