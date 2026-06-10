@@ -60,19 +60,22 @@ You define your workflow as a series of **phases** in a YAML config file. Each p
 
 ## Installation
 
-### From source
+**Homebrew** (macOS / Linux):
 
 ```bash
-go install github.com/jorge-barreto/orc/cmd/orc@latest
+brew install jorge-barreto/tap/orc
 ```
 
-### Clone and build
+**Go install** (pin a released version):
 
 ```bash
-git clone https://github.com/jorge-barreto/orc.git
-cd orc
-make build    # produces ./orc binary
-make install  # installs to $GOPATH/bin
+go install github.com/jorge-barreto/orc/cmd/orc@v0.1.0
+```
+
+**From source:**
+
+```bash
+make install  # installs to $GOPATH/bin, stamped with the git-describe version
 ```
 
 ## Quick Start
