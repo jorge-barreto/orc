@@ -1,4 +1,5 @@
 /orc
+/dist/
 .orc/artifacts/
 .orc/audit/
 .claude/
