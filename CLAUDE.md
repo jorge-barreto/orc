@@ -73,10 +73,15 @@ builds the linux/darwin × amd64/arm64 binaries + checksums + a GitHub Release,
 and pushes a Homebrew formula to `jorge-barreto/homebrew-tap`.
 
 - Cut a release: `git tag -a v0.1.0 -m "..." && git push origin v0.1.0`.
-- GoReleaser strips the leading `v`, so tags are plain semver.
+- GoReleaser strips the leading `v`, so tags are plain semver. Archive names
+  are `orc_<version-without-v>_<os>_<arch>.tar.gz` alongside a `checksums.txt`.
 - `make build` stamps the version via `git describe --tags --match 'v*'`.
 - Requires the `HOMEBREW_TAP_PAT` repo secret (shared with horde) for the
   formula push; without it the binaries/Release still publish.
+- `scripts/install.sh` is the `curl | sh` installer documented in the README.
+  It resolves the latest tag, downloads the matching tarball, verifies it
+  against `checksums.txt`, and installs the binary. Keep its archive-name
+  template in sync with `.goreleaser.yaml` if the naming ever changes.
 
 ## Beads: Work Tracking
 

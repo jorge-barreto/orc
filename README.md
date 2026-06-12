@@ -60,6 +60,24 @@ You define your workflow as a series of **phases** in a YAML config file. Each p
 
 ## Installation
 
+**Quick install** (Linux / macOS) — downloads the latest release binary, verifies its checksum, and installs it:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/jorge-barreto/orc/main/scripts/install.sh | sh
+```
+
+The script auto-detects your OS and architecture (linux/darwin × amd64/arm64) and installs to `/usr/local/bin` when writable, otherwise `~/.local/bin`. Override with environment variables:
+
+```bash
+# Pin a specific version
+curl -sSL https://raw.githubusercontent.com/jorge-barreto/orc/main/scripts/install.sh | ORC_VERSION=v0.1.0 sh
+
+# Install to a custom directory
+curl -sSL https://raw.githubusercontent.com/jorge-barreto/orc/main/scripts/install.sh | ORC_BIN_DIR=$HOME/bin sh
+```
+
+Prefer to read before you run? Inspect [`scripts/install.sh`](scripts/install.sh), or grab a tarball directly from the [Releases page](https://github.com/jorge-barreto/orc/releases).
+
 **Homebrew** (macOS / Linux):
 
 ```bash
