@@ -497,7 +497,8 @@ func (e *evalRunner) runCase(ctx context.Context, caseName string) (CaseResult, 
 	}
 
 	runResult, _ := RunWorkflow(ctx, worktreePath, fixture.Ticket, e.workflowName, fixture.Vars)
-	criterionResults, rubricErr := EvaluateRubric(ctx, rubric, runResult.ArtifactsDir, worktreePath, e.projectRoot)
+	expandedVars := expandFixtureVars(fixture.Vars, sortedKeys(fixture.Vars))
+	criterionResults, rubricErr := EvaluateRubric(ctx, rubric, runResult.ArtifactsDir, e.projectRoot, expandedVars)
 	if rubricErr != nil {
 		fmt.Fprintf(os.Stderr, "  warning: rubric evaluation error for %q: %v\n", caseName, rubricErr)
 	}

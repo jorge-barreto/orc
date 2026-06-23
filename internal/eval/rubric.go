@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -61,8 +62,56 @@ func filteredEnv(extras ...string) []string {
 	return append(env, extras...)
 }
 
-// EvaluateRubric runs all criteria in the rubric and returns results.
-func EvaluateRubric(ctx context.Context, rubric *Rubric, artifactsDir, worktreePath, projectRoot string) ([]CriterionResult, error) {
+// expandFixtureVars expands var-in-var references in declaration order, so a
+// later var like "$FIRST/leaf" resolves against earlier vars. Order is the
+// fixture's var key order.
+func expandFixtureVars(vars map[string]string, order []string) map[string]string {
+	result := make(map[string]string, len(vars))
+	lookup := make(map[string]string, len(vars))
+	for _, k := range order {
+		v, ok := vars[k]
+		if !ok {
+			continue
+		}
+		expanded := dispatch.ExpandVars(v, lookup)
+		result[k] = expanded
+		lookup[k] = expanded
+	}
+	// Include any keys not present in order (defensive), unexpanded.
+	for k, v := range vars {
+		if _, done := result[k]; !done {
+			result[k] = v
+		}
+	}
+	return result
+}
+
+// sortedKeys returns the keys of m in alphabetical order. Production callers
+// use this to give expandFixtureVars a deterministic order, since
+// Fixture.Vars is an unordered map and cannot preserve YAML declaration order.
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// EvaluateRubric runs all criteria against the run's artifacts. Grader
+// subprocesses run with cwd = projectRoot and receive the fixture vars
+// (as KEY and ORC_KEY); paths resolve from the live project.
+func EvaluateRubric(ctx context.Context, rubric *Rubric, artifactsDir, projectRoot string, vars map[string]string) ([]CriterionResult, error) {
+	varEnv := make([]string, 0, len(vars)*2)
+	for k, v := range vars {
+		varEnv = append(varEnv, k+"="+v, "ORC_"+k+"="+v)
+	}
+	baseExtras := append([]string{
+		"ARTIFACTS_DIR=" + artifactsDir,
+		"WORK_DIR=" + projectRoot,
+		"PROJECT_ROOT=" + projectRoot,
+	}, varEnv...)
+
 	var results []CriterionResult
 	for _, c := range rubric.Criteria {
 		if ctx.Err() != nil {
@@ -71,8 +120,8 @@ func EvaluateRubric(ctx context.Context, rubric *Rubric, artifactsDir, worktreeP
 
 		if c.Check != "" {
 			cmd := exec.CommandContext(ctx, "bash", "-c", c.Check)
-			cmd.Dir = worktreePath
-			cmd.Env = filteredEnv("ARTIFACTS_DIR="+artifactsDir, "WORK_DIR="+worktreePath, "PROJECT_ROOT="+projectRoot)
+			cmd.Dir = projectRoot
+			cmd.Env = filteredEnv(baseExtras...)
 			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 			cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) }
 			cmd.WaitDelay = 5 * time.Second
@@ -108,8 +157,8 @@ func EvaluateRubric(ctx context.Context, rubric *Rubric, artifactsDir, worktreeP
 				continue
 			}
 			cmd := exec.CommandContext(ctx, "claude", "-p", "--model", "sonnet", "--output-format", "text")
-			cmd.Dir = worktreePath
-			cmd.Env = filteredEnv("ARTIFACTS_DIR="+artifactsDir, "WORK_DIR="+worktreePath, "PROJECT_ROOT="+projectRoot)
+			cmd.Dir = projectRoot
+			cmd.Env = filteredEnv(baseExtras...)
 			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 			cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) }
 			cmd.WaitDelay = 5 * time.Second
