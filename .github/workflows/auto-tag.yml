@@ -12,6 +12,12 @@ on:
 permissions:
   contents: write # create + push the tag
 
+# Serialize tag/release runs: two VERSION-bumping merges in quick succession
+# must not overlap. Never cancel in-flight — we don't abort a tag/release.
+concurrency:
+  group: auto-tag
+  cancel-in-progress: false
+
 jobs:
   tag:
     name: tag
