@@ -42,7 +42,7 @@ You define your workflow as a series of **phases** in a YAML config file. Each p
 - **`orc debug`**: Analyze a phase execution — rendered prompt, tool call sequence, cost/token data, and exit status
 - **`orc doctor`**: AI-powered diagnostics for failed runs — gathers logs, timing, and feedback, then recommends next steps
 - **`orc improve`**: AI-assisted workflow refinement — one-shot or interactive editing of config and prompts
-- **`orc eval`**: Run eval cases against known scenarios to measure workflow quality, cost, and time — compare before and after workflow changes
+- **`orc eval`**: Run eval cases against known scenarios to measure workflow quality, cost, and time — compare before and after workflow changes, with a held-out grader the agent never sees
 - **`orc flow`**: Visualize the workflow as a rich flow diagram with loop regions, model badges, and hook annotations
 - **Prompt recipes**: `orc init --recipe` scaffolds from proven workflow patterns (simple, standard, full-pipeline, review-loop)
 
@@ -50,7 +50,7 @@ You define your workflow as a series of **phases** in a YAML config file. Each p
 - **Full audit trail**: Rendered prompts, agent logs, cost/token data, timing, and state all saved to `.orc/artifacts/`
 - **`orc report`**: Generate a run summary with timing, costs, phase outcomes, loop activity, and artifact listing — markdown or JSON
 - **`orc stats`**: Aggregate metrics across runs — success rate, cost/duration distributions, per-phase breakdown, failure categories, and weekly trends
-- **`orc eval`**: Measure workflow quality, cost, and time across eval cases pinned to known git refs — track score trends across config changes
+- **`orc eval`**: Measure workflow quality, cost, and time across eval cases pinned to known git refs — track score trends across config and rubric changes, and re-grade saved runs without re-running them
 - **Structured exit codes**: 0 (success), 1 (phase failure), 2 (timeout), 3 (config error), 4 (cost limit), 5 (interrupted), 6 (resume failure), 7 (infrastructure error), 8 (rate limit)
 
 ## Prerequisites
@@ -290,15 +290,23 @@ orc stats --json             # structured JSON output
 
 ### `orc eval [case]`
 
-Run eval cases to measure workflow quality. Each case is defined in `.orc/evals/<case>/` with a fixture (git ref + ticket) and rubric (scoring criteria). Runs the workflow in an isolated git worktree and evaluates results.
+Run eval cases to measure workflow quality. Each case is defined in `.orc/evals/<case>/` with a `fixture.yaml` (git ref + ticket + a required `spec:` field naming the agent-visible spec file) and a `rubric.yaml` (scoring criteria). orc replays the workflow in an isolated git worktree, then scores results against the rubric.
+
+The grader is **held out**: orc removes the entire `.orc/evals/` directory from the worktree before the workflow runs, so the agent never sees the rubric, judge prompts, or held-out tests — the grader is read from your live project at grade time only. As an opt-in convenience, orc exports `ORC_EVAL=1` and `ORC_SPEC_FILE=<abs path>` so a workflow that normally fetches a ticket from an external store can read the local spec instead (self-contained workflows need no change).
+
+Grading is separable: `--regrade` re-scores a saved run against the current rubric **without** re-running the workflow. It's a boolean flag — the optional run-id is a second positional argument.
 
 ```bash
 orc eval                     # run all eval cases
 orc eval bug-fix             # run a specific case
-orc eval --report            # show score history across runs
+orc eval bug-fix --regrade            # re-grade the latest saved run (no workflow re-run)
+orc eval bug-fix --regrade <run-id>   # re-grade a specific saved run
+orc eval --report            # show score history (workflow + rubric fingerprints)
 orc eval --list              # list available eval cases
 orc eval --json              # structured JSON output
 ```
+
+See `orc docs eval` for the full reference — fixture/rubric schema, judge criteria, the eval-mode contract, and fingerprinting.
 
 ### `orc doctor <ticket>`
 

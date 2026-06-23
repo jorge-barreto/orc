@@ -23,7 +23,7 @@ go test ./internal/runner/ -count=1
 
 ## Architecture
 
-Five internal packages, each with a single responsibility:
+Core internal packages, each with a single responsibility:
 
 ```
 cmd/orc/main.go           CLI entrypoint (urfave/cli/v3)
@@ -31,8 +31,11 @@ internal/config/           Config + Phase structs, YAML loading, validation
 internal/state/            State persistence (JSON), timing, artifacts dir, atomic writes
 internal/dispatch/         Phase executors: script (bash), agent (claude -p), gate (human y/n); workflow/branch dispatched by runner
 internal/runner/           Main state machine loop — drives the workflow
+internal/eval/             Eval cases: stage builder (held-out grader), rubric grading, --regrade (see Eval Subsystem below)
 internal/ux/               ANSI-colored terminal output, phase headers, status rendering
 ```
+
+(Other packages — `docs`, `doctor`, `improve`, `report`, `scaffold`, `stats`, etc. — back individual subcommands.)
 
 **Data flow:** `main.go` loads config, creates state, builds a `Runner`, and calls `runner.Run()`. The runner iterates phases, calling `dispatch.Dispatch()` for each. Dispatch routes to `RunScript`, `RunAgent`, or `RunGate` based on phase type. `workflow` and `branch` phases are handled directly by the runner via inline child `Runner.Run()` calls. State is persisted to `.orc/artifacts/` after each phase.
 
@@ -53,6 +56,16 @@ The runner loop handles: condition checks (skip phase if shell command exits non
 ### Config Validation Rules
 
 Validation (`internal/config/validate.go`) enforces: unique phase names, `loop.goto` must reference an earlier phase, `parallel-with` must reference an existing phase, `parallel-with` and `loop` cannot be combined, agent phases need a `prompt` file that exists on disk, model must be `opus`/`sonnet`/`haiku`/empty, ticket patterns are anchored for full-match semantics, workflow/branch phases must reference existing workflows in `.orc/workflows/`, and cross-workflow circular references are detected via DFS at load time. The deprecated `on-fail` field is rejected with a migration hint.
+
+### Eval Subsystem
+
+`internal/eval/` (driven by `cmd/orc/eval.go`) measures workflow quality. Cases live in `.orc/evals/<case>/`: a `fixture.yaml` (with a **required `spec:` field** naming the agent-visible spec file), the spec file, `rubric.yaml`, and any held-out judge prompts / test scripts.
+
+**Held-out grader.** Before the workflow runs, `internal/eval/stage.go` creates a git worktree at the fixture `ref`, then makes ONE curation commit that copies the case spec to `.orc/eval-spec/spec.md`, removes the ENTIRE `.orc/evals/` dir (so the grader is never visible to the agent), writes the LIVE workflow/prompt files, and gitignores `.orc/artifacts/` and `.orc/audit/`. The worktree is thus git-clean (clean-tree guards pass). orc reads the rubric from the LIVE project at grade time, never from the worktree.
+
+**Eval-mode contract (opt-in).** orc sets `ORC_EVAL=1` and `ORC_SPEC_FILE=<abs path>`; a workflow whose ticket-fetch hits an external store can branch on these to read the local spec instead. orc neither requires nor enforces it — a self-contained workflow needs no change.
+
+**Re-grading.** `orc eval <case> --regrade` re-scores a SAVED run against the CURRENT rubric without re-running the workflow. `--regrade` is a BOOLEAN flag; the optional run-id is a SECOND positional argument (`orc eval <case> --regrade <run-id>`), never `--regrade=<id>`. History tracks two fingerprints — the workflow fingerprint (config + prompts) and a per-case rubric fingerprint — so `--report` distinguishes a score change from a workflow edit vs. a rubric edit.
 
 ## Conventions
 
