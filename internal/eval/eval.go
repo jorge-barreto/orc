@@ -107,9 +107,18 @@ func LoadFixture(caseDir string) (*Fixture, error) {
 		"PHASE_INDEX": true, "PHASE_COUNT": true,
 		"WORKFLOW": true,
 	}
+	// Fixture vars are injected BARE (unprefixed) into the run env AND the
+	// grader env, last-wins, so a var named PATH/HOME/etc. would shadow the
+	// real one and corrupt bash/claude. Reject the dangerous names.
+	dangerous := map[string]bool{
+		"PATH": true, "HOME": true, "IFS": true, "SHELL": true,
+	}
 	for k := range f.Vars {
 		if builtins[k] {
 			return nil, fmt.Errorf("eval: fixture.yaml: var %q overrides a built-in variable", k)
+		}
+		if dangerous[k] || strings.HasPrefix(k, "LD_") || strings.HasPrefix(k, "DYLD_") {
+			return nil, fmt.Errorf("eval: fixture.yaml: var %q shadows a critical environment variable", k)
 		}
 	}
 	return &f, nil
@@ -343,6 +352,7 @@ func copyFile(src, dst string) error {
 // RunResult holds the outcome of running orc in a worktree.
 type RunResult struct {
 	ArtifactsDir    string
+	RunID           string // archived run id (history dir name), empty if not archived
 	CostUSD         float64
 	DurationSeconds float64
 	Status          string
@@ -423,9 +433,11 @@ func RunWorkflow(ctx context.Context, worktreePath, ticket, workflowName, specFi
 	// After a successful run, the runner archives artifacts to history/<run-id>/
 	// and removes the originals. Detect this and load from the archive instead.
 	loadDir := artifactsDir
+	runID := ""
 	if runErr == nil && !state.HasState(artifactsDir) {
 		if histDir, err := state.LatestHistoryDir(artifactsDir); err == nil && histDir != "" {
 			loadDir = histDir
+			runID = filepath.Base(histDir)
 		}
 	}
 
@@ -443,6 +455,7 @@ func RunWorkflow(ctx context.Context, worktreePath, ticket, workflowName, specFi
 
 	result := &RunResult{
 		ArtifactsDir: loadDir,
+		RunID:        runID,
 		Status:       status,
 		Err:          runErr,
 	}
@@ -540,8 +553,20 @@ func (e *evalRunner) runCase(ctx context.Context, caseName string) (CaseResult, 
 		return CaseResult{Name: caseName}, fmt.Errorf("eval: building stage for %q: %w", caseName, err)
 	}
 
-	runResult, _ := RunWorkflow(ctx, worktreePath, fixture.Ticket, e.workflowName, specFile, fixture.Vars)
+	// Expand var-in-var references ONCE and use the SAME map for the workflow
+	// run env and the grader env, so e.g. "$LIVE_ROOT/t" resolves identically
+	// for both sides.
 	expandedVars := expandFixtureVars(fixture.Vars, sortedKeys(fixture.Vars))
+
+	runResult, _ := RunWorkflow(ctx, worktreePath, fixture.Ticket, e.workflowName, specFile, expandedVars)
+
+	// Persist the archived run out of the throwaway worktree into the live
+	// project (before the deferred RemoveWorktree deletes it), so `--regrade`
+	// can find it later.
+	if err := persistRunArtifacts(e.projectRoot, e.workflowName, fixture.Ticket, worktreePath, runResult.RunID); err != nil {
+		fmt.Fprintf(os.Stderr, "  warning: failed to persist run artifacts for %q: %v\n", caseName, err)
+	}
+
 	criterionResults, rubricErr := EvaluateRubric(ctx, rubric, runResult.ArtifactsDir, e.projectRoot, expandedVars)
 	if rubricErr != nil {
 		fmt.Fprintf(os.Stderr, "  warning: rubric evaluation error for %q: %v\n", caseName, rubricErr)
@@ -573,7 +598,10 @@ func (e *evalRunner) runCase(ctx context.Context, caseName string) (CaseResult, 
 	if runResult.Err != nil {
 		result.WorkflowErr = runResult.Err.Error()
 	}
-	rubricFP, _ := RubricFingerprint(rubric, caseDir, e.projectRoot)
+	rubricFP, fpErr := RubricFingerprint(rubric, caseDir, e.projectRoot)
+	if fpErr != nil {
+		fmt.Fprintf(os.Stderr, "  warning: computing rubric fingerprint for %q: %v\n", caseName, fpErr)
+	}
 	result.RubricFingerprint = rubricFP
 	return result, nil
 }
@@ -639,6 +667,36 @@ func RunEval(ctx context.Context, projectRoot, configPath, workflowName string, 
 	return fingerprint, results, nil
 }
 
+// persistRunArtifacts copies an eval run's archived artifacts out of the
+// throwaway worktree (where the workflow ran with cwd=worktree, so artifacts
+// archived to <worktree>/.orc/artifacts/.../history/<run-id>/) into a stable
+// location under the LIVE project root — the same path RegradeEval reads from.
+// This must run BEFORE the worktree is removed.
+//
+// NOTE: the live location is keyed by workflow + ticket + run-id. If a real
+// (non-eval) run of the same workflow/ticket exists, the eval run is stored
+// alongside it under its own timestamped run-id (no collision in practice; a
+// real and eval ticket sharing a name is the user's choice).
+func persistRunArtifacts(projectRoot, workflowName, ticket, worktreePath, runID string) error {
+	if runID == "" {
+		return nil // run wasn't archived (e.g. failed run) — nothing to persist
+	}
+	srcArtifacts := state.ArtifactsDirForWorkflow(worktreePath, workflowName, ticket)
+	src := filepath.Join(state.HistoryDir(srcArtifacts), runID)
+	if !state.HasState(src) {
+		return fmt.Errorf("eval: persistRunArtifacts: archived run %q not found in worktree at %s", runID, src)
+	}
+	dstArtifacts := state.ArtifactsDirForWorkflow(projectRoot, workflowName, ticket)
+	dst := filepath.Join(state.HistoryDir(dstArtifacts), runID)
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return fmt.Errorf("eval: persistRunArtifacts: creating history dir: %w", err)
+	}
+	if err := state.CopyTree(src, dst); err != nil {
+		return fmt.Errorf("eval: persistRunArtifacts: copying run %q: %w", runID, err)
+	}
+	return nil
+}
+
 // resolveRunArtifactsDir returns the artifacts dir for a saved run. If runID is
 // empty, returns the most recent history entry. Errors if the named run or any
 // history is absent.
@@ -652,6 +710,11 @@ func resolveRunArtifactsDir(artifactsDir, runID string) (string, error) {
 			return "", fmt.Errorf("eval: no saved runs found under %s", state.HistoryDir(artifactsDir))
 		}
 		return latest, nil
+	}
+	// Defensive path-traversal guard: a run id must be a single path element.
+	// The cmd layer validates too, but RegradeEval is a library entry point.
+	if runID == "." || runID == ".." || runID != filepath.Base(runID) {
+		return "", fmt.Errorf("eval: invalid run id %q: must not contain path separators", runID)
 	}
 	dir := filepath.Join(state.HistoryDir(artifactsDir), runID)
 	if !state.HasState(dir) {
@@ -700,7 +763,10 @@ func RegradeEval(ctx context.Context, projectRoot, configPath, workflowName stri
 			failures = append(failures, cr.Name+": "+cr.Detail)
 		}
 	}
-	rubricFP, _ := RubricFingerprint(rubric, cdir, projectRoot)
+	rubricFP, fpErr := RubricFingerprint(rubric, cdir, projectRoot)
+	if fpErr != nil {
+		fmt.Fprintf(os.Stderr, "  warning: computing rubric fingerprint for %q: %v\n", caseName, fpErr)
+	}
 
 	result := CaseResult{
 		Name:              caseName,

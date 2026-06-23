@@ -65,9 +65,11 @@ func filteredEnv(extras ...string) []string {
 	return append(env, extras...)
 }
 
-// expandFixtureVars expands var-in-var references in declaration order, so a
-// later var like "$FIRST/leaf" resolves against earlier vars. Order is the
-// fixture's var key order.
+// expandFixtureVars expands var-in-var references following the given order, so
+// a var like "$FIRST/leaf" resolves against vars expanded earlier in that order.
+// Production callers pass sortedKeys (alphabetical), since Fixture.Vars is an
+// unordered map and cannot preserve YAML declaration order — so a var that
+// references another must sort after its dependency to resolve.
 func expandFixtureVars(vars map[string]string, order []string) map[string]string {
 	result := make(map[string]string, len(vars))
 	lookup := make(map[string]string, len(vars))
