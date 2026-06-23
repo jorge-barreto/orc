@@ -93,7 +93,7 @@ go install github.com/jorge-barreto/orc/cmd/orc@v0.1.0
 **From source:**
 
 ```bash
-make install  # installs to $GOPATH/bin, stamped with the git-describe version
+make install  # installs to $GOPATH/bin, stamped from the VERSION file (git-describe fallback)
 ```
 
 **Upgrading:** if you installed the release binary (via the install script or a
@@ -358,7 +358,7 @@ When no ticket is specified, analyzes the most recently executed ticket.
 
 ### `orc update`
 
-Update orc to the latest release. Downloads the matching release tarball, verifies it against the published `checksums.txt`, and atomically replaces the running binary.
+Update orc to the latest release. Downloads the matching release tarball, verifies it against the published `checksums.txt`, and atomically replaces the running binary. Downloads are verified against the release's published SHA-256 checksums (the same integrity check the install script uses); there is no separate signature.
 
 ```bash
 orc update            # install the latest release in place

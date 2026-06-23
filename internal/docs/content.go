@@ -1560,7 +1560,9 @@ orc update — Self-Update
 
 Update orc to the latest release. Downloads the matching release tarball,
 verifies it against the published checksums, and atomically replaces the
-running binary. Non-interactive.
+running binary. Non-interactive. Downloads are verified against the release's
+published SHA-256 checksums (the same integrity check the install script uses);
+there is no separate signature.
 
   orc update            Install the latest release in place
   orc update --check    Report whether an update is available; install nothing
