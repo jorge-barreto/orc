@@ -148,6 +148,15 @@ func BuildEnv(env *Environment) []string {
 		"WORK_DIR="+env.WorkDir,
 		"PROJECT_ROOT="+env.ProjectRoot,
 	)
+	// Passthrough allowlist: re-emit the eval-mode contract vars stripped by the
+	// ORC_* filter above so they reach workflow phases (the ticket-fetch seam
+	// reads ORC_EVAL/ORC_SPEC_FILE). Only when actually set, so non-eval runs
+	// and existing callers are unaffected. Placed last so nothing shadows them.
+	for _, k := range []string{"ORC_EVAL", "ORC_SPEC_FILE"} {
+		if v, ok := os.LookupEnv(k); ok {
+			result = append(result, k+"="+v)
+		}
+	}
 	return result
 }
 

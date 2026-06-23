@@ -28,6 +28,7 @@ import (
 type Fixture struct {
 	Ref         string            `yaml:"ref"`
 	Ticket      string            `yaml:"ticket"`
+	Spec        string            `yaml:"spec"`
 	Vars        map[string]string `yaml:"vars"`
 	Description string            `yaml:"description"`
 }
@@ -87,6 +88,16 @@ func LoadFixture(caseDir string) (*Fixture, error) {
 	if f.Ticket != filepath.Base(f.Ticket) {
 		return nil, fmt.Errorf("eval: fixture.yaml: ticket %q must not contain path separators", f.Ticket)
 	}
+	if f.Spec == "" {
+		return nil, fmt.Errorf("eval: fixture.yaml: spec is required")
+	}
+	// Path traversal check: spec must be a simple filename, not a path
+	if f.Spec == ".." || f.Spec == "." {
+		return nil, fmt.Errorf("eval: fixture.yaml: spec %q is not allowed", f.Spec)
+	}
+	if f.Spec != filepath.Base(f.Spec) {
+		return nil, fmt.Errorf("eval: fixture.yaml: spec %q must not contain path separators", f.Spec)
+	}
 	if !refRegex.MatchString(f.Ref) {
 		return nil, fmt.Errorf("eval: fixture.yaml: ref %q contains invalid characters", f.Ref)
 	}
@@ -96,9 +107,18 @@ func LoadFixture(caseDir string) (*Fixture, error) {
 		"PHASE_INDEX": true, "PHASE_COUNT": true,
 		"WORKFLOW": true,
 	}
+	// Fixture vars are injected BARE (unprefixed) into the run env AND the
+	// grader env, last-wins, so a var named PATH/HOME/etc. would shadow the
+	// real one and corrupt bash/claude. Reject the dangerous names.
+	dangerous := map[string]bool{
+		"PATH": true, "HOME": true, "IFS": true, "SHELL": true,
+	}
 	for k := range f.Vars {
 		if builtins[k] {
 			return nil, fmt.Errorf("eval: fixture.yaml: var %q overrides a built-in variable", k)
+		}
+		if dangerous[k] || strings.HasPrefix(k, "LD_") || strings.HasPrefix(k, "DYLD_") {
+			return nil, fmt.Errorf("eval: fixture.yaml: var %q shadows a critical environment variable", k)
 		}
 	}
 	return &f, nil
@@ -202,6 +222,36 @@ func ConfigFingerprint(configPath string, cfg *config.Config, projectRoot string
 	return hex.EncodeToString(h.Sum(nil))[:8], nil
 }
 
+// RubricFingerprint hashes the rubric's grading inputs: each criterion's
+// name/weight/expect/check/judge plus the contents of each judge prompt file
+// (resolved from projectRoot). Returns 8 hex chars, stable and
+// order-independent across criteria.
+func RubricFingerprint(rubric *Rubric, caseDir, projectRoot string) (string, error) {
+	h := sha256.New()
+	// Sort criteria by name for determinism.
+	names := make([]string, len(rubric.Criteria))
+	byName := make(map[string]Criterion, len(rubric.Criteria))
+	for i, c := range rubric.Criteria {
+		names[i] = c.Name
+		byName[c.Name] = c
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		c := byName[name]
+		fmt.Fprintf(h, "name:%s\nweight:%g\nexpect:%s\ncheck:%s\njudge:%t\n",
+			c.Name, c.Weight, c.Expect, c.Check, c.Judge)
+		if c.Judge && c.Prompt != "" {
+			data, err := os.ReadFile(filepath.Join(projectRoot, c.Prompt))
+			if err != nil {
+				return "", fmt.Errorf("eval: rubric fingerprint: reading %s: %w", c.Prompt, err)
+			}
+			fmt.Fprintf(h, "prompt:%s:", c.Prompt)
+			h.Write(data)
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))[:8], nil
+}
+
 func CreateWorktree(ctx context.Context, projectRoot, ref, caseName string) (string, error) {
 	tmpDir, err := os.MkdirTemp("", "orc-eval-"+caseName+"-")
 	if err != nil {
@@ -302,6 +352,7 @@ func copyFile(src, dst string) error {
 // RunResult holds the outcome of running orc in a worktree.
 type RunResult struct {
 	ArtifactsDir    string
+	RunID           string // archived run id (history dir name), empty if not archived
 	CostUSD         float64
 	DurationSeconds float64
 	Status          string
@@ -310,9 +361,10 @@ type RunResult struct {
 
 // HistoryEntry holds one eval run's summary.
 type HistoryEntry struct {
-	Timestamp         string                      `json:"timestamp"`
-	ConfigFingerprint string                      `json:"config_fingerprint"`
-	Cases             map[string]CaseHistoryEntry `json:"cases"`
+	Timestamp          string                      `json:"timestamp"`
+	ConfigFingerprint  string                      `json:"config_fingerprint"`
+	Cases              map[string]CaseHistoryEntry `json:"cases"`
+	RubricFingerprints map[string]string           `json:"rubric_fingerprints,omitempty"`
 }
 
 // CaseHistoryEntry holds the persisted result for one case.
@@ -321,6 +373,7 @@ type CaseHistoryEntry struct {
 	CostUSD         float64            `json:"cost_usd"`
 	DurationSeconds float64            `json:"duration_seconds"`
 	Details         map[string]float64 `json:"details"`
+	RegradedFrom    string             `json:"regraded_from,omitempty"`
 }
 
 // History holds all historical eval runs.
@@ -328,10 +381,33 @@ type History struct {
 	Runs []HistoryEntry `json:"runs"`
 }
 
+// buildEvalEnv returns the child env for an eval run: inherited env minus
+// CLAUDECODE/ORC_*, plus fixture vars (KEY and ORC_KEY), plus the eval-mode
+// contract (ORC_EVAL, ORC_SPEC_FILE).
+func buildEvalEnv(specFile string, vars map[string]string) []string {
+	env := make([]string, 0, len(os.Environ())+len(vars)*2+2)
+	for _, kv := range os.Environ() {
+		idx := strings.IndexByte(kv, '=')
+		if idx < 0 {
+			continue
+		}
+		key := kv[:idx]
+		if strings.HasPrefix(key, "CLAUDECODE") || strings.HasPrefix(key, "ORC_") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	for k, v := range vars {
+		env = append(env, k+"="+v, "ORC_"+k+"="+v)
+	}
+	env = append(env, "ORC_EVAL=1", "ORC_SPEC_FILE="+specFile)
+	return env
+}
+
 // RunWorkflow executes orc in the given worktree and returns the result.
 // It never returns a non-nil error — partial results are always returned
 // so the rubric evaluator can still run.
-func RunWorkflow(ctx context.Context, worktreePath, ticket, workflowName string, vars map[string]string) (*RunResult, error) {
+func RunWorkflow(ctx context.Context, worktreePath, ticket, workflowName, specFile string, vars map[string]string) (*RunResult, error) {
 	orcBinary, err := os.Executable()
 	if err != nil {
 		return &RunResult{Status: "failed", Err: fmt.Errorf("eval: os.Executable: %w", err)}, nil
@@ -346,24 +422,7 @@ func RunWorkflow(ctx context.Context, worktreePath, ticket, workflowName string,
 	cmd.WaitDelay = 5 * time.Second
 	cmd.Dir = worktreePath
 
-	// Build env: inherit, strip CLAUDECODE/ORC_*, add fixture vars
-	env := make([]string, 0, len(os.Environ())+len(vars)*2)
-	for _, kv := range os.Environ() {
-		idx := strings.IndexByte(kv, '=')
-		if idx < 0 {
-			continue
-		}
-		key := kv[:idx]
-		if strings.HasPrefix(key, "CLAUDECODE") || strings.HasPrefix(key, "ORC_") {
-			continue
-		}
-		env = append(env, kv)
-	}
-	for k, v := range vars {
-		env = append(env, k+"="+v)
-		env = append(env, "ORC_"+k+"="+v)
-	}
-	cmd.Env = env
+	cmd.Env = buildEvalEnv(specFile, vars)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -374,9 +433,11 @@ func RunWorkflow(ctx context.Context, worktreePath, ticket, workflowName string,
 	// After a successful run, the runner archives artifacts to history/<run-id>/
 	// and removes the originals. Detect this and load from the archive instead.
 	loadDir := artifactsDir
+	runID := ""
 	if runErr == nil && !state.HasState(artifactsDir) {
 		if histDir, err := state.LatestHistoryDir(artifactsDir); err == nil && histDir != "" {
 			loadDir = histDir
+			runID = filepath.Base(histDir)
 		}
 	}
 
@@ -394,6 +455,7 @@ func RunWorkflow(ctx context.Context, worktreePath, ticket, workflowName string,
 
 	result := &RunResult{
 		ArtifactsDir: loadDir,
+		RunID:        runID,
 		Status:       status,
 		Err:          runErr,
 	}
@@ -440,9 +502,10 @@ func SaveHistory(projectRoot string, h *History) error {
 // AppendResult adds a new history entry from the given case results.
 func (h *History) AppendResult(fingerprint string, cases []CaseResult) {
 	entry := HistoryEntry{
-		Timestamp:         time.Now().UTC().Format(time.RFC3339),
-		ConfigFingerprint: fingerprint,
-		Cases:             make(map[string]CaseHistoryEntry),
+		Timestamp:          time.Now().UTC().Format(time.RFC3339),
+		ConfigFingerprint:  fingerprint,
+		Cases:              make(map[string]CaseHistoryEntry),
+		RubricFingerprints: make(map[string]string),
 	}
 	for _, c := range cases {
 		entry.Cases[c.Name] = CaseHistoryEntry{
@@ -450,6 +513,10 @@ func (h *History) AppendResult(fingerprint string, cases []CaseResult) {
 			CostUSD:         c.CostUSD,
 			DurationSeconds: c.DurationSeconds,
 			Details:         c.Details,
+			RegradedFrom:    c.RegradedFrom,
+		}
+		if c.RubricFingerprint != "" {
+			entry.RubricFingerprints[c.Name] = c.RubricFingerprint
 		}
 	}
 	h.Runs = append(h.Runs, entry)
@@ -481,12 +548,26 @@ func (e *evalRunner) runCase(ctx context.Context, caseName string) (CaseResult, 
 	}
 	defer RemoveWorktree(e.projectRoot, worktreePath) //nolint:errcheck
 
-	if err := copyOrcDir(e.projectRoot, worktreePath, e.configPath, e.cfg); err != nil {
-		return CaseResult{Name: caseName}, fmt.Errorf("eval: copying .orc for %q: %w", caseName, err)
+	specFile, err := BuildStage(ctx, e.projectRoot, worktreePath, e.configPath, e.cfg, fixture, caseName)
+	if err != nil {
+		return CaseResult{Name: caseName}, fmt.Errorf("eval: building stage for %q: %w", caseName, err)
 	}
 
-	runResult, _ := RunWorkflow(ctx, worktreePath, fixture.Ticket, e.workflowName, fixture.Vars)
-	criterionResults, rubricErr := EvaluateRubric(ctx, rubric, runResult.ArtifactsDir, worktreePath, e.projectRoot)
+	// Expand var-in-var references ONCE and use the SAME map for the workflow
+	// run env and the grader env, so e.g. "$LIVE_ROOT/t" resolves identically
+	// for both sides.
+	expandedVars := expandFixtureVars(fixture.Vars, sortedKeys(fixture.Vars))
+
+	runResult, _ := RunWorkflow(ctx, worktreePath, fixture.Ticket, e.workflowName, specFile, expandedVars)
+
+	// Persist the archived run out of the throwaway worktree into the live
+	// project (before the deferred RemoveWorktree deletes it), so `--regrade`
+	// can find it later.
+	if err := persistRunArtifacts(e.projectRoot, e.workflowName, fixture.Ticket, worktreePath, runResult.RunID); err != nil {
+		fmt.Fprintf(os.Stderr, "  warning: failed to persist run artifacts for %q: %v\n", caseName, err)
+	}
+
+	criterionResults, rubricErr := EvaluateRubric(ctx, rubric, runResult.ArtifactsDir, e.projectRoot, expandedVars)
 	if rubricErr != nil {
 		fmt.Fprintf(os.Stderr, "  warning: rubric evaluation error for %q: %v\n", caseName, rubricErr)
 	}
@@ -517,6 +598,11 @@ func (e *evalRunner) runCase(ctx context.Context, caseName string) (CaseResult, 
 	if runResult.Err != nil {
 		result.WorkflowErr = runResult.Err.Error()
 	}
+	rubricFP, fpErr := RubricFingerprint(rubric, caseDir, e.projectRoot)
+	if fpErr != nil {
+		fmt.Fprintf(os.Stderr, "  warning: computing rubric fingerprint for %q: %v\n", caseName, fpErr)
+	}
+	result.RubricFingerprint = rubricFP
 	return result, nil
 }
 
@@ -578,5 +664,138 @@ func RunEval(ctx context.Context, projectRoot, configPath, workflowName string, 
 		}
 	}
 
+	return fingerprint, results, nil
+}
+
+// persistRunArtifacts copies an eval run's archived artifacts out of the
+// throwaway worktree (where the workflow ran with cwd=worktree, so artifacts
+// archived to <worktree>/.orc/artifacts/.../history/<run-id>/) into a stable
+// location under the LIVE project root — the same path RegradeEval reads from.
+// This must run BEFORE the worktree is removed.
+//
+// NOTE: the live location is keyed by workflow + ticket + run-id. If a real
+// (non-eval) run of the same workflow/ticket exists, the eval run is stored
+// alongside it under its own timestamped run-id (no collision in practice; a
+// real and eval ticket sharing a name is the user's choice).
+func persistRunArtifacts(projectRoot, workflowName, ticket, worktreePath, runID string) error {
+	if runID == "" {
+		return nil // run wasn't archived (e.g. failed run) — nothing to persist
+	}
+	srcArtifacts := state.ArtifactsDirForWorkflow(worktreePath, workflowName, ticket)
+	src := filepath.Join(state.HistoryDir(srcArtifacts), runID)
+	if !state.HasState(src) {
+		return fmt.Errorf("eval: persistRunArtifacts: archived run %q not found in worktree at %s", runID, src)
+	}
+	dstArtifacts := state.ArtifactsDirForWorkflow(projectRoot, workflowName, ticket)
+	dst := filepath.Join(state.HistoryDir(dstArtifacts), runID)
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return fmt.Errorf("eval: persistRunArtifacts: creating history dir: %w", err)
+	}
+	if err := state.CopyTree(src, dst); err != nil {
+		// Remove the partial copy so a later --regrade can't grade an incomplete
+		// run (mirrors state.ArchiveRun's cleanup of a half-written archive).
+		os.RemoveAll(dst)
+		return fmt.Errorf("eval: persistRunArtifacts: copying run %q: %w", runID, err)
+	}
+	return nil
+}
+
+// resolveRunArtifactsDir returns the artifacts dir for a saved run. If runID is
+// empty, returns the most recent history entry. Errors if the named run or any
+// history is absent.
+func resolveRunArtifactsDir(artifactsDir, runID string) (string, error) {
+	if runID == "" {
+		latest, err := state.LatestHistoryDir(artifactsDir)
+		if err != nil {
+			return "", fmt.Errorf("eval: locating latest run: %w", err)
+		}
+		if latest == "" {
+			return "", fmt.Errorf("eval: no saved runs found under %s", state.HistoryDir(artifactsDir))
+		}
+		return latest, nil
+	}
+	// Defensive path-traversal guard: a run id must be a single path element.
+	// The cmd layer validates too, but RegradeEval is a library entry point.
+	if runID == "." || runID == ".." || runID != filepath.Base(runID) {
+		return "", fmt.Errorf("eval: invalid run id %q: must not contain path separators", runID)
+	}
+	dir := filepath.Join(state.HistoryDir(artifactsDir), runID)
+	if !state.HasState(dir) {
+		return "", fmt.Errorf("eval: run not found: %q under %s", runID, state.HistoryDir(artifactsDir))
+	}
+	return dir, nil
+}
+
+// RegradeEval re-scores a saved run's artifacts against the current rubric,
+// without re-running the workflow. Appends a history row marked RegradedFrom.
+func RegradeEval(ctx context.Context, projectRoot, configPath, workflowName string, cfg *config.Config, caseName, runID string) (string, []CaseResult, error) {
+	if caseName == "" {
+		return "", nil, fmt.Errorf("eval: --regrade requires a case name")
+	}
+	cdir := caseDirFor(projectRoot, caseName)
+	fixture, err := LoadFixture(cdir)
+	if err != nil {
+		return "", nil, fmt.Errorf("eval: loading fixture for %q: %w", caseName, err)
+	}
+	rubric, err := LoadRubric(cdir, projectRoot)
+	if err != nil {
+		return "", nil, fmt.Errorf("eval: loading rubric for %q: %w", caseName, err)
+	}
+
+	baseArtifacts := state.ArtifactsDirForWorkflow(projectRoot, workflowName, fixture.Ticket)
+	runDir, err := resolveRunArtifactsDir(baseArtifacts, runID)
+	if err != nil {
+		return "", nil, err
+	}
+
+	expandedVars := expandFixtureVars(fixture.Vars, sortedKeys(fixture.Vars))
+	criterionResults, rubricErr := EvaluateRubric(ctx, rubric, runDir, projectRoot, expandedVars)
+	if rubricErr != nil {
+		fmt.Fprintf(os.Stderr, "  warning: rubric evaluation error for %q: %v\n", caseName, rubricErr)
+	}
+	score := ComputeScore(criterionResults, rubric)
+
+	details := make(map[string]float64)
+	var failures []string
+	passCount := 0
+	for _, cr := range criterionResults {
+		details[cr.Name] = cr.Score
+		if cr.Pass {
+			passCount++
+		} else {
+			failures = append(failures, cr.Name+": "+cr.Detail)
+		}
+	}
+	rubricFP, fpErr := RubricFingerprint(rubric, cdir, projectRoot)
+	if fpErr != nil {
+		fmt.Fprintf(os.Stderr, "  warning: computing rubric fingerprint for %q: %v\n", caseName, fpErr)
+	}
+
+	result := CaseResult{
+		Name:              caseName,
+		Score:             score,
+		PassCount:         passCount,
+		TotalCount:        len(criterionResults),
+		Failures:          failures,
+		Details:           details,
+		RubricFingerprint: rubricFP,
+		RegradedFrom:      filepath.Base(runDir),
+	}
+
+	fingerprint, err := ConfigFingerprint(configPath, cfg, projectRoot)
+	if err != nil {
+		return "", nil, fmt.Errorf("eval: computing fingerprint: %w", err)
+	}
+	results := []CaseResult{result}
+
+	history, err := LoadHistory(projectRoot)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  warning: cannot load eval history, skipping save: %v\n", err)
+	} else {
+		history.AppendResult(fingerprint, results)
+		if err := SaveHistory(projectRoot, history); err != nil {
+			fmt.Fprintf(os.Stderr, "  warning: failed to save eval history: %v\n", err)
+		}
+	}
 	return fingerprint, results, nil
 }

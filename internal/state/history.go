@@ -49,6 +49,13 @@ func LatestHistoryDir(artifactsDir string) (string, error) {
 	return "", nil
 }
 
+// CopyTree recursively copies src to dst (files, directories; symlinks skipped),
+// preserving file permission bits. Parent dirs of dst are created as needed.
+// Exported wrapper around the internal copyEntry used by ArchiveRun.
+func CopyTree(src, dst string) error {
+	return copyEntry(src, dst)
+}
+
 // copyEntry recursively copies src to dst.
 func copyEntry(src, dst string) error {
 	info, err := os.Lstat(src)

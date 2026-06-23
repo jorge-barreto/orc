@@ -1578,11 +1578,17 @@ Why it matters: it's easy to accidentally regress quality when tweaking
 prompts. orc eval gives you a before/after score so you can iterate with
 confidence.
 
-  orc eval                     Run all eval cases
-  orc eval bug-fix             Run a specific case
-  orc eval --report            Show score history across config versions
-  orc eval --list              List available eval cases
-  orc eval --json              Structured JSON output
+  orc eval                            Run all eval cases
+  orc eval bug-fix                    Run a specific case
+  orc eval bug-fix --regrade          Re-grade the latest run of a case
+  orc eval bug-fix --regrade <run-id> Re-grade a specific saved run
+  orc eval --report                   Show score history across config versions
+  orc eval --list                     List available eval cases
+  orc eval --json                     Structured JSON output
+
+The --regrade flag is a boolean: it re-scores a saved run instead of running
+the workflow again. With no run-id it re-grades the latest run of the case; you
+can name a specific run-id as a trailing argument to re-grade an older run.
 
 Eval Case Structure
 -------------------
@@ -1591,14 +1597,21 @@ Each case lives in .orc/evals/<case-name>/:
 
   .orc/evals/
   └── bug-fix/
-      ├── fixture.yaml     Git ref + ticket to replay
-      └── rubric.yaml      Scoring criteria
+      ├── fixture.yaml     Git ref + ticket + spec to replay
+      ├── spec.md          Agent-visible input (the "ticket body")
+      └── rubric.yaml      Scoring criteria (HELD OUT from the agent)
+
+The whole .orc/evals/ directory is removed from the agent's worktree before the
+workflow runs, so the grader (rubric, judge prompts, held-out tests) is never
+visible to the workflow under test. orc reads the grader from your live project
+at grade time only.
 
 fixture.yaml
 ------------
 
   ref: abc123f              Git ref to check out (branch, tag, commit SHA)
   ticket: BUG-42            Ticket identifier passed to orc run
+  spec: spec.md             Filename (in the case dir) of the agent-visible spec
   description: "Fix the parser bug"   Optional human-readable description
   vars:                     Optional extra variables passed to the workflow
     EXTRA: value
@@ -1607,6 +1620,12 @@ Fields:
   ref        Required. Any valid git ref — branch, tag, or commit SHA.
              Must match ^[A-Za-z0-9._/~^{}-]+$ (no shell metacharacters).
   ticket     Required. Must be a simple name (no path separators).
+  spec       Required. Filename (in the case dir) of the agent-visible spec —
+             the stand-in for a real ticket body. orc copies it into the stage
+             at .orc/eval-spec/spec.md and exposes its absolute path as
+             $ORC_SPEC_FILE (with $ORC_EVAL=1) so the workflow can read it
+             instead of fetching from an external store. This branch is an
+             optional convenience; a self-contained workflow needs no change.
   description Optional. Shown by orc eval --list.
   vars       Optional. Key-value pairs injected as env vars into the workflow
              (available as both KEY and ORC_KEY).
@@ -1640,6 +1659,33 @@ Criterion types:
     expect    Comparison against the raw score: ">= 7", "> 5", "<= 3", "< 5", "== 10".
     weight    Relative weight for composite score.
 
+Eval Mode Contract
+------------------
+
+When a workflow runs under orc eval, orc sets two env vars:
+
+  ORC_EVAL=1                       Signals eval mode.
+  ORC_SPEC_FILE=<abs path>         Path to the case spec on the stage.
+
+A workflow whose ticket-fetch phase normally calls an external store (Jira,
+etc.) can branch on these:
+
+  if [ -n "$ORC_EVAL" ]; then
+    cat "$ORC_SPEC_FILE"
+  else
+    jira-cli get "$TICKET"
+  fi
+
+This is opt-in: orc neither enforces nor requires it. The agent's worktree is a
+clean git checkout of the fixture ref plus one curation commit (spec copied in,
+.orc/evals removed, live workflow written, .orc/artifacts and .orc/audit
+gitignored), so clean-tree guards in your workflow pass.
+
+Grader checks and judge prompts run from your live project root, receive the
+fixture vars (as KEY and ORC_KEY), and resolve relative paths from the project
+root. Fixture var-in-var references (e.g. SECOND: $FIRST/leaf) expand in
+alphabetical key order.
+
 Score Report
 ------------
 
@@ -1665,6 +1711,12 @@ and all referenced prompt files. It changes whenever you edit config.yaml or
 any prompt — making it easy to correlate score changes to config changes in
 the history report.
 
+History rows also record a rubric fingerprint per case (rubric.yaml + judge
+prompt contents + check strings). The --report RUBRIC column lets you tell a
+score change caused by a workflow edit (FINGERPRINT changed) apart from one
+caused by a rubric edit (RUBRIC changed) — a re-grade shows the same
+FINGERPRINT with a new RUBRIC value.
+
 History Tracking
 ----------------
 
@@ -1675,12 +1727,14 @@ config fingerprint. Use --report to view score trends:
 
   orc eval --report — score history
 
-  FINGERPRINT  DATE          AVG SCORE  TOTAL COST  TOTAL TIME
-  a1b2c3       Mar 01 15:30  75/100     $8.10       44m 45s
-  d4e5f6       Feb 28 10:15  68/100     $12.30      52m 18s
+  FINGERPRINT  RUBRIC   DATE          AVG SCORE  TOTAL COST  TOTAL TIME
+  a1b2c3       9f8e7d   Mar 01 15:30  75/100     $8.10       44m 45s
+  a1b2c3       7c6b5a   Mar 01 16:05  71/100     $0.04       0m 03s
+  d4e5f6       9f8e7d   Feb 28 10:15  68/100     $12.30      52m 18s
 
 This lets you see at a glance whether a config change improved or regressed
-quality, and at what cost.
+quality, and at what cost. The second row above is a re-grade: same
+FINGERPRINT, new RUBRIC, near-zero cost and time (no agent turns).
 
 Typical Workflow for Prompt Iteration
 --------------------------------------
@@ -1690,6 +1744,13 @@ Typical Workflow for Prompt Iteration
 3. Edit a prompt or config
 4. Run again:       orc eval
 5. Compare:         orc eval --report
+
+Iterating on the rubric (no workflow re-run):
+
+1. Run the case once:        orc eval bug-fix
+2. Edit rubric.yaml
+3. Re-grade the saved run:    orc eval bug-fix --regrade
+4. Repeat 2-3 — seconds each, no agent turns or build cost.
 `
 
 // SchemaReference returns the combined config schema, phase types, and

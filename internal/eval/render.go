@@ -65,8 +65,8 @@ func RenderScoreReport(w io.Writer, fingerprint string, cases []CaseResult) {
 // RenderHistoryReport prints a formatted table of historical eval runs.
 func RenderHistoryReport(w io.Writer, history *History) {
 	fmt.Fprintf(w, "\n  %sorc eval --report%s — score history\n\n", ux.Bold, ux.Reset)
-	fmt.Fprintf(w, "  %s%-12s %-13s %-10s %-11s %s%s\n",
-		ux.Dim, "FINGERPRINT", "DATE", "AVG SCORE", "TOTAL COST", "TOTAL TIME", ux.Reset)
+	fmt.Fprintf(w, "  %s%-12s %-10s %-13s %-10s %-11s %s%s\n",
+		ux.Dim, "FINGERPRINT", "RUBRIC", "DATE", "AVG SCORE", "TOTAL COST", "TOTAL TIME", ux.Reset)
 
 	for _, entry := range history.Runs {
 		t, err := time.Parse(time.RFC3339, entry.Timestamp)
@@ -85,15 +85,34 @@ func RenderHistoryReport(w io.Writer, history *History) {
 		if len(entry.Cases) > 0 {
 			avgScore = totalScore / float64(len(entry.Cases))
 		}
+		rubricFP := summarizeRubricFPs(entry.RubricFingerprints)
 		totalDuration := time.Duration(float64(time.Second) * totalDur)
-		fmt.Fprintf(w, "  %-12s %-13s %d/100      $%-10.2f %s\n",
+		fmt.Fprintf(w, "  %-12s %-10s %-13s %d/100      $%-10.2f %s\n",
 			entry.ConfigFingerprint,
+			rubricFP,
 			dateStr,
 			int(math.Round(avgScore)),
 			totalCost,
 			state.FormatDuration(totalDuration),
 		)
 	}
+}
+
+// summarizeRubricFPs renders the rubric fingerprints for a history row: the
+// single value if all cases share it, "-" if none, else "mixed".
+func summarizeRubricFPs(m map[string]string) string {
+	if len(m) == 0 {
+		return "-"
+	}
+	var first string
+	for _, v := range m {
+		if first == "" {
+			first = v
+		} else if v != first {
+			return "mixed"
+		}
+	}
+	return first
 }
 
 // RenderJSON writes eval results as JSON to w.

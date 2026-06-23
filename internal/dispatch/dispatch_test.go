@@ -1,6 +1,9 @@
 package dispatch
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -178,6 +181,100 @@ func TestBuildEnv_StripsCLAUDECODE(t *testing.T) {
 	for _, e := range result {
 		if strings.HasPrefix(e, "CLAUDECODE") {
 			t.Fatalf("CLAUDECODE var not stripped: %s", e)
+		}
+	}
+}
+
+// BLOCKING 1: ORC_EVAL/ORC_SPEC_FILE must pass through BuildEnv to phases.
+
+func TestBuildEnv_PassesThroughEvalVars(t *testing.T) {
+	t.Setenv("ORC_EVAL", "1")
+	t.Setenv("ORC_SPEC_FILE", "/stage/.orc/eval-spec/spec.md")
+	// A non-allowlisted ORC_ var must still be stripped.
+	t.Setenv("ORC_LEAKED", "should-be-stripped")
+
+	env := &Environment{
+		ProjectRoot:  "/proj",
+		WorkDir:      "/work",
+		ArtifactsDir: "/art",
+		Ticket:       "T-1",
+	}
+	result := BuildEnv(env)
+
+	find := func(key string) (string, bool) {
+		for _, e := range result {
+			if strings.HasPrefix(e, key+"=") {
+				return strings.TrimPrefix(e, key+"="), true
+			}
+		}
+		return "", false
+	}
+
+	if v, ok := find("ORC_EVAL"); !ok || v != "1" {
+		t.Fatalf("ORC_EVAL not passed through: %q (found=%v)", v, ok)
+	}
+	if v, ok := find("ORC_SPEC_FILE"); !ok || v != "/stage/.orc/eval-spec/spec.md" {
+		t.Fatalf("ORC_SPEC_FILE not passed through: %q (found=%v)", v, ok)
+	}
+	if _, ok := find("ORC_LEAKED"); ok {
+		t.Fatal("non-allowlisted ORC_ var leaked through BuildEnv")
+	}
+}
+
+// TestRunScript_PropagatesEvalVars proves end-to-end that a real script phase
+// dispatched through RunScript -> BuildEnv -> bash sees ORC_EVAL/ORC_SPEC_FILE.
+func TestRunScript_PropagatesEvalVars(t *testing.T) {
+	t.Setenv("ORC_EVAL", "1")
+	t.Setenv("ORC_SPEC_FILE", "/stage/.orc/eval-spec/spec.md")
+
+	artifactsDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(artifactsDir, "logs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outFile := filepath.Join(artifactsDir, "captured.txt")
+	env := &Environment{
+		ProjectRoot:  artifactsDir,
+		WorkDir:      artifactsDir,
+		ArtifactsDir: artifactsDir,
+		Ticket:       "T-1",
+		AutoMode:     true,
+	}
+	phase := config.Phase{
+		Name: "echo-eval",
+		Type: "script",
+		Run:  `printf '%s\n%s\n' "$ORC_EVAL" "$ORC_SPEC_FILE" > "` + outFile + `"`,
+	}
+	res, err := RunScript(context.Background(), phase, env)
+	if err != nil {
+		t.Fatalf("RunScript error: %v", err)
+	}
+	if res.ExitCode != 0 {
+		t.Fatalf("script exit code = %d, want 0", res.ExitCode)
+	}
+	data, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("reading captured output: %v", err)
+	}
+	got := string(data)
+	if !strings.Contains(got, "1") || !strings.Contains(got, "/stage/.orc/eval-spec/spec.md") {
+		t.Fatalf("script did not see eval vars; captured:\n%s", got)
+	}
+}
+
+func TestBuildEnv_NoEvalVarsWhenUnset(t *testing.T) {
+	// When the eval contract vars are absent, BuildEnv must not invent them.
+	os.Unsetenv("ORC_EVAL")
+	os.Unsetenv("ORC_SPEC_FILE")
+	env := &Environment{
+		ProjectRoot:  "/proj",
+		WorkDir:      "/work",
+		ArtifactsDir: "/art",
+		Ticket:       "T-1",
+	}
+	result := BuildEnv(env)
+	for _, e := range result {
+		if strings.HasPrefix(e, "ORC_EVAL=") || strings.HasPrefix(e, "ORC_SPEC_FILE=") {
+			t.Fatalf("unexpected eval var emitted when unset: %s", e)
 		}
 	}
 }

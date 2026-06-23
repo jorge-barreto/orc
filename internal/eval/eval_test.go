@@ -59,6 +59,7 @@ func TestLoadFixture(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "fixture.yaml"), `
 ref: abc123f
 ticket: T-001
+spec: spec.md
 description: A test case
 vars:
   FOO: bar
@@ -108,7 +109,7 @@ func TestLoadFixture_MissingTicket(t *testing.T) {
 
 func TestLoadFixture_InvalidRef(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "fixture.yaml"), "ref: \"abc; rm -rf /\"\nticket: T-001\n")
+	writeFile(t, filepath.Join(dir, "fixture.yaml"), "ref: \"abc; rm -rf /\"\nticket: T-001\nspec: spec.md\n")
 	_, err := LoadFixture(dir)
 	if err == nil {
 		t.Fatal("expected error for invalid ref")
@@ -151,6 +152,57 @@ func TestLoadFixture_PathSeparatorTicket(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "must not contain path separators") {
 		t.Errorf("error = %v, want message containing 'must not contain path separators'", err)
+	}
+}
+
+func TestLoadFixture_Spec(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "fixture.yaml"),
+		"ref: abc123\nticket: T-001\nspec: spec.md\n")
+	f, err := LoadFixture(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if f.Spec != "spec.md" {
+		t.Errorf("Spec = %q, want spec.md", f.Spec)
+	}
+}
+
+func TestLoadFixture_MissingSpec(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "fixture.yaml"), "ref: abc123\nticket: T-001\n")
+	_, err := LoadFixture(dir)
+	if err == nil {
+		t.Fatal("expected error for missing spec")
+	}
+	if !strings.Contains(err.Error(), "spec is required") {
+		t.Errorf("error = %v, want message containing 'spec is required'", err)
+	}
+}
+
+func TestLoadFixture_SpecPathSeparator(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "fixture.yaml"),
+		"ref: abc123\nticket: T-001\nspec: \"sub/spec.md\"\n")
+	_, err := LoadFixture(dir)
+	if err == nil {
+		t.Fatal("expected error for spec with path separator")
+	}
+	if !strings.Contains(err.Error(), "must not contain path separators") {
+		t.Errorf("error = %v, want message containing 'must not contain path separators'", err)
+	}
+}
+
+func TestLoadFixture_SpecDotDot(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "fixture.yaml"),
+		"ref: abc123\nticket: T-001\nspec: \"..\"\n")
+	_, err := LoadFixture(dir)
+	if err == nil {
+		t.Fatal("expected error for spec '..'")
+	}
+	if !strings.Contains(err.Error(), "is not allowed") {
+		t.Errorf("error = %v, want message containing 'is not allowed'", err)
 	}
 }
 
@@ -467,10 +519,10 @@ func TestRenderCaseList(t *testing.T) {
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, ".orc", "evals", "bug-fix"), 0o755)
 	writeFile(t, filepath.Join(dir, ".orc", "evals", "bug-fix", "fixture.yaml"),
-		"ref: abc123\nticket: T-001\ndescription: Fix the bug\n")
+		"ref: abc123\nticket: T-001\nspec: spec.md\ndescription: Fix the bug\n")
 	os.MkdirAll(filepath.Join(dir, ".orc", "evals", "feature"), 0o755)
 	writeFile(t, filepath.Join(dir, ".orc", "evals", "feature", "fixture.yaml"),
-		"ref: def456\nticket: T-002\n")
+		"ref: def456\nticket: T-002\nspec: spec.md\n")
 
 	var buf bytes.Buffer
 	if err := RenderCaseList(&buf, dir); err != nil {
@@ -514,7 +566,7 @@ func TestValidateRef(t *testing.T) {
 	validRefs := []string{"abc123f", "main", "v1.0", "HEAD~3"}
 	for _, ref := range validRefs {
 		writeFile(t, filepath.Join(dir, "fixture.yaml"),
-			"ref: "+ref+"\nticket: T-001\n")
+			"ref: "+ref+"\nticket: T-001\nspec: spec.md\n")
 		_, err := LoadFixture(dir)
 		if err != nil {
 			t.Errorf("ref %q should be valid, got error: %v", ref, err)
@@ -524,7 +576,7 @@ func TestValidateRef(t *testing.T) {
 	invalidRefs := []string{";", "|", "`", "$("}
 	for _, ref := range invalidRefs {
 		writeFile(t, filepath.Join(dir, "fixture.yaml"),
-			"ref: \""+ref+"\"\nticket: T-001\n")
+			"ref: \""+ref+"\"\nticket: T-001\nspec: spec.md\n")
 		_, err := LoadFixture(dir)
 		if err == nil {
 			t.Errorf("ref %q should be invalid but got no error", ref)
@@ -615,7 +667,7 @@ func TestLoadFixture_StrictYAML(t *testing.T) {
 func TestLoadFixture_VarShadowsBuiltin(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "fixture.yaml"),
-		"ref: abc123\nticket: T-001\nvars:\n  TICKET: override\n")
+		"ref: abc123\nticket: T-001\nspec: spec.md\nvars:\n  TICKET: override\n")
 	_, err := LoadFixture(dir)
 	if err == nil {
 		t.Fatal("expected error for var overriding built-in")
@@ -628,13 +680,29 @@ func TestLoadFixture_VarShadowsBuiltin(t *testing.T) {
 func TestLoadFixture_VarShadowsArtifactsDir(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "fixture.yaml"),
-		"ref: abc123\nticket: T-001\nvars:\n  ARTIFACTS_DIR: x\n")
+		"ref: abc123\nticket: T-001\nspec: spec.md\nvars:\n  ARTIFACTS_DIR: x\n")
 	_, err := LoadFixture(dir)
 	if err == nil {
 		t.Fatal("expected error for var overriding built-in")
 	}
 	if !strings.Contains(err.Error(), "overrides a built-in variable") {
 		t.Errorf("error = %v, want message containing 'overrides a built-in variable'", err)
+	}
+}
+
+func TestLoadFixture_VarShadowsSystemEnv(t *testing.T) {
+	dangerous := []string{"PATH", "HOME", "IFS", "SHELL", "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES"}
+	for _, key := range dangerous {
+		dir := t.TempDir()
+		writeFile(t, filepath.Join(dir, "fixture.yaml"),
+			"ref: abc123\nticket: T-001\nspec: spec.md\nvars:\n  "+key+": x\n")
+		_, err := LoadFixture(dir)
+		if err == nil {
+			t.Fatalf("expected error for var %q shadowing a critical env var", key)
+		}
+		if !strings.Contains(err.Error(), "shadows a critical environment variable") {
+			t.Errorf("var %q: error = %v, want message containing 'shadows a critical environment variable'", key, err)
+		}
 	}
 }
 
@@ -779,7 +847,7 @@ func TestRenderHistoryReport(t *testing.T) {
 	var buf bytes.Buffer
 	RenderHistoryReport(&buf, h)
 	out := buf.String()
-	for _, want := range []string{"abc123", "85/100", "Jan 15"} {
+	for _, want := range []string{"abc123", "85/100", "Jan 15", "RUBRIC"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q", want)
 		}
@@ -1002,5 +1070,343 @@ func TestRunWorkflow_FallbackToHistory(t *testing.T) {
 	}
 	if timing.TotalElapsed().Seconds() <= 0 {
 		t.Errorf("TotalElapsed = %v, want > 0", timing.TotalElapsed())
+	}
+}
+
+func TestRunWorkflow_SetsEvalEnv(t *testing.T) {
+	// We can't run a real `orc run` here, but we can assert the env-building
+	// helper sets ORC_EVAL and ORC_SPEC_FILE. Extracted as buildEvalEnv.
+	env := buildEvalEnv("/stage/.orc/eval-spec/spec.md", map[string]string{"K": "v"})
+	joined := strings.Join(env, "\n")
+	for _, want := range []string{
+		"ORC_EVAL=1",
+		"ORC_SPEC_FILE=/stage/.orc/eval-spec/spec.md",
+		"K=v",
+		"ORC_K=v",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("env missing %q", want)
+		}
+	}
+}
+
+// TestExpandFixtureVars_SymmetricRunAndGrader proves W3: the SAME expanded var
+// map is what flows to both the workflow run env (buildEvalEnv) and the grader,
+// so a var-in-var value resolves identically on both sides — no asymmetry where
+// the workflow sees raw "$LIVE_ROOT/t" but the grader sees "/x/t".
+func TestExpandFixtureVars_SymmetricRunAndGrader(t *testing.T) {
+	raw := map[string]string{
+		"LIVE_ROOT":   "/x",
+		"TICKET_FILE": "$LIVE_ROOT/t",
+	}
+	expanded := expandFixtureVars(raw, sortedKeys(raw))
+	if expanded["TICKET_FILE"] != "/x/t" {
+		t.Fatalf("expandFixtureVars TICKET_FILE = %q, want /x/t", expanded["TICKET_FILE"])
+	}
+
+	// The run env (buildEvalEnv) is fed the SAME expanded map runCase passes to
+	// the grader — assert the resolved value, not the literal "$LIVE_ROOT/t".
+	env := buildEvalEnv("/stage/spec.md", expanded)
+	joined := strings.Join(env, "\n")
+	for _, want := range []string{"TICKET_FILE=/x/t", "ORC_TICKET_FILE=/x/t"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("buildEvalEnv missing %q (asymmetry?); env:\n%s", want, joined)
+		}
+	}
+	if strings.Contains(joined, "$LIVE_ROOT/t") {
+		t.Error("buildEvalEnv leaked an unexpanded var-in-var value")
+	}
+}
+
+// TestBuildEvalEnv_StripsInheritedOrcAndClaudecode proves buildEvalEnv removes
+// inherited ORC_* and CLAUDECODE vars before re-adding its own contract, so the
+// eval child starts from a clean orc env.
+func TestBuildEvalEnv_StripsInheritedOrcAndClaudecode(t *testing.T) {
+	t.Setenv("ORC_INHERITED", "leak")
+	t.Setenv("CLAUDECODE", "1")
+	t.Setenv("CLAUDECODE_ENTRYPOINT", "cli")
+
+	env := buildEvalEnv("/stage/spec.md", nil)
+	for _, kv := range env {
+		key := kv
+		if i := strings.IndexByte(kv, '='); i >= 0 {
+			key = kv[:i]
+		}
+		if key == "ORC_INHERITED" {
+			t.Errorf("inherited ORC_ var leaked into eval env: %s", kv)
+		}
+		if strings.HasPrefix(key, "CLAUDECODE") {
+			t.Errorf("CLAUDECODE var leaked into eval env: %s", kv)
+		}
+	}
+	// The contract vars are still set.
+	joined := strings.Join(env, "\n")
+	if !strings.Contains(joined, "ORC_EVAL=1") || !strings.Contains(joined, "ORC_SPEC_FILE=/stage/spec.md") {
+		t.Errorf("buildEvalEnv missing contract vars; env:\n%s", joined)
+	}
+}
+
+func TestRubricFingerprint_ChangesWithRubric(t *testing.T) {
+	caseDir := t.TempDir()
+	projectRoot := t.TempDir()
+	r1 := &Rubric{Criteria: []Criterion{{Name: "a", Check: "exit 0", Weight: 1}}}
+	fp1, err := RubricFingerprint(r1, caseDir, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2 := &Rubric{Criteria: []Criterion{{Name: "a", Check: "exit 1", Weight: 1}}}
+	fp2, err := RubricFingerprint(r2, caseDir, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fp1 == fp2 {
+		t.Error("rubric fingerprint should change when a check changes")
+	}
+}
+
+func TestRubricFingerprint_ChangesWithJudgePrompt(t *testing.T) {
+	caseDir := t.TempDir()
+	projectRoot := t.TempDir()
+	writeFile(t, filepath.Join(projectRoot, ".orc", "p.md"), "v1")
+	r := &Rubric{Criteria: []Criterion{{Name: "q", Judge: true, Prompt: ".orc/p.md", Weight: 1}}}
+	fp1, err := RubricFingerprint(r, caseDir, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(projectRoot, ".orc", "p.md"), "v2")
+	fp2, err := RubricFingerprint(r, caseDir, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fp1 == fp2 {
+		t.Error("rubric fingerprint should change when judge prompt content changes")
+	}
+}
+
+func TestRubricFingerprint_Stable(t *testing.T) {
+	caseDir := t.TempDir()
+	projectRoot := t.TempDir()
+	writeFile(t, filepath.Join(projectRoot, ".orc", "p.md"), "judge prompt")
+	r := &Rubric{Criteria: []Criterion{
+		{Name: "tests", Check: "exit 0", Weight: 3, Expect: "exit 0"},
+		{Name: "quality", Judge: true, Prompt: ".orc/p.md", Weight: 2, Expect: ">= 7"},
+	}}
+	fp1, err := RubricFingerprint(r, caseDir, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fp2, err := RubricFingerprint(r, caseDir, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fp1 != fp2 {
+		t.Errorf("rubric fingerprint should be stable across calls: %q vs %q", fp1, fp2)
+	}
+}
+
+func TestRubricFingerprint_OrderIndependent(t *testing.T) {
+	caseDir := t.TempDir()
+	projectRoot := t.TempDir()
+	writeFile(t, filepath.Join(projectRoot, ".orc", "p.md"), "judge prompt")
+	r1 := &Rubric{Criteria: []Criterion{
+		{Name: "tests", Check: "exit 0", Weight: 3, Expect: "exit 0"},
+		{Name: "quality", Judge: true, Prompt: ".orc/p.md", Weight: 2, Expect: ">= 7"},
+	}}
+	r2 := &Rubric{Criteria: []Criterion{
+		{Name: "quality", Judge: true, Prompt: ".orc/p.md", Weight: 2, Expect: ">= 7"},
+		{Name: "tests", Check: "exit 0", Weight: 3, Expect: "exit 0"},
+	}}
+	fp1, err := RubricFingerprint(r1, caseDir, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fp2, err := RubricFingerprint(r2, caseDir, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fp1 != fp2 {
+		t.Errorf("rubric fingerprint should be order-independent: %q vs %q", fp1, fp2)
+	}
+}
+
+func TestResolveRunArtifactsDir(t *testing.T) {
+	// Build an artifacts tree with two history runs; resolveRunArtifactsDir
+	// returns the named one, and the latest when runID is empty.
+	base := t.TempDir()
+	mk := func(runID string) {
+		d := filepath.Join(base, "history", runID)
+		writeFile(t, filepath.Join(d, "state.json"),
+			`{"ticket":"T-1","status":"completed","phases":{}}`)
+	}
+	mk("2026-01-01T10-00-00.000")
+	mk("2026-01-02T10-00-00.000")
+
+	got, err := resolveRunArtifactsDir(base, "2026-01-01T10-00-00.000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(got) != "2026-01-01T10-00-00.000" {
+		t.Errorf("named run = %q, want the 01-01 dir", got)
+	}
+
+	latest, err := resolveRunArtifactsDir(base, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(latest) != "2026-01-02T10-00-00.000" {
+		t.Errorf("latest run = %q, want the 01-02 dir", latest)
+	}
+
+	_, err = resolveRunArtifactsDir(base, "nonexistent-run")
+	if err == nil {
+		t.Fatal("expected error for nonexistent run id")
+	}
+	if !strings.Contains(err.Error(), "run not found") {
+		t.Errorf("error = %v, want 'run not found'", err)
+	}
+}
+
+func TestResolveRunArtifactsDir_RejectsTraversal(t *testing.T) {
+	base := t.TempDir()
+	// Build a state.json one level up from history/ to prove a traversal would
+	// otherwise reach it.
+	writeFile(t, filepath.Join(base, "state.json"),
+		`{"ticket":"T-1","status":"completed","phases":{}}`)
+	for _, bad := range []string{"..", ".", "../../tmp/evil", "sub/run", "a/b"} {
+		_, err := resolveRunArtifactsDir(base, bad)
+		if err == nil {
+			t.Fatalf("expected error for traversal run id %q", bad)
+		}
+		if !strings.Contains(err.Error(), "invalid run id") {
+			t.Errorf("run id %q: error = %v, want 'invalid run id'", bad, err)
+		}
+	}
+}
+
+// TestPersistRunArtifacts_PersistThenResolve proves the B2 fix: an eval run's
+// archived artifacts, written inside the throwaway worktree, are copied to a
+// stable LIVE-project location that --regrade's resolveRunArtifactsDir reads
+// from. The pre-existing TestResolveRunArtifactsDir masks this bug because it
+// hand-builds the tree at the live location.
+func TestPersistRunArtifacts_PersistThenResolve(t *testing.T) {
+	projectRoot := t.TempDir()
+	worktreePath := t.TempDir()
+	workflowName := "bugfix"
+	ticket := "T-001"
+	runID := "2026-01-02T10-00-00.000"
+
+	// Simulate what `orc run` archives INSIDE the worktree.
+	wtArtifacts := state.ArtifactsDirForWorkflow(worktreePath, workflowName, ticket)
+	wtRunDir := filepath.Join(state.HistoryDir(wtArtifacts), runID)
+	writeFile(t, filepath.Join(wtRunDir, "state.json"),
+		`{"ticket":"T-001","status":"completed","phases":{}}`)
+	writeFile(t, filepath.Join(wtRunDir, "costs.json"),
+		`{"phases":[],"total_cost_usd":2.5}`)
+
+	// Before persist, the live location has nothing — resolve must fail.
+	liveArtifacts := state.ArtifactsDirForWorkflow(projectRoot, workflowName, ticket)
+	if _, err := resolveRunArtifactsDir(liveArtifacts, runID); err == nil {
+		t.Fatal("expected resolve to fail before persist")
+	}
+
+	// Persist the run out of the worktree into the live project.
+	if err := persistRunArtifacts(projectRoot, workflowName, ticket, worktreePath, runID); err != nil {
+		t.Fatalf("persistRunArtifacts: %v", err)
+	}
+
+	// Now resolve (by id and latest) must succeed against the live location.
+	got, err := resolveRunArtifactsDir(liveArtifacts, runID)
+	if err != nil {
+		t.Fatalf("resolve by id after persist: %v", err)
+	}
+	if filepath.Base(got) != runID {
+		t.Errorf("resolved run = %q, want run id %q", got, runID)
+	}
+	latest, err := resolveRunArtifactsDir(liveArtifacts, "")
+	if err != nil {
+		t.Fatalf("resolve latest after persist: %v", err)
+	}
+	if filepath.Base(latest) != runID {
+		t.Errorf("resolved latest = %q, want run id %q", latest, runID)
+	}
+	// The copied tree must carry the run's files.
+	costs, err := state.LoadCosts(got)
+	if err != nil || costs == nil || costs.TotalCostUSD != 2.5 {
+		t.Errorf("persisted costs not readable: costs=%v err=%v", costs, err)
+	}
+}
+
+// TestRegradeEval_ReadsPersistedRun proves RegradeEval grades a run that was
+// persisted via persistRunArtifacts (the live location), without re-running the
+// workflow, and records RegradedFrom + a rubric fingerprint.
+func TestRegradeEval_ReadsPersistedRun(t *testing.T) {
+	projectRoot := t.TempDir()
+	workflowName := ""
+	ticket := "T-001"
+	runID := "2026-01-02T10-00-00.000"
+
+	// Eval case: fixture + a script rubric that always passes.
+	caseDir := filepath.Join(projectRoot, ".orc", "evals", "bug-fix")
+	writeFile(t, filepath.Join(caseDir, "fixture.yaml"),
+		"ref: HEAD\nticket: "+ticket+"\nspec: spec.md\n")
+	writeFile(t, filepath.Join(caseDir, "spec.md"), "do it\n")
+	writeFile(t, filepath.Join(caseDir, "rubric.yaml"),
+		"criteria:\n  - name: ok\n    check: \"exit 0\"\n    weight: 1\n")
+	configPath := filepath.Join(projectRoot, ".orc", "config.yaml")
+	writeFile(t, configPath, "phases:\n  - name: p\n    run: \"true\"\n")
+	cfg := &config.Config{Phases: []config.Phase{{Name: "p", Run: "true"}}}
+
+	// Simulate a persisted run at the live location.
+	liveArtifacts := state.ArtifactsDirForWorkflow(projectRoot, workflowName, ticket)
+	liveRunDir := filepath.Join(state.HistoryDir(liveArtifacts), runID)
+	writeFile(t, filepath.Join(liveRunDir, "state.json"),
+		`{"ticket":"T-001","status":"completed","phases":{}}`)
+
+	_, cases, err := RegradeEval(context.Background(), projectRoot, configPath, workflowName, cfg, "bug-fix", runID)
+	if err != nil {
+		t.Fatalf("RegradeEval: %v", err)
+	}
+	if len(cases) != 1 {
+		t.Fatalf("expected 1 case result, got %d", len(cases))
+	}
+	c := cases[0]
+	if c.RegradedFrom != runID {
+		t.Errorf("RegradedFrom = %q, want %q", c.RegradedFrom, runID)
+	}
+	if c.RubricFingerprint == "" {
+		t.Error("expected a rubric fingerprint to be set")
+	}
+	if c.Score != 100 {
+		t.Errorf("score = %d, want 100 (exit-0 criterion passes)", c.Score)
+	}
+
+	// The regrade row was appended to history.
+	h, err := LoadHistory(projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(h.Runs) != 1 {
+		t.Fatalf("expected 1 history run appended, got %d", len(h.Runs))
+	}
+	if got := h.Runs[0].Cases["bug-fix"].RegradedFrom; got != runID {
+		t.Errorf("history RegradedFrom = %q, want %q", got, runID)
+	}
+}
+
+func TestPersistRunArtifacts_EmptyRunID(t *testing.T) {
+	// A failed run (no archived id) is a no-op, not an error.
+	if err := persistRunArtifacts(t.TempDir(), "wf", "T-1", t.TempDir(), ""); err != nil {
+		t.Fatalf("expected no-op for empty run id, got %v", err)
+	}
+}
+
+func TestResolveRunArtifactsDir_NoSavedRuns(t *testing.T) {
+	base := t.TempDir() // no history dir at all
+	_, err := resolveRunArtifactsDir(base, "")
+	if err == nil {
+		t.Fatal("expected error when no saved runs exist")
+	}
+	if !strings.Contains(err.Error(), "no saved runs") {
+		t.Errorf("error = %v, want 'no saved runs'", err)
 	}
 }

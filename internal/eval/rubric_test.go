@@ -2,6 +2,7 @@ package eval
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -85,7 +86,7 @@ func TestEvaluateRubric_ScriptPass(t *testing.T) {
 		{Name: "exits-zero", Check: "true", Expect: "exit 0", Weight: 1},
 	}}
 	dir := t.TempDir()
-	results, err := EvaluateRubric(context.Background(), rubric, dir, dir, dir)
+	results, err := EvaluateRubric(context.Background(), rubric, dir, dir, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -103,7 +104,7 @@ func TestEvaluateRubric_ScriptFail_WrongExitCode(t *testing.T) {
 		{Name: "exits-zero", Check: "false", Expect: "exit 0", Weight: 1},
 	}}
 	dir := t.TempDir()
-	results, err := EvaluateRubric(context.Background(), rubric, dir, dir, dir)
+	results, err := EvaluateRubric(context.Background(), rubric, dir, dir, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -121,7 +122,7 @@ func TestEvaluateRubric_ScriptPass_ExpectedNonzeroExit(t *testing.T) {
 		{Name: "expects-2", Check: "exit 2", Expect: "exit 2", Weight: 1},
 	}}
 	dir := t.TempDir()
-	results, err := EvaluateRubric(context.Background(), rubric, dir, dir, dir)
+	results, err := EvaluateRubric(context.Background(), rubric, dir, dir, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -138,7 +139,7 @@ func TestEvaluateRubric_ContextCancelledBeforeRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	results, err := EvaluateRubric(ctx, rubric, dir, dir, dir)
+	results, err := EvaluateRubric(ctx, rubric, dir, dir, nil)
 	if err == nil {
 		t.Fatal("expected ctx error, got nil")
 	}
@@ -159,7 +160,7 @@ func TestEvaluateRubric_ContextCancelledMidRun(t *testing.T) {
 	time.AfterFunc(100*time.Millisecond, cancel)
 
 	start := time.Now()
-	results, err := EvaluateRubric(ctx, rubric, dir, dir, dir)
+	results, err := EvaluateRubric(ctx, rubric, dir, dir, nil)
 	elapsed := time.Since(start)
 
 	if err == nil {
@@ -180,7 +181,7 @@ func TestEvaluateRubric_ContextCancelledMidRun(t *testing.T) {
 func TestEvaluateRubric_EmptyRubric(t *testing.T) {
 	rubric := &Rubric{Criteria: nil}
 	dir := t.TempDir()
-	results, err := EvaluateRubric(context.Background(), rubric, dir, dir, dir)
+	results, err := EvaluateRubric(context.Background(), rubric, dir, dir, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -207,5 +208,74 @@ func TestScoreRegex_NoMatch(t *testing.T) {
 	matches := scoreRegex.FindAllStringSubmatch(output, -1)
 	if len(matches) != 0 {
 		t.Fatalf("got %d matches, want 0", len(matches))
+	}
+}
+
+func TestEvaluateRubric_CheckSeesVars(t *testing.T) {
+	projectRoot := t.TempDir()
+	artifactsDir := t.TempDir()
+	rubric := &Rubric{Criteria: []Criterion{
+		{Name: "uses-var", Check: `test "$MYVAR" = "hello"`, Expect: "exit 0", Weight: 1},
+	}}
+	vars := map[string]string{"MYVAR": "hello"}
+
+	results, err := EvaluateRubric(context.Background(), rubric, artifactsDir, projectRoot, vars)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 || !results[0].Pass {
+		t.Errorf("check should see MYVAR=hello and pass; got %+v", results)
+	}
+}
+
+func TestEvaluateRubric_CheckSeesORCPrefixedVar(t *testing.T) {
+	projectRoot := t.TempDir()
+	artifactsDir := t.TempDir()
+	rubric := &Rubric{Criteria: []Criterion{
+		{Name: "orc-prefixed", Check: `test "$ORC_MYVAR" = "hi"`, Expect: "exit 0", Weight: 1},
+	}}
+	results, err := EvaluateRubric(context.Background(), rubric, artifactsDir, projectRoot,
+		map[string]string{"MYVAR": "hi"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !results[0].Pass {
+		t.Errorf("check should see ORC_MYVAR=hi; got %+v", results)
+	}
+}
+
+func TestEvaluateRubric_VarInVarExpansion(t *testing.T) {
+	projectRoot := t.TempDir()
+	artifactsDir := t.TempDir()
+	// SECOND references FIRST; it must arrive expanded.
+	vars := expandFixtureVars(map[string]string{
+		"FIRST":  "/base",
+		"SECOND": "$FIRST/leaf",
+	}, []string{"FIRST", "SECOND"})
+	rubric := &Rubric{Criteria: []Criterion{
+		{Name: "expanded", Check: `test "$SECOND" = "/base/leaf"`, Expect: "exit 0", Weight: 1},
+	}}
+	results, err := EvaluateRubric(context.Background(), rubric, artifactsDir, projectRoot, vars)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !results[0].Pass {
+		t.Errorf("SECOND should expand to /base/leaf; got %+v", results)
+	}
+}
+
+func TestEvaluateRubric_CheckRunsFromProjectRoot(t *testing.T) {
+	projectRoot := t.TempDir()
+	artifactsDir := t.TempDir()
+	writeFile(t, filepath.Join(projectRoot, "marker.txt"), "x")
+	rubric := &Rubric{Criteria: []Criterion{
+		{Name: "cwd", Check: "test -f marker.txt", Expect: "exit 0", Weight: 1},
+	}}
+	results, err := EvaluateRubric(context.Background(), rubric, artifactsDir, projectRoot, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !results[0].Pass {
+		t.Errorf("check should run with cwd=projectRoot; got %+v", results)
 	}
 }
