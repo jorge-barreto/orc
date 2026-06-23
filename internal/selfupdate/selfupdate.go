@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -84,6 +85,20 @@ var (
 
 const repoPath = "jorge-barreto/orc"
 
+// tagPattern anchors the release-tag shape so a tag_name from the GitHub API
+// (which flows into the download URL) can't carry path-traversal or other junk.
+// orc tags are plain semver with an optional "v" and optional pre-release/build
+// suffix (e.g. v0.3.0, 1.2.3, v0.3.0-rc1).
+var tagPattern = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$`)
+
+// maxArtifactBytes caps how much selfupdate will read from a release artifact
+// (archive download and extracted binary) to bound disk/memory use on a
+// malformed or hostile-but-checksum-consistent release. orc binaries are a few
+// MB; 200 MiB is far above any real release and well below an OOM/disk risk.
+// It is a var (not a const) only so tests can lower it to a tiny value; do not
+// mutate it in production code.
+var maxArtifactBytes int64 = 200 << 20 // 200 MiB
+
 // httpClient bounds every network call.
 var httpClient = &http.Client{Timeout: 60 * time.Second}
 
@@ -111,6 +126,9 @@ func ResolveLatest(ctx context.Context) (string, error) {
 	}
 	if payload.TagName == "" {
 		return "", fmt.Errorf("selfupdate: latest release has no tag_name")
+	}
+	if !tagPattern.MatchString(payload.TagName) {
+		return "", fmt.Errorf("selfupdate: unexpected release tag %q from GitHub", payload.TagName)
 	}
 	return payload.TagName, nil
 }
@@ -180,7 +198,30 @@ func fetch(ctx context.Context, url string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("GET %s returned %s", url, resp.Status)
 	}
-	return io.ReadAll(resp.Body)
+	b, err := readCapped(resp.Body)
+	if err == errCapExceeded {
+		return nil, fmt.Errorf("selfupdate: response from %s exceeds %d bytes", url, maxArtifactBytes)
+	}
+	return b, err
+}
+
+// errCapExceeded signals that readCapped hit maxArtifactBytes. Callers wrap it
+// with a context-specific message; it is never returned to callers directly.
+var errCapExceeded = fmt.Errorf("read exceeds cap")
+
+// readCapped reads from r up to maxArtifactBytes. If the source has more bytes
+// than the cap it returns errCapExceeded rather than allocating without bound.
+// It reads one extra byte past the cap to distinguish "exactly the cap" from
+// "over the cap".
+func readCapped(r io.Reader) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(r, maxArtifactBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > maxArtifactBytes {
+		return nil, errCapExceeded
+	}
+	return b, nil
 }
 
 func sha256hex(b []byte) string {
@@ -235,7 +276,7 @@ func ReplaceBinary(targetPath, newBinary string) error {
 
 	tmp, err := os.CreateTemp(dir, ".orc-update-*")
 	if err != nil {
-		return fmt.Errorf("selfupdate: cannot write to %s (need write permission; use sudo or set ORC_BIN_DIR): %w", dir, err)
+		return fmt.Errorf("selfupdate: cannot write to %s (need write permission — re-run with elevated privileges, e.g. sudo): %w", dir, err)
 	}
 	tmpName := tmp.Name()
 	if _, err := io.Copy(tmp, src); err != nil {
@@ -275,7 +316,11 @@ func extractBinary(archive []byte) ([]byte, error) {
 			return nil, err
 		}
 		if filepath.Base(hdr.Name) == "orc" && hdr.Typeflag == tar.TypeReg {
-			return io.ReadAll(tr)
+			b, err := readCapped(tr)
+			if err == errCapExceeded {
+				return nil, fmt.Errorf("orc entry exceeds %d bytes", maxArtifactBytes)
+			}
+			return b, err
 		}
 	}
 }
