@@ -28,6 +28,7 @@ import (
 type Fixture struct {
 	Ref         string            `yaml:"ref"`
 	Ticket      string            `yaml:"ticket"`
+	Spec        string            `yaml:"spec"`
 	Vars        map[string]string `yaml:"vars"`
 	Description string            `yaml:"description"`
 }
@@ -86,6 +87,12 @@ func LoadFixture(caseDir string) (*Fixture, error) {
 	}
 	if f.Ticket != filepath.Base(f.Ticket) {
 		return nil, fmt.Errorf("eval: fixture.yaml: ticket %q must not contain path separators", f.Ticket)
+	}
+	if f.Spec == "" {
+		return nil, fmt.Errorf("eval: fixture.yaml: spec is required")
+	}
+	if f.Spec != filepath.Base(f.Spec) {
+		return nil, fmt.Errorf("eval: fixture.yaml: spec %q must not contain path separators", f.Spec)
 	}
 	if !refRegex.MatchString(f.Ref) {
 		return nil, fmt.Errorf("eval: fixture.yaml: ref %q contains invalid characters", f.Ref)

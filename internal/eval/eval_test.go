@@ -59,6 +59,7 @@ func TestLoadFixture(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "fixture.yaml"), `
 ref: abc123f
 ticket: T-001
+spec: spec.md
 description: A test case
 vars:
   FOO: bar
@@ -108,7 +109,7 @@ func TestLoadFixture_MissingTicket(t *testing.T) {
 
 func TestLoadFixture_InvalidRef(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "fixture.yaml"), "ref: \"abc; rm -rf /\"\nticket: T-001\n")
+	writeFile(t, filepath.Join(dir, "fixture.yaml"), "ref: \"abc; rm -rf /\"\nticket: T-001\nspec: spec.md\n")
 	_, err := LoadFixture(dir)
 	if err == nil {
 		t.Fatal("expected error for invalid ref")
@@ -148,6 +149,44 @@ func TestLoadFixture_PathSeparatorTicket(t *testing.T) {
 	_, err := LoadFixture(dir)
 	if err == nil {
 		t.Fatal("expected error for ticket with path separator")
+	}
+	if !strings.Contains(err.Error(), "must not contain path separators") {
+		t.Errorf("error = %v, want message containing 'must not contain path separators'", err)
+	}
+}
+
+func TestLoadFixture_Spec(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "fixture.yaml"),
+		"ref: abc123\nticket: T-001\nspec: spec.md\n")
+	f, err := LoadFixture(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if f.Spec != "spec.md" {
+		t.Errorf("Spec = %q, want spec.md", f.Spec)
+	}
+}
+
+func TestLoadFixture_MissingSpec(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "fixture.yaml"), "ref: abc123\nticket: T-001\n")
+	_, err := LoadFixture(dir)
+	if err == nil {
+		t.Fatal("expected error for missing spec")
+	}
+	if !strings.Contains(err.Error(), "spec is required") {
+		t.Errorf("error = %v, want message containing 'spec is required'", err)
+	}
+}
+
+func TestLoadFixture_SpecPathSeparator(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "fixture.yaml"),
+		"ref: abc123\nticket: T-001\nspec: \"sub/spec.md\"\n")
+	_, err := LoadFixture(dir)
+	if err == nil {
+		t.Fatal("expected error for spec with path separator")
 	}
 	if !strings.Contains(err.Error(), "must not contain path separators") {
 		t.Errorf("error = %v, want message containing 'must not contain path separators'", err)
@@ -467,10 +506,10 @@ func TestRenderCaseList(t *testing.T) {
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, ".orc", "evals", "bug-fix"), 0o755)
 	writeFile(t, filepath.Join(dir, ".orc", "evals", "bug-fix", "fixture.yaml"),
-		"ref: abc123\nticket: T-001\ndescription: Fix the bug\n")
+		"ref: abc123\nticket: T-001\nspec: spec.md\ndescription: Fix the bug\n")
 	os.MkdirAll(filepath.Join(dir, ".orc", "evals", "feature"), 0o755)
 	writeFile(t, filepath.Join(dir, ".orc", "evals", "feature", "fixture.yaml"),
-		"ref: def456\nticket: T-002\n")
+		"ref: def456\nticket: T-002\nspec: spec.md\n")
 
 	var buf bytes.Buffer
 	if err := RenderCaseList(&buf, dir); err != nil {
@@ -514,7 +553,7 @@ func TestValidateRef(t *testing.T) {
 	validRefs := []string{"abc123f", "main", "v1.0", "HEAD~3"}
 	for _, ref := range validRefs {
 		writeFile(t, filepath.Join(dir, "fixture.yaml"),
-			"ref: "+ref+"\nticket: T-001\n")
+			"ref: "+ref+"\nticket: T-001\nspec: spec.md\n")
 		_, err := LoadFixture(dir)
 		if err != nil {
 			t.Errorf("ref %q should be valid, got error: %v", ref, err)
@@ -524,7 +563,7 @@ func TestValidateRef(t *testing.T) {
 	invalidRefs := []string{";", "|", "`", "$("}
 	for _, ref := range invalidRefs {
 		writeFile(t, filepath.Join(dir, "fixture.yaml"),
-			"ref: \""+ref+"\"\nticket: T-001\n")
+			"ref: \""+ref+"\"\nticket: T-001\nspec: spec.md\n")
 		_, err := LoadFixture(dir)
 		if err == nil {
 			t.Errorf("ref %q should be invalid but got no error", ref)
@@ -615,7 +654,7 @@ func TestLoadFixture_StrictYAML(t *testing.T) {
 func TestLoadFixture_VarShadowsBuiltin(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "fixture.yaml"),
-		"ref: abc123\nticket: T-001\nvars:\n  TICKET: override\n")
+		"ref: abc123\nticket: T-001\nspec: spec.md\nvars:\n  TICKET: override\n")
 	_, err := LoadFixture(dir)
 	if err == nil {
 		t.Fatal("expected error for var overriding built-in")
@@ -628,7 +667,7 @@ func TestLoadFixture_VarShadowsBuiltin(t *testing.T) {
 func TestLoadFixture_VarShadowsArtifactsDir(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "fixture.yaml"),
-		"ref: abc123\nticket: T-001\nvars:\n  ARTIFACTS_DIR: x\n")
+		"ref: abc123\nticket: T-001\nspec: spec.md\nvars:\n  ARTIFACTS_DIR: x\n")
 	_, err := LoadFixture(dir)
 	if err == nil {
 		t.Fatal("expected error for var overriding built-in")
