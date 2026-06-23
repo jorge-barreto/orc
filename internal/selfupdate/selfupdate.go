@@ -188,6 +188,76 @@ func sha256hex(b []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// InstallMethod classifies how the running binary was installed.
+type InstallMethod int
+
+const (
+	MethodDirect   InstallMethod = iota // standalone binary we can replace in place
+	MethodHomebrew                      // managed by Homebrew
+	MethodGo                            // installed via `go install`
+)
+
+// DetectInstall classifies a resolved executable path by where it lives.
+// exePath should already be symlink-resolved (filepath.EvalSymlinks).
+func DetectInstall(exePath string) InstallMethod {
+	p := filepath.ToSlash(exePath)
+	if strings.HasPrefix(p, "/opt/homebrew/") ||
+		strings.Contains(p, "/Cellar/") ||
+		strings.Contains(p, "/linuxbrew/") {
+		return MethodHomebrew
+	}
+	if strings.Contains(p, "/go/bin/") {
+		return MethodGo
+	}
+	if gobin := os.Getenv("GOBIN"); gobin != "" && strings.HasPrefix(p, filepath.ToSlash(gobin)+"/") {
+		return MethodGo
+	}
+	if gopath := os.Getenv("GOPATH"); gopath != "" {
+		if strings.HasPrefix(p, filepath.ToSlash(filepath.Join(gopath, "bin"))+"/") {
+			return MethodGo
+		}
+	}
+	return MethodDirect
+}
+
+// ReplaceBinary atomically replaces targetPath with the contents of newBinary.
+// It writes a temp file in the SAME directory as targetPath (so os.Rename is
+// atomic and never cross-device), then renames over the target. The running
+// process keeps its open inode, so replacing a live binary is safe on
+// linux/darwin. On any error before the rename, targetPath is untouched.
+func ReplaceBinary(targetPath, newBinary string) error {
+	dir := filepath.Dir(targetPath)
+	src, err := os.Open(newBinary)
+	if err != nil {
+		return fmt.Errorf("selfupdate: opening new binary: %w", err)
+	}
+	defer src.Close()
+
+	tmp, err := os.CreateTemp(dir, ".orc-update-*")
+	if err != nil {
+		return fmt.Errorf("selfupdate: cannot write to %s (need write permission; use sudo or set ORC_BIN_DIR): %w", dir, err)
+	}
+	tmpName := tmp.Name()
+	if _, err := io.Copy(tmp, src); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("selfupdate: copying new binary: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("selfupdate: closing temp binary: %w", err)
+	}
+	if err := os.Chmod(tmpName, 0o755); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("selfupdate: chmod temp binary: %w", err)
+	}
+	if err := os.Rename(tmpName, targetPath); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("selfupdate: replacing %s: %w", targetPath, err)
+	}
+	return nil
+}
+
 // extractBinary reads a gzipped tar and returns the bytes of the "orc" entry.
 func extractBinary(archive []byte) ([]byte, error) {
 	gz, err := gzip.NewReader(bytes.NewReader(archive))
