@@ -93,8 +93,13 @@ go install github.com/jorge-barreto/orc/cmd/orc@v0.1.0
 **From source:**
 
 ```bash
-make install  # installs to $GOPATH/bin, stamped with the git-describe version
+make install  # installs to $GOPATH/bin, stamped from the VERSION file (git-describe fallback)
 ```
+
+**Upgrading:** if you installed the release binary (via the install script or a
+tarball), run `orc update` to fetch and verify the latest release in place. For
+Homebrew use `brew upgrade orc`; for a Go install re-run `go install
+github.com/jorge-barreto/orc/cmd/orc@latest`.
 
 ## Quick Start
 
@@ -350,6 +355,18 @@ orc debug -w bugfix plan KS-42    # analyze a phase from a named workflow
 ```
 
 When no ticket is specified, analyzes the most recently executed ticket.
+
+### `orc update`
+
+Update orc to the latest release. Downloads the matching release tarball, verifies it against the published `checksums.txt`, and atomically replaces the running binary. Downloads are verified against the release's published SHA-256 checksums (the same integrity check the install script uses); there is no separate signature.
+
+```bash
+orc update            # install the latest release in place
+orc update --check    # report whether an update is available; install nothing
+orc upgrade           # alias for orc update
+```
+
+Binaries installed via Homebrew or `go install` aren't replaced — orc detects them and points you at `brew upgrade orc` or `go install github.com/jorge-barreto/orc/cmd/orc@latest`.
 
 ## Configuration Reference
 

@@ -1,0 +1,70 @@
+name: auto-tag
+
+# When VERSION changes on a push to main, create and push the matching v* tag on
+# the merge commit, then invoke release.yml via workflow_call. This sidesteps the
+# GITHUB_TOKEN anti-recursion rule (a tag pushed by GITHUB_TOKEN would NOT fire
+# release.yml's push:tags trigger). Manual 'git tag && push' still works via
+# release.yml's own push:tags trigger.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write # create + push the tag
+
+# Serialize tag/release runs: two VERSION-bumping merges in quick succession
+# must not overlap. Never cancel in-flight — we don't abort a tag/release.
+concurrency:
+  group: auto-tag
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: tag
+    runs-on: ubuntu-latest
+    outputs:
+      tagged: ${{ steps.guard.outputs.tagged }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # need full history + tags for git describe / tag checks
+
+      - name: Decide whether to tag
+        id: guard
+        run: |
+          set -euo pipefail
+          # Skip if VERSION did not change in this push.
+          if git rev-parse HEAD^ >/dev/null 2>&1; then
+            if git diff --quiet HEAD^ HEAD -- VERSION; then
+              echo "VERSION unchanged; nothing to release."
+              echo "tagged=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          version="$(tr -d '[:space:]' < VERSION)"
+          # Validate strict semver.
+          scripts/version-guard.sh validate "$version"
+          tag="v$version"
+          # Idempotent: skip if the tag already exists.
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists; no-op."
+            echo "tagged=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Reject a version that is not strictly greater than the latest v* tag.
+          latest="$(git tag -l 'v*' | sed 's/^v//' | sort -t. -k1,1n -k2,2n -k3,3n | tail -n1)"
+          scripts/version-guard.sh newer "$version" "$latest"
+          # Create the annotated tag on the exact commit being built.
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "Release $tag" "$GITHUB_SHA"
+          git push origin "$tag"
+          echo "Created and pushed $tag on $GITHUB_SHA"
+          echo "tagged=true" >> "$GITHUB_OUTPUT"
+
+  release:
+    name: release
+    needs: tag
+    if: needs.tag.outputs.tagged == 'true'
+    uses: ./.github/workflows/release.yml
+    secrets: inherit
