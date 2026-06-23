@@ -100,8 +100,9 @@ orc's hands.
 ### Components
 
 - **Case dir `.orc/evals/<case>/`** — version-controlled, shared with the team:
-  - `fixture.yaml` — `ref`, `ticket`, `vars`, `description`, **new `spec:`**
-    field naming the agent-visible spec file (relative to the case dir).
+  - `fixture.yaml` — `ref`, `ticket`, `vars`, `description`, **new required
+    `spec:`** field naming the agent-visible spec file (relative to the case
+    dir). Required (hard migration — see Open Questions #4).
   - the **spec** file (e.g. `spec.md`) — the only thing extracted onto the stage.
   - `rubric.yaml` + any held-out test scripts / judge prompt files — held out by
     virtue of the whole `.orc/evals/` dir being removed from the stage. **There
@@ -138,9 +139,12 @@ orc's hands.
     `if [ -n "$ORC_EVAL" ]; then cat "$ORC_SPEC_FILE"; else <fetch from Jira>; fi`.
   - orc owns the two primitives; the workflow owns ticketing. This leak of "this
     is an eval" into the workflow is intentional and minimal (one conditional in
-    one phase) and is unavoidable because ticket-fetching is the workflow's job.
-    A workflow that omits the branch will attempt to resolve a non-existent
-    ticket and fail; orc does not (and cannot) force the opt-in.
+    one phase). **It is opt-in, not required.** The branch is a QOL convenience
+    only for workflows that resolve tickets via an *external* store (Jira, etc.)
+    and thus need a local stand-in under eval. A workflow whose ticket is already
+    self-contained needs no branch at all. orc neither enforces nor needs the
+    opt-in; a workflow that hits an external store with a fake eval ticket id and
+    omits the branch will simply fail — that is the author's choice to make.
 
 - **Grade step** (extracted from the run path; this is what makes #8 possible):
   - A pure function of `(run artifacts, grader)`.
@@ -185,10 +189,12 @@ orc's hands.
 
 - Stage build failures (worktree add, curation commit) abort the case with a
   wrapped error; the worktree is pruned/removed (existing teardown logic).
-- A missing `spec:` file in the fixture is a config error at load time.
+- A missing or absent `spec:` field/file in the fixture is a config error at
+  load time (hard migration — `spec:` is required).
 - A workflow that does not honor the eval-mode contract (never reads
-  `$ORC_SPEC_FILE`) is not orc's failure to detect; document the contract
-  clearly. (Optional future: a doctor check.)
+  `$ORC_SPEC_FILE`) is not orc's failure to detect — the contract is opt-in QOL,
+  not required. Document it clearly. (Optional future: a doctor check that warns
+  when a workflow fetches tickets externally but has no eval branch.)
 - Grade-step failures (bad check, judge error) are recorded per-criterion as
   today (fail with detail), never crashing the whole eval.
 - `--regrade` with no saved run for the case is a clear error listing available
@@ -226,9 +232,11 @@ orc's hands.
    writing artifacts outside the worktree.
 3. **Path-resolution base for grader `check:`/`prompt:`.** Pick one consistent
    base now that the grader is read from the live project; document it.
-4. **Backward compatibility.** Existing eval cases have no `spec:` field and rely
-   on `ref` containing the spec. Decide: hard migration (require `spec:`),
-   or `spec:`-optional (no spec injected; old behavior) with a deprecation note.
+4. ~~**Backward compatibility.**~~ **Resolved: hard migration.** `spec:` is
+   required; there is no fallback to "spec lives in the ref." The feature has no
+   real-world users yet, so carrying optionality isn't worth it. Existing cases
+   (if any) must add a `spec:` field. A clear config-load error names the missing
+   field.
 5. **Re-grade history semantics.** Does a re-grade row replace or append? (Design
    leans append, so deltas are visible.) How is a re-grade row marked in
    `--report`?
