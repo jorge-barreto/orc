@@ -10,8 +10,15 @@
 VERSION := $(shell \
 	if [ -f VERSION ]; then \
 		base="v$$(tr -d '[:space:]' < VERSION)"; \
-		suffix=$$(git describe --tags --match 'v*' --always --dirty 2>/dev/null | sed -n 's/^v\?[0-9][0-9.]*\(-.*\)$$/\1/p'); \
-		printf '%s%s' "$$base" "$$suffix"; \
+		desc=$$(git describe --tags --match 'v*' --always --dirty 2>/dev/null); \
+		suffix=$$(printf '%s' "$$desc" | sed -n 's/^v\?[0-9][0-9.]*\(-.*\)$$/\1/p'); \
+		if [ -n "$$suffix" ]; then \
+			printf '%s%s' "$$base" "$$suffix"; \
+		elif [ "$$desc" = "$$base" ] || [ "v$$desc" = "$$base" ] || [ "$$desc" = "$${base#v}" ]; then \
+			printf '%s' "$$base"; \
+		else \
+			printf '%s-dev' "$$base"; \
+		fi; \
 	else \
 		git describe --tags --match 'v*' --always --dirty 2>/dev/null || echo dev; \
 	fi)
