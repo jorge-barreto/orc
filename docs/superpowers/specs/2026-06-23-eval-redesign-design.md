@@ -126,13 +126,21 @@ orc's hands.
     the tree mid-run. (See Open Questions.)
 
 - **Eval-mode contract** (the spec-injection seam — **#9 P1 / Q1**):
-  - orc sets `ORC_EVAL=1` and `ORC_SPEC_FILE=<abs path in stage>` in the
-    workflow's environment.
+  - orc sets **two primitives** in the workflow's environment:
+    - `ORC_EVAL=1` — the eval-mode flag the workflow branches on.
+    - `ORC_SPEC_FILE=<abs path in stage>` — absolute path to a file on the stage
+      containing this case's spec (the "ticket body"). Its contents are the
+      case's authored `spec.md`, copied onto the stage during stage build (the
+      one file extracted from the case dir before `.orc/evals/` is removed). It
+      is a *plain file path*, not a ticket abstraction — orc deliberately does
+      not model ticketing.
   - The workflow's ticket-fetch phase is expected to branch:
     `if [ -n "$ORC_EVAL" ]; then cat "$ORC_SPEC_FILE"; else <fetch from Jira>; fi`.
   - orc owns the two primitives; the workflow owns ticketing. This leak of "this
     is an eval" into the workflow is intentional and minimal (one conditional in
     one phase) and is unavoidable because ticket-fetching is the workflow's job.
+    A workflow that omits the branch will attempt to resolve a non-existent
+    ticket and fail; orc does not (and cannot) force the opt-in.
 
 - **Grade step** (extracted from the run path; this is what makes #8 possible):
   - A pure function of `(run artifacts, grader)`.
@@ -209,11 +217,10 @@ orc's hands.
 
 ## Open questions (to resolve in the implementation plan)
 
-1. **Exact `$ORC_SPEC_FILE` path on the stage.** Options: under
-   `.orc/artifacts/` (already orc-owned, but artifacts dir is per-run), a
-   dedicated `.orc/eval-spec/…`, or a fixture-declarable path. Must not collide
-   with real workflow files and must be stable for the ticket-fetch phase to
-   find.
+1. **Exact `$ORC_SPEC_FILE` path on the stage.** Leaning to a dedicated,
+   stable, orc-owned path: `.orc/eval-spec/spec.md`. Rejected `.orc/artifacts/`
+   (per-run, orc-churned — a poor home for a stable input). Confirm the exact
+   path and whether it should be fixture-overridable.
 2. **Excluding `artifacts/`/`audit/` from dirtying the stage mid-run.** Append to
    `.gitignore` in the curation commit, vs. a documented expectation, vs.
    writing artifacts outside the worktree.
