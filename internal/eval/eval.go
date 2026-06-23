@@ -91,6 +91,10 @@ func LoadFixture(caseDir string) (*Fixture, error) {
 	if f.Spec == "" {
 		return nil, fmt.Errorf("eval: fixture.yaml: spec is required")
 	}
+	// Path traversal check: spec must be a simple filename, not a path
+	if f.Spec == ".." || f.Spec == "." {
+		return nil, fmt.Errorf("eval: fixture.yaml: spec %q is not allowed", f.Spec)
+	}
 	if f.Spec != filepath.Base(f.Spec) {
 		return nil, fmt.Errorf("eval: fixture.yaml: spec %q must not contain path separators", f.Spec)
 	}

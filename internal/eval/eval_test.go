@@ -193,6 +193,19 @@ func TestLoadFixture_SpecPathSeparator(t *testing.T) {
 	}
 }
 
+func TestLoadFixture_SpecDotDot(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "fixture.yaml"),
+		"ref: abc123\nticket: T-001\nspec: \"..\"\n")
+	_, err := LoadFixture(dir)
+	if err == nil {
+		t.Fatal("expected error for spec '..'")
+	}
+	if !strings.Contains(err.Error(), "is not allowed") {
+		t.Errorf("error = %v, want message containing 'is not allowed'", err)
+	}
+}
+
 // --- LoadRubric ---
 
 func TestLoadRubric(t *testing.T) {
