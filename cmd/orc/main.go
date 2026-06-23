@@ -86,6 +86,7 @@ func main() {
 			improveCmd(),
 			testCmd(),
 			debugCmd(),
+			updateCmd(),
 		},
 	}
 
