@@ -213,6 +213,36 @@ func ConfigFingerprint(configPath string, cfg *config.Config, projectRoot string
 	return hex.EncodeToString(h.Sum(nil))[:8], nil
 }
 
+// RubricFingerprint hashes the rubric's grading inputs: each criterion's
+// name/weight/expect/check/judge plus the contents of each judge prompt file
+// (resolved from projectRoot). Returns 8 hex chars, stable and
+// order-independent across criteria.
+func RubricFingerprint(rubric *Rubric, caseDir, projectRoot string) (string, error) {
+	h := sha256.New()
+	// Sort criteria by name for determinism.
+	names := make([]string, len(rubric.Criteria))
+	byName := make(map[string]Criterion, len(rubric.Criteria))
+	for i, c := range rubric.Criteria {
+		names[i] = c.Name
+		byName[c.Name] = c
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		c := byName[name]
+		fmt.Fprintf(h, "name:%s\nweight:%g\nexpect:%s\ncheck:%s\njudge:%t\n",
+			c.Name, c.Weight, c.Expect, c.Check, c.Judge)
+		if c.Judge && c.Prompt != "" {
+			data, err := os.ReadFile(filepath.Join(projectRoot, c.Prompt))
+			if err != nil {
+				return "", fmt.Errorf("eval: rubric fingerprint: reading %s: %w", c.Prompt, err)
+			}
+			fmt.Fprintf(h, "prompt:%s:", c.Prompt)
+			h.Write(data)
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))[:8], nil
+}
+
 func CreateWorktree(ctx context.Context, projectRoot, ref, caseName string) (string, error) {
 	tmpDir, err := os.MkdirTemp("", "orc-eval-"+caseName+"-")
 	if err != nil {
@@ -321,9 +351,10 @@ type RunResult struct {
 
 // HistoryEntry holds one eval run's summary.
 type HistoryEntry struct {
-	Timestamp         string                      `json:"timestamp"`
-	ConfigFingerprint string                      `json:"config_fingerprint"`
-	Cases             map[string]CaseHistoryEntry `json:"cases"`
+	Timestamp          string                      `json:"timestamp"`
+	ConfigFingerprint  string                      `json:"config_fingerprint"`
+	Cases              map[string]CaseHistoryEntry `json:"cases"`
+	RubricFingerprints map[string]string           `json:"rubric_fingerprints,omitempty"`
 }
 
 // CaseHistoryEntry holds the persisted result for one case.
@@ -332,6 +363,7 @@ type CaseHistoryEntry struct {
 	CostUSD         float64            `json:"cost_usd"`
 	DurationSeconds float64            `json:"duration_seconds"`
 	Details         map[string]float64 `json:"details"`
+	RegradedFrom    string             `json:"regraded_from,omitempty"`
 }
 
 // History holds all historical eval runs.
@@ -457,9 +489,10 @@ func SaveHistory(projectRoot string, h *History) error {
 // AppendResult adds a new history entry from the given case results.
 func (h *History) AppendResult(fingerprint string, cases []CaseResult) {
 	entry := HistoryEntry{
-		Timestamp:         time.Now().UTC().Format(time.RFC3339),
-		ConfigFingerprint: fingerprint,
-		Cases:             make(map[string]CaseHistoryEntry),
+		Timestamp:          time.Now().UTC().Format(time.RFC3339),
+		ConfigFingerprint:  fingerprint,
+		Cases:              make(map[string]CaseHistoryEntry),
+		RubricFingerprints: make(map[string]string),
 	}
 	for _, c := range cases {
 		entry.Cases[c.Name] = CaseHistoryEntry{
@@ -467,6 +500,10 @@ func (h *History) AppendResult(fingerprint string, cases []CaseResult) {
 			CostUSD:         c.CostUSD,
 			DurationSeconds: c.DurationSeconds,
 			Details:         c.Details,
+			RegradedFrom:    c.RegradedFrom,
+		}
+		if c.RubricFingerprint != "" {
+			entry.RubricFingerprints[c.Name] = c.RubricFingerprint
 		}
 	}
 	h.Runs = append(h.Runs, entry)
@@ -536,6 +573,8 @@ func (e *evalRunner) runCase(ctx context.Context, caseName string) (CaseResult, 
 	if runResult.Err != nil {
 		result.WorkflowErr = runResult.Err.Error()
 	}
+	rubricFP, _ := RubricFingerprint(rubric, caseDir, e.projectRoot)
+	result.RubricFingerprint = rubricFP
 	return result, nil
 }
 

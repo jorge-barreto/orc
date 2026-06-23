@@ -37,6 +37,9 @@ type CaseResult struct {
 	Failures        []string           `json:"failures,omitempty"`
 	Details         map[string]float64 `json:"details"`
 	WorkflowErr     string             `json:"workflow_err,omitempty"`
+
+	RubricFingerprint string `json:"rubric_fingerprint,omitempty"`
+	RegradedFrom      string `json:"regraded_from,omitempty"`
 }
 
 var scoreRegex = regexp.MustCompile(`SCORE:\s*(\d+)`)

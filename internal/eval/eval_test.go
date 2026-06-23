@@ -831,7 +831,7 @@ func TestRenderHistoryReport(t *testing.T) {
 	var buf bytes.Buffer
 	RenderHistoryReport(&buf, h)
 	out := buf.String()
-	for _, want := range []string{"abc123", "85/100", "Jan 15"} {
+	for _, want := range []string{"abc123", "85/100", "Jan 15", "RUBRIC"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q", want)
 		}
@@ -1071,5 +1071,42 @@ func TestRunWorkflow_SetsEvalEnv(t *testing.T) {
 		if !strings.Contains(joined, want) {
 			t.Errorf("env missing %q", want)
 		}
+	}
+}
+
+func TestRubricFingerprint_ChangesWithRubric(t *testing.T) {
+	caseDir := t.TempDir()
+	projectRoot := t.TempDir()
+	r1 := &Rubric{Criteria: []Criterion{{Name: "a", Check: "exit 0", Weight: 1}}}
+	fp1, err := RubricFingerprint(r1, caseDir, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2 := &Rubric{Criteria: []Criterion{{Name: "a", Check: "exit 1", Weight: 1}}}
+	fp2, err := RubricFingerprint(r2, caseDir, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fp1 == fp2 {
+		t.Error("rubric fingerprint should change when a check changes")
+	}
+}
+
+func TestRubricFingerprint_ChangesWithJudgePrompt(t *testing.T) {
+	caseDir := t.TempDir()
+	projectRoot := t.TempDir()
+	writeFile(t, filepath.Join(projectRoot, ".orc", "p.md"), "v1")
+	r := &Rubric{Criteria: []Criterion{{Name: "q", Judge: true, Prompt: ".orc/p.md", Weight: 1}}}
+	fp1, err := RubricFingerprint(r, caseDir, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(projectRoot, ".orc", "p.md"), "v2")
+	fp2, err := RubricFingerprint(r, caseDir, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fp1 == fp2 {
+		t.Error("rubric fingerprint should change when judge prompt content changes")
 	}
 }
