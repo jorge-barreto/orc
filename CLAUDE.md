@@ -80,15 +80,26 @@ Validation (`internal/config/validate.go`) enforces: unique phase names, `loop.g
 
 ## Releases
 
-orc ships as a single Go binary, released on **plain `v*` git tags** (e.g.
-`v0.1.0`). Pushing one fires `.github/workflows/release.yml` → GoReleaser
-builds the linux/darwin × amd64/arm64 binaries + checksums + a GitHub Release,
-and pushes a Homebrew formula to `jorge-barreto/homebrew-tap`.
+orc ships as a single Go binary. There are two ways to cut a release; both end
+in `.github/workflows/release.yml` → GoReleaser building the linux/darwin ×
+amd64/arm64 binaries + checksums + a GitHub Release, and pushing a Homebrew
+formula to `jorge-barreto/homebrew-tap`.
 
-- Cut a release: `git tag -a v0.1.0 -m "..." && git push origin v0.1.0`.
+- **Version-file flow (preferred):** the root `VERSION` file (plain semver, no
+  leading `v`) is the version of record. Bump it and merge to `main`;
+  `.github/workflows/auto-tag.yml` validates the bump (strict semver, strictly
+  greater than the latest tag, not already tagged), creates and pushes the
+  matching `v<VERSION>` tag on the merge commit, then invokes `release.yml` via
+  `workflow_call`. This avoids the GITHUB_TOKEN anti-recursion rule (a tag
+  pushed by `GITHUB_TOKEN` does NOT fire `release.yml`'s `push: tags` trigger).
+- **Manual flow (escape hatch):** `git tag -a v0.3.0 -m "..." && git push origin
+  v0.3.0`. The pushed tag fires `release.yml`'s `push: tags` trigger directly.
+  Keep `VERSION` in sync when you tag manually.
+- `make build` reads `VERSION` first (stamping `v<VERSION>` plus a git-derived
+  suffix so dev builds are marked dirty); it falls back to `git describe` when
+  the file is absent. GoReleaser still reads the version from the tag.
 - GoReleaser strips the leading `v`, so tags are plain semver. Archive names
   are `orc_<version-without-v>_<os>_<arch>.tar.gz` alongside a `checksums.txt`.
-- `make build` stamps the version via `git describe --tags --match 'v*'`.
 - Requires the `HOMEBREW_TAP_PAT` repo secret (shared with horde) for the
   formula push; without it the binaries/Release still publish.
 - `scripts/install.sh` is the `curl | sh` installer documented in the README.

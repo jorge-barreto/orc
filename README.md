@@ -96,6 +96,11 @@ go install github.com/jorge-barreto/orc/cmd/orc@v0.1.0
 make install  # installs to $GOPATH/bin, stamped with the git-describe version
 ```
 
+**Upgrading:** if you installed the release binary (via the install script or a
+tarball), run `orc update` to fetch and verify the latest release in place. For
+Homebrew use `brew upgrade orc`; for a Go install re-run `go install
+github.com/jorge-barreto/orc/cmd/orc@latest`.
+
 ## Quick Start
 
 ```bash
