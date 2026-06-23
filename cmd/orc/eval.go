@@ -43,6 +43,11 @@ func evalCmd() *cli.Command {
 			if cmd.Bool("list") && cmd.Bool("report") {
 				return cfgErr(fmt.Errorf("--list and --report are mutually exclusive"))
 			}
+			// --regrade with --list/--report would silently ignore the regrade
+			// (those flags early-return below). Reject so the contradiction is loud.
+			if cmd.Bool("regrade") && (cmd.Bool("list") || cmd.Bool("report")) {
+				return cfgErr(fmt.Errorf("--regrade cannot be combined with --list or --report"))
+			}
 
 			// --list and --report early-return BEFORE resolveWorkflow() —
 			// they are workflow-agnostic and must work in multi-workflow projects
@@ -91,9 +96,15 @@ func evalCmd() *cli.Command {
 					return cfgErr(fmt.Errorf("--regrade requires a case name: orc eval <case> --regrade [run-id]"))
 				}
 				runID := cmd.Args().Get(1)
+				if runID != "" && (runID != filepath.Base(runID) || runID == ".." || runID == ".") {
+					return cfgErr(fmt.Errorf("invalid run id %q: must not contain path separators", runID))
+				}
 				fingerprint, cases, err := eval.RegradeEval(ctx, projectRoot, configPath, workflowName, cfg, caseName, runID)
 				if err != nil {
-					return fmt.Errorf("re-grading eval: %w", err)
+					// RegradeEval failures are all config/setup errors (missing
+					// fixture/spec/rubric, no saved runs, run not found, invalid
+					// run id) — exit ExitConfigError (3) per the documented contract.
+					return cfgErr(fmt.Errorf("re-grading eval: %w", err))
 				}
 				if cmd.Bool("json") {
 					return eval.RenderJSON(os.Stdout, fingerprint, cases)
