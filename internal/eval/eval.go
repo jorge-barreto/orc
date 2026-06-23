@@ -692,6 +692,9 @@ func persistRunArtifacts(projectRoot, workflowName, ticket, worktreePath, runID 
 		return fmt.Errorf("eval: persistRunArtifacts: creating history dir: %w", err)
 	}
 	if err := state.CopyTree(src, dst); err != nil {
+		// Remove the partial copy so a later --regrade can't grade an incomplete
+		// run (mirrors state.ArchiveRun's cleanup of a half-written archive).
+		os.RemoveAll(dst)
 		return fmt.Errorf("eval: persistRunArtifacts: copying run %q: %w", runID, err)
 	}
 	return nil
