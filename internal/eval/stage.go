@@ -117,7 +117,12 @@ func gitCommitStage(ctx context.Context, worktreePath string) error {
 		"-c", "user.email=orc-eval@localhost",
 		"-c", "user.name=orc eval",
 		"-c", "commit.gpgsign=false",
-		"commit", "-q", "-m", "orc eval stage",
+		// --no-verify: the curation commit is disposable scaffolding; worktrees
+		// share .git/hooks, so a project pre-commit/commit-msg hook would
+		// otherwise fire on it and could abort the eval.
+		// --allow-empty: tolerate the rare "nothing to commit" case (curation
+		// produced no net change) instead of failing the whole eval.
+		"commit", "--no-verify", "--allow-empty", "-q", "-m", "orc eval stage",
 	)
 	commit.Dir = worktreePath
 	setProcAttrs(commit)

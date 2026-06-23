@@ -57,6 +57,48 @@ func gitStatusPorcelain(t *testing.T, dir string) string {
 	return string(out)
 }
 
+// TestBuildStage_SkipsGitHooks proves W1: a project pre-commit hook (shared by
+// worktrees via .git/hooks) must NOT abort the throwaway curation commit, so
+// BuildStage passes --no-verify.
+func TestBuildStage_SkipsGitHooks(t *testing.T) {
+	repo := t.TempDir()
+	initGitRepo(t, repo)
+
+	writeFile(t, filepath.Join(repo, ".orc", "config.yaml"),
+		"phases:\n  - name: p\n    prompt: .orc/prompts/p.md\n")
+	writeFile(t, filepath.Join(repo, ".orc", "prompts", "p.md"), "REF VERSION")
+	writeFile(t, filepath.Join(repo, ".orc", "evals", "bug-fix", "fixture.yaml"),
+		"ref: HEAD\nticket: T-1\nspec: spec.md\n")
+	writeFile(t, filepath.Join(repo, ".orc", "evals", "bug-fix", "spec.md"), "BUILD THE THING")
+	writeFile(t, filepath.Join(repo, ".orc", "evals", "bug-fix", "rubric.yaml"),
+		"criteria:\n  - name: c\n    check: \"exit 0\"\n    weight: 1\n")
+	ref := gitCommitAll(t, repo, "init")
+
+	// Install a pre-commit hook that always fails. Worktrees share .git/hooks,
+	// so without --no-verify this would abort the curation commit.
+	hook := filepath.Join(repo, ".git", "hooks", "pre-commit")
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\necho 'hook says no' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{Phases: []config.Phase{{Name: "p", Prompt: ".orc/prompts/p.md"}}}
+	fixture := &Fixture{Ref: ref, Ticket: "T-1", Spec: "spec.md"}
+
+	wt, err := CreateWorktree(context.Background(), repo, ref, "bug-fix")
+	if err != nil {
+		t.Fatalf("CreateWorktree: %v", err)
+	}
+	defer RemoveWorktree(repo, wt)
+
+	if _, err := BuildStage(context.Background(), repo, wt,
+		filepath.Join(repo, ".orc", "config.yaml"), cfg, fixture, "bug-fix"); err != nil {
+		t.Fatalf("BuildStage failed (pre-commit hook should be skipped): %v", err)
+	}
+	if s := gitStatusPorcelain(t, wt); s != "" {
+		t.Errorf("worktree not clean after BuildStage:\n%s", s)
+	}
+}
+
 func TestBuildStage(t *testing.T) {
 	repo := t.TempDir()
 	initGitRepo(t, repo)
