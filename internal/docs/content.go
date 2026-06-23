@@ -52,7 +52,7 @@ var topics = []Topic{
 	{
 		Name:    "devtools",
 		Title:   "Developer Tools",
-		Summary: "orc test, debug, report, improve, eval, flow, and doctor",
+		Summary: "orc test, debug, report, improve, eval, flow, doctor, and update",
 		Content: topicDevtools,
 	},
 	{
@@ -1554,6 +1554,21 @@ names, and more.
   orc validate                      Validate all workflows
   orc validate -w bugfix            Validate one workflow
   orc validate --config path.yaml   Validate a specific file
+
+orc update — Self-Update
+------------------------
+
+Update orc to the latest release. Downloads the matching release tarball,
+verifies it against the published checksums, and atomically replaces the
+running binary. Non-interactive.
+
+  orc update            Install the latest release in place
+  orc update --check    Report whether an update is available; install nothing
+  orc upgrade           Alias for 'orc update'
+
+Binaries installed via Homebrew or 'go install' are not replaced — orc detects
+them and points you at 'brew upgrade orc' or
+'go install github.com/jorge-barreto/orc/cmd/orc@latest' instead.
 
 Typical Workflow for Prompt Iteration
 --------------------------------------

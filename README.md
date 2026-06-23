@@ -356,6 +356,18 @@ orc debug -w bugfix plan KS-42    # analyze a phase from a named workflow
 
 When no ticket is specified, analyzes the most recently executed ticket.
 
+### `orc update`
+
+Update orc to the latest release. Downloads the matching release tarball, verifies it against the published `checksums.txt`, and atomically replaces the running binary.
+
+```bash
+orc update            # install the latest release in place
+orc update --check    # report whether an update is available; install nothing
+orc upgrade           # alias for orc update
+```
+
+Binaries installed via Homebrew or `go install` aren't replaced — orc detects them and points you at `brew upgrade orc` or `go install github.com/jorge-barreto/orc/cmd/orc@latest`.
+
 ## Configuration Reference
 
 Workflows are defined in `.orc/config.yaml`.
