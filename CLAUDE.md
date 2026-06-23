@@ -92,6 +92,10 @@ formula to `jorge-barreto/homebrew-tap`.
   matching `v<VERSION>` tag on the merge commit, then invokes `release.yml` via
   `workflow_call`. This avoids the GITHUB_TOKEN anti-recursion rule (a tag
   pushed by `GITHUB_TOKEN` does NOT fire `release.yml`'s `push: tags` trigger).
+  The bump must land in the commit that hits `main` (the PR merge/squash
+  commit, or the tip of a direct push) — `auto-tag.yml` checks the tip commit's
+  VERSION change, so a bump buried in a non-tip commit of a direct multi-commit
+  push is only picked up on the next push.
 - **Manual flow (escape hatch):** `git tag -a v0.3.0 -m "..." && git push origin
   v0.3.0`. The pushed tag fires `release.yml`'s `push: tags` trigger directly.
   Keep `VERSION` in sync when you tag manually.
