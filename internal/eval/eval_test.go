@@ -1056,3 +1056,20 @@ func TestRunWorkflow_FallbackToHistory(t *testing.T) {
 		t.Errorf("TotalElapsed = %v, want > 0", timing.TotalElapsed())
 	}
 }
+
+func TestRunWorkflow_SetsEvalEnv(t *testing.T) {
+	// We can't run a real `orc run` here, but we can assert the env-building
+	// helper sets ORC_EVAL and ORC_SPEC_FILE. Extracted as buildEvalEnv.
+	env := buildEvalEnv("/stage/.orc/eval-spec/spec.md", map[string]string{"K": "v"})
+	joined := strings.Join(env, "\n")
+	for _, want := range []string{
+		"ORC_EVAL=1",
+		"ORC_SPEC_FILE=/stage/.orc/eval-spec/spec.md",
+		"K=v",
+		"ORC_K=v",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("env missing %q", want)
+		}
+	}
+}

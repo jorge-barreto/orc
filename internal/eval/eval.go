@@ -339,10 +339,33 @@ type History struct {
 	Runs []HistoryEntry `json:"runs"`
 }
 
+// buildEvalEnv returns the child env for an eval run: inherited env minus
+// CLAUDECODE/ORC_*, plus fixture vars (KEY and ORC_KEY), plus the eval-mode
+// contract (ORC_EVAL, ORC_SPEC_FILE).
+func buildEvalEnv(specFile string, vars map[string]string) []string {
+	env := make([]string, 0, len(os.Environ())+len(vars)*2+2)
+	for _, kv := range os.Environ() {
+		idx := strings.IndexByte(kv, '=')
+		if idx < 0 {
+			continue
+		}
+		key := kv[:idx]
+		if strings.HasPrefix(key, "CLAUDECODE") || strings.HasPrefix(key, "ORC_") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	for k, v := range vars {
+		env = append(env, k+"="+v, "ORC_"+k+"="+v)
+	}
+	env = append(env, "ORC_EVAL=1", "ORC_SPEC_FILE="+specFile)
+	return env
+}
+
 // RunWorkflow executes orc in the given worktree and returns the result.
 // It never returns a non-nil error — partial results are always returned
 // so the rubric evaluator can still run.
-func RunWorkflow(ctx context.Context, worktreePath, ticket, workflowName string, vars map[string]string) (*RunResult, error) {
+func RunWorkflow(ctx context.Context, worktreePath, ticket, workflowName, specFile string, vars map[string]string) (*RunResult, error) {
 	orcBinary, err := os.Executable()
 	if err != nil {
 		return &RunResult{Status: "failed", Err: fmt.Errorf("eval: os.Executable: %w", err)}, nil
@@ -357,24 +380,7 @@ func RunWorkflow(ctx context.Context, worktreePath, ticket, workflowName string,
 	cmd.WaitDelay = 5 * time.Second
 	cmd.Dir = worktreePath
 
-	// Build env: inherit, strip CLAUDECODE/ORC_*, add fixture vars
-	env := make([]string, 0, len(os.Environ())+len(vars)*2)
-	for _, kv := range os.Environ() {
-		idx := strings.IndexByte(kv, '=')
-		if idx < 0 {
-			continue
-		}
-		key := kv[:idx]
-		if strings.HasPrefix(key, "CLAUDECODE") || strings.HasPrefix(key, "ORC_") {
-			continue
-		}
-		env = append(env, kv)
-	}
-	for k, v := range vars {
-		env = append(env, k+"="+v)
-		env = append(env, "ORC_"+k+"="+v)
-	}
-	cmd.Env = env
+	cmd.Env = buildEvalEnv(specFile, vars)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -492,11 +498,12 @@ func (e *evalRunner) runCase(ctx context.Context, caseName string) (CaseResult, 
 	}
 	defer RemoveWorktree(e.projectRoot, worktreePath) //nolint:errcheck
 
-	if err := copyOrcDir(e.projectRoot, worktreePath, e.configPath, e.cfg); err != nil {
-		return CaseResult{Name: caseName}, fmt.Errorf("eval: copying .orc for %q: %w", caseName, err)
+	specFile, err := BuildStage(ctx, e.projectRoot, worktreePath, e.configPath, e.cfg, fixture, caseName)
+	if err != nil {
+		return CaseResult{Name: caseName}, fmt.Errorf("eval: building stage for %q: %w", caseName, err)
 	}
 
-	runResult, _ := RunWorkflow(ctx, worktreePath, fixture.Ticket, e.workflowName, fixture.Vars)
+	runResult, _ := RunWorkflow(ctx, worktreePath, fixture.Ticket, e.workflowName, specFile, fixture.Vars)
 	expandedVars := expandFixtureVars(fixture.Vars, sortedKeys(fixture.Vars))
 	criterionResults, rubricErr := EvaluateRubric(ctx, rubric, runResult.ArtifactsDir, e.projectRoot, expandedVars)
 	if rubricErr != nil {
