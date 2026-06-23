@@ -1110,3 +1110,40 @@ func TestRubricFingerprint_ChangesWithJudgePrompt(t *testing.T) {
 		t.Error("rubric fingerprint should change when judge prompt content changes")
 	}
 }
+
+func TestResolveRunArtifactsDir(t *testing.T) {
+	// Build an artifacts tree with two history runs; resolveRunArtifactsDir
+	// returns the named one, and the latest when runID is empty.
+	base := t.TempDir()
+	mk := func(runID string) {
+		d := filepath.Join(base, "history", runID)
+		writeFile(t, filepath.Join(d, "state.json"),
+			`{"ticket":"T-1","status":"completed","phases":{}}`)
+	}
+	mk("2026-01-01T10-00-00.000")
+	mk("2026-01-02T10-00-00.000")
+
+	got, err := resolveRunArtifactsDir(base, "2026-01-01T10-00-00.000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(got) != "2026-01-01T10-00-00.000" {
+		t.Errorf("named run = %q, want the 01-01 dir", got)
+	}
+
+	latest, err := resolveRunArtifactsDir(base, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(latest) != "2026-01-02T10-00-00.000" {
+		t.Errorf("latest run = %q, want the 01-02 dir", latest)
+	}
+
+	_, err = resolveRunArtifactsDir(base, "nonexistent-run")
+	if err == nil {
+		t.Fatal("expected error for nonexistent run id")
+	}
+	if !strings.Contains(err.Error(), "run not found") {
+		t.Errorf("error = %v, want 'run not found'", err)
+	}
+}

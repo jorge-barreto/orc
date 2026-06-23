@@ -638,3 +638,95 @@ func RunEval(ctx context.Context, projectRoot, configPath, workflowName string, 
 
 	return fingerprint, results, nil
 }
+
+// resolveRunArtifactsDir returns the artifacts dir for a saved run. If runID is
+// empty, returns the most recent history entry. Errors if the named run or any
+// history is absent.
+func resolveRunArtifactsDir(artifactsDir, runID string) (string, error) {
+	if runID == "" {
+		latest, err := state.LatestHistoryDir(artifactsDir)
+		if err != nil {
+			return "", fmt.Errorf("eval: locating latest run: %w", err)
+		}
+		if latest == "" {
+			return "", fmt.Errorf("eval: no saved runs found under %s", state.HistoryDir(artifactsDir))
+		}
+		return latest, nil
+	}
+	dir := filepath.Join(state.HistoryDir(artifactsDir), runID)
+	if !state.HasState(dir) {
+		return "", fmt.Errorf("eval: run not found: %q under %s", runID, state.HistoryDir(artifactsDir))
+	}
+	return dir, nil
+}
+
+// RegradeEval re-scores a saved run's artifacts against the current rubric,
+// without re-running the workflow. Appends a history row marked RegradedFrom.
+func RegradeEval(ctx context.Context, projectRoot, configPath, workflowName string, cfg *config.Config, caseName, runID string) (string, []CaseResult, error) {
+	if caseName == "" {
+		return "", nil, fmt.Errorf("eval: --regrade requires a case name")
+	}
+	cdir := caseDirFor(projectRoot, caseName)
+	fixture, err := LoadFixture(cdir)
+	if err != nil {
+		return "", nil, fmt.Errorf("eval: loading fixture for %q: %w", caseName, err)
+	}
+	rubric, err := LoadRubric(cdir, projectRoot)
+	if err != nil {
+		return "", nil, fmt.Errorf("eval: loading rubric for %q: %w", caseName, err)
+	}
+
+	baseArtifacts := state.ArtifactsDirForWorkflow(projectRoot, workflowName, fixture.Ticket)
+	runDir, err := resolveRunArtifactsDir(baseArtifacts, runID)
+	if err != nil {
+		return "", nil, err
+	}
+
+	expandedVars := expandFixtureVars(fixture.Vars, sortedKeys(fixture.Vars))
+	criterionResults, rubricErr := EvaluateRubric(ctx, rubric, runDir, projectRoot, expandedVars)
+	if rubricErr != nil {
+		fmt.Fprintf(os.Stderr, "  warning: rubric evaluation error for %q: %v\n", caseName, rubricErr)
+	}
+	score := ComputeScore(criterionResults, rubric)
+
+	details := make(map[string]float64)
+	var failures []string
+	passCount := 0
+	for _, cr := range criterionResults {
+		details[cr.Name] = cr.Score
+		if cr.Pass {
+			passCount++
+		} else {
+			failures = append(failures, cr.Name+": "+cr.Detail)
+		}
+	}
+	rubricFP, _ := RubricFingerprint(rubric, cdir, projectRoot)
+
+	result := CaseResult{
+		Name:              caseName,
+		Score:             score,
+		PassCount:         passCount,
+		TotalCount:        len(criterionResults),
+		Failures:          failures,
+		Details:           details,
+		RubricFingerprint: rubricFP,
+		RegradedFrom:      filepath.Base(runDir),
+	}
+
+	fingerprint, err := ConfigFingerprint(configPath, cfg, projectRoot)
+	if err != nil {
+		return "", nil, fmt.Errorf("eval: computing fingerprint: %w", err)
+	}
+	results := []CaseResult{result}
+
+	history, err := LoadHistory(projectRoot)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  warning: cannot load eval history, skipping save: %v\n", err)
+	} else {
+		history.AppendResult(fingerprint, results)
+		if err := SaveHistory(projectRoot, history); err != nil {
+			fmt.Fprintf(os.Stderr, "  warning: failed to save eval history: %v\n", err)
+		}
+	}
+	return fingerprint, results, nil
+}
