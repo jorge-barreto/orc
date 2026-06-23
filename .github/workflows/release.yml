@@ -6,7 +6,8 @@ name: release
 on:
   push:
     tags:
-      - "v*"
+      - "v*" # manual escape hatch: git tag -a vX.Y.Z && git push origin vX.Y.Z
+  workflow_call: # invoked by auto-tag.yml after it creates+pushes the tag
 
 permissions:
   contents: write # create the GitHub Release + upload assets
